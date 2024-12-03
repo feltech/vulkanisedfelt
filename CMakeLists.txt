@@ -12,8 +12,8 @@ option(${PROJECT_NAME}_ENABLE_TESTS "Enable unit tests" OFF)
 
 find_package(doctest REQUIRED)
 find_package(SDL2 REQUIRED)
-find_package(spdlog)
-find_package(di)
+find_package(spdlog REQUIRED)
+find_package(Vulkan REQUIRED)
 
 
 ########################################################################################################################
@@ -26,8 +26,9 @@ add_executable(${_exe_target} src/vulkandemo.cpp src/main.cpp)
 install(TARGETS ${_exe_target} DESTINATION "." RUNTIME DESTINATION bin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 
 target_compile_features(${_exe_target} PRIVATE cxx_std_23)
+set_target_properties(${_exe_target} PROPERTIES CXX_EXTENSIONS OFF)
 
-target_link_libraries(${_exe_target} PRIVATE doctest::doctest SDL2::SDL2 spdlog::spdlog di::di)
+target_link_libraries(${_exe_target} PRIVATE doctest::doctest SDL2::SDL2 spdlog::spdlog Vulkan::Headers)
 
 target_compile_definitions(
     ${_exe_target}
