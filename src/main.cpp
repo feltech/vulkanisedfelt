@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright 2024 David Feltell
 #include <exception>
 
 #define DOCTEST_CONFIG_IMPLEMENT
@@ -15,7 +17,7 @@ int main(const int argc, char ** argv)
 	if (context.shouldExit())  // i.e. --exit
 		return res;
 
-	vulkandemo::Logger const logger = vulkandemo::default_logger();
+	vulkandemo::Logger const logger = vulkandemo::create_logger();
 	try
 	{
 		vulkandemo::vulkandemo(logger);

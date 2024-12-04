@@ -8,7 +8,7 @@ namespace vulkandemo
 {
 
 using Logger = std::shared_ptr<spdlog::logger>;
-Logger default_logger();
+Logger create_logger();
 
 void vulkandemo(const Logger& logger);
 }  // namespace vulkandemo
