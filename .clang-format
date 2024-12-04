@@ -19,6 +19,7 @@ AllowShortIfStatementsOnASingleLine: Never
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortBlocksOnASingleLine: Empty
 FixNamespaceComments: true
+QualifierAlignment: Right
 IncludeBlocks: Preserve
 IncludeCategories:
   - Regex: '^<.*'
