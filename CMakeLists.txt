@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.28)
-project(vulkandemo CXX)
+project(vulkandemo CXX C)
 
 ####################################################################################################
 # Options
 
 option(${PROJECT_NAME}_ENABLE_TESTS "Enable unit tests" OFF)
+option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" ON)
 
 
 ####################################################################################################
@@ -46,16 +47,61 @@ target_compile_definitions(
     SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>
 )
 
+if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(
+            ${_exe_target}
+            PUBLIC
+            -fsanitize=address,undefined
+            -fno-sanitize-recover=all
+            -fno-omit-frame-pointer
+        )
+        target_link_options(
+            ${_exe_target}
+            PUBLIC
+            -fsanitize=address,undefined
+            -fno-sanitize-recover=all
+            -fno-omit-frame-pointer
+        )
+    endif ()
+endif ()
+
 # Testing
 
 if (${PROJECT_NAME}_ENABLE_TESTS)
     enable_testing()
+
     add_test(
-        ${_exe_target}
+        NAME ${_exe_target}
+        COMMAND
         ${_exe_target}
         # Do not continue on to run the application after running tests.
         --exit=true
     )
+
+    if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
+        # Create a library that stubs out dlclose. This is for two reasons:
+        # * It resolves LSan leak detection false positives in vulkan and nvidia drivers.
+        # * If LSan does detect a leak, the name of the library should be reported in the stack
+        #   trace
+        add_library(dlclose_stub SHARED dlclose_stub.c)
+        target_link_libraries(${_exe_target} PRIVATE dlclose_stub)
+
+        list(APPEND _envvars.lsan_opts "verbosity=1")
+        list(APPEND _envvars.lsan_opts "log_threads=1")
+        list(JOIN _envvars.lsan_opts ":" _envvars.lsan_opts)
+        list(APPEND _envvars "LSAN_OPTIONS=${_envvars.lsan_opts}")
+        # Uncomment below to provide more reporting (but run slower).
+        # list(APPEND _envvars "ASAN_OPTIONS=fast_unwind_on_malloc=0")
+
+        set_tests_properties(
+            ${_exe_target}
+            PROPERTIES
+            ENVIRONMENT
+            "${_envvars}"
+        )
+    endif ()
+
 else ()
     target_compile_definitions(${_exe_target} PRIVATE DOCTEST_CONFIG_DISABLE)
 endif ()

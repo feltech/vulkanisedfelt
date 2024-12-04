@@ -26,6 +26,8 @@ class vulkandemoRecipe(ConanFile):
         deps = CMakeDeps(self)
         deps.generate()
         tc = CMakeToolchain(self)
+        tc.variables["CMAKE_C_VISIBILITY_PRESET"] = "default"
+        tc.variables["CMAKE_CXX_VISIBILITY_PRESET"] = "hidden"
         tc.generate()
 
     def build(self):
