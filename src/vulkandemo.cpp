@@ -1,4 +1,3 @@
-
 #include "vulkandemo.hpp"
 
 #include <algorithm>
@@ -7,6 +6,7 @@
 #include <format>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <ranges>
@@ -38,6 +38,9 @@
 
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
+
+// The following CLion check conflicts with clang-tidy wrt vulkan handle typedefs.
+// ReSharper disable CppParameterMayBeConst
 
 using namespace std::literals;
 
@@ -93,7 +96,6 @@ struct VulkanApp
 	{
 		return {
 			instance,
-			// ReSharper disable once CppParameterMayBeConst
 			[](VkInstance ptr)
 			{
 				if (ptr != nullptr)
@@ -102,12 +104,10 @@ struct VulkanApp
 	}
 
 	using VulkanSurfacePtr = std::shared_ptr<std::remove_pointer_t<VkSurfaceKHR>>;
-	// ReSharper disable once CppParameterMayBeConst
 	static VulkanSurfacePtr make_surface_ptr(VulkanInstancePtr instance, VkSurfaceKHR surface)
 	{
 		return VulkanSurfacePtr{
 			surface,
-			// ReSharper disable once CppParameterMayBeConst
 			[instance = std::move(instance)](VkSurfaceKHR ptr)
 			{
 				if (ptr != nullptr)
@@ -116,12 +116,10 @@ struct VulkanApp
 	}
 
 	using VulkanDevicePtr = std::shared_ptr<std::remove_pointer_t<VkDevice>>;
-	// ReSharper disable once CppParameterMayBeConst
 	static VulkanDevicePtr make_device_ptr(VkDevice device)
 	{
 		return VulkanDevicePtr{
 			device,
-			// ReSharper disable once CppParameterMayBeConst
 			[](VkDevice ptr)
 			{
 				if (ptr != nullptr)
@@ -134,7 +132,6 @@ struct VulkanApp
 	static VulkanDebugMessengerPtr make_debug_messenger_ptr(
 		VulkanInstancePtr instance,
 		gsl::owner<Logger *> const plogger,
-		// ReSharper disable once CppParameterMayBeConst
 		VkDebugUtilsMessengerEXT messenger)
 	{
 		auto const pvkDestroyDebugUtilsMessengerEXT =  // NOLINT(*-identifier-naming)
@@ -149,15 +146,260 @@ struct VulkanApp
 			[instance = std::move(instance),
 			 plogger,
 			 // NOLINTNEXTLINE(*-identifier-naming)
-			 pvkDestroyDebugUtilsMessengerEXT]
-			// ReSharper disable once CppParameterMayBeConst
-			(VkDebugUtilsMessengerEXT ptr)
+			 pvkDestroyDebugUtilsMessengerEXT](VkDebugUtilsMessengerEXT ptr)
 			{
 				if (ptr != nullptr)
 					pvkDestroyDebugUtilsMessengerEXT(instance.get(), ptr, nullptr);
 
 				delete plogger;
 			}};
+	}
+
+	using VulkanSwapchainPtr = std::shared_ptr<std::remove_pointer_t<VkSwapchainKHR>>;
+	static VulkanSwapchainPtr make_swapchain_ptr(VulkanDevicePtr device, VkSwapchainKHR swapchain)
+	{
+		return VulkanSwapchainPtr{
+			swapchain,
+			[device = std::move(device)](VkSwapchainKHR ptr)
+			{
+				if (ptr != nullptr)
+					vkDestroySwapchainKHR(device.get(), ptr, nullptr);
+			}};
+	}
+
+	using VulkanImageViewPtr = std::shared_ptr<std::remove_pointer_t<VkImageView>>;
+	static VulkanImageViewPtr make_image_view_ptr(VulkanDevicePtr device, VkImageView image_view)
+	{
+		return VulkanImageViewPtr{
+			image_view,
+			[device = std::move(device)](VkImageView ptr)
+			{
+				if (ptr != nullptr)
+					vkDestroyImageView(device.get(), ptr, nullptr);
+			}};
+	}
+
+	/**
+	 * Create swapchain and (double-buffer) image views for given device.
+	 *
+	 * Many parameters are hardcoded.
+	 *
+	 * @param logger
+	 * @param physical_device
+	 * @param device
+	 * @param surface
+	 * @param previous_swapchain
+	 * @return
+	 */
+	static std::tuple<VulkanSwapchainPtr, std::vector<VulkanImageViewPtr>> create_swapchain(
+		Logger const & logger,
+		VkPhysicalDevice physical_device,
+		VulkanDevicePtr device,
+		VulkanSurfacePtr const & surface,
+		VulkanSwapchainPtr previous_swapchain = nullptr)
+	{
+		if (logger->should_log(spdlog::level::debug))
+		{
+			VkPhysicalDeviceProperties device_properties;
+			vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+			// Log name of device.
+			logger->debug("Creating swapchain for device {}", device_properties.deviceName);
+		}
+
+		// Get surface capabilities.
+		VkSurfaceCapabilitiesKHR surface_capabilities{};
+		VK_CHECK(
+			vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+				physical_device, surface.get(), &surface_capabilities),
+			"Failed to get surface capabilities");
+
+		// Get present modes.
+		std::vector<VkPresentModeKHR> const present_modes = [&]
+		{
+			uint32_t count = 0;
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfacePresentModesKHR(
+					physical_device, surface.get(), &count, nullptr),
+				"Failed to get present mode count");
+
+			std::vector<VkPresentModeKHR> out(count);
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfacePresentModesKHR(
+					physical_device, surface.get(), &count, out.data()),
+				"Failed to get present modes");
+			return out;
+		}();
+
+		// Log present modes at debug level.
+		if (logger->should_log(spdlog::level::debug))
+		{
+			std::vector<std::string_view> const present_mode_names = [&]
+			{
+				std::vector<std::string_view> out;
+				std::ranges::transform(
+					present_modes, std::back_inserter(out), &string_VkPresentModeKHR);
+				return out;
+			}();
+
+			logger->debug("\tAvailable present modes: {}", fmt::join(present_mode_names, ", "));
+		}
+
+		// Choose best present mode.
+		VkPresentModeKHR const present_mode = [&]
+		{
+			if (std::ranges::contains(present_modes, VK_PRESENT_MODE_MAILBOX_KHR))
+				return VK_PRESENT_MODE_MAILBOX_KHR;
+			return VK_PRESENT_MODE_FIFO_KHR;
+		}();
+
+		logger->debug("\tChoosing present mode {}", string_VkPresentModeKHR(present_mode));
+
+		// Choose double-buffer of images, or as close as we can get.
+		uint32_t const swapchain_image_count = std::min(
+			std::max(2U, surface_capabilities.minImageCount), surface_capabilities.maxImageCount);
+
+		logger->debug("\tChoosing swapchain image count {}", swapchain_image_count);
+
+		VkSurfaceTransformFlagBitsKHR const surface_transform =
+			(surface_capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U
+			? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+			: surface_capabilities.currentTransform;
+
+		logger->debug(
+			"\tSwitching transform from {} to {}",
+			string_VkSurfaceTransformFlagsKHR(surface_capabilities.currentTransform),
+			string_VkSurfaceTransformFlagsKHR(surface_transform));
+
+		if (surface_capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max())
+			throw std::runtime_error{"Surface size is undefined"};
+
+		// Get available surface formats.
+		std::vector<VkSurfaceFormatKHR> const surface_formats = [&]
+		{
+			uint32_t count = 0;
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfaceFormatsKHR(
+					physical_device, surface.get(), &count, nullptr),
+				"Failed to get surface format count");
+
+			std::vector<VkSurfaceFormatKHR> out(count);
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfaceFormatsKHR(
+					physical_device, surface.get(), &count, out.data()),
+				"Failed to get surface formats");
+			return out;
+		}();
+
+		// Log surface formats at debug level.
+		if (logger->should_log(spdlog::level::debug))
+		{
+			std::vector<std::string_view> const surface_format_names = [&]
+			{
+				std::vector<std::string_view> out;
+				std::ranges::transform(
+					surface_formats,
+					std::back_inserter(out),
+					[](VkSurfaceFormatKHR surface_format)
+					{ return string_VkFormat(surface_format.format); });
+				return out;
+			}();
+
+			logger->debug("\tAvailable surface formats: {}", fmt::join(surface_format_names, ", "));
+		}
+
+		// Choose 8bit RGBA, or throw.
+		auto const [format, color_space] = [&]
+		{
+			for (auto const & surface_format : surface_formats)
+				if (surface_format.format == VK_FORMAT_B8G8R8A8_UNORM)
+					return surface_format;
+			throw std::runtime_error{"VK_FORMAT_B8G8R8A8_UNORM unavailable"};
+		}();
+
+		// Choose opaque composite alpha mode, or throw.
+		constexpr VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+		if ((surface_capabilities.supportedCompositeAlpha & composite_alpha) == 0U)
+			throw std::runtime_error{"VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR unavailable"};
+
+		// Swapchain images should support colour attachment, source and destination transfer.
+		// NOLINTNEXTLINE(*-signed-bitwise)
+		constexpr VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		if ((surface_capabilities.supportedUsageFlags & usage) == 0U)
+			throw std::runtime_error{
+				"VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | "
+				"VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
+
+		// Construct swapchain create info.
+		VkSwapchainCreateInfoKHR const swapchain_create_info{
+			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+			.surface = surface.get(),
+			.minImageCount = swapchain_image_count,
+			.imageFormat = format,
+			.imageColorSpace = color_space,
+			.imageExtent = surface_capabilities.currentExtent,
+			.imageArrayLayers = 1,
+			.imageUsage = usage,
+			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+			.queueFamilyIndexCount = 0,
+			.pQueueFamilyIndices = nullptr,
+			.preTransform = surface_transform,
+			.compositeAlpha = composite_alpha,
+			.presentMode = present_mode,
+			.clipped = VK_TRUE,
+			.oldSwapchain = previous_swapchain.get()};
+
+		// Create swapchain.
+		VkSwapchainKHR pswapchain;
+		VK_CHECK(
+			vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &pswapchain),
+			"Failed to create swapchain");
+
+		VulkanSwapchainPtr const swapchain = make_swapchain_ptr(device, pswapchain);
+
+		std::vector<VkImage> const swapchain_images = [&]
+		{
+			uint32_t count = 0;
+			VK_CHECK(
+				vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
+				"Failed to get swapchain image count");
+
+			std::vector<VkImage> out(count);
+			VK_CHECK(
+				vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
+				"Failed to get swapchain images");
+			return out;
+		}();
+
+		// Construct VkImageView create info.
+		VkImageViewCreateInfo image_view_create_info{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			.image = nullptr,
+			.viewType = VK_IMAGE_VIEW_TYPE_2D,
+			.format = format,
+			.components =
+				{VK_COMPONENT_SWIZZLE_IDENTITY,
+				 VK_COMPONENT_SWIZZLE_IDENTITY,
+				 VK_COMPONENT_SWIZZLE_IDENTITY,
+				 VK_COMPONENT_SWIZZLE_IDENTITY},
+			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+
+		std::vector<VulkanImageViewPtr> image_views;
+		// Create an image view for each swapchain image.
+		std::ranges::transform(
+			swapchain_images,
+			std::back_inserter(image_views),
+			[&](VkImage image)
+			{
+				image_view_create_info.image = image;
+				VkImageView image_view;
+				VK_CHECK(
+					vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
+					"Failed to create image view");
+				return make_image_view_ptr(device, image_view);
+			});
+
+		return {std::move(swapchain), std::move(image_views)};
 	}
 
 	/**
@@ -171,7 +413,6 @@ struct VulkanApp
 	 */
 	static std::tuple<VulkanDevicePtr, std::map<uint32_t, std::vector<VkQueue>>>
 	create_device_and_queues(
-		// ReSharper disable once CppParameterMayBeConst
 		VkPhysicalDevice physical_device,
 		std::vector<std::pair<uint32_t, uint32_t>> const & queue_family_and_counts,
 		std::vector<std::string_view> const & device_extension_names)
@@ -249,6 +490,7 @@ struct VulkanApp
 	 * @param physical_devices
 	 * @param required_device_extensions
 	 * @param required_queue_capabilities
+	 * @param surface
 	 * @return
 	 */
 	static std::tuple<VkPhysicalDevice, uint32_t> select_physical_device(
@@ -287,7 +529,6 @@ struct VulkanApp
 	 */
 	static std::vector<std::string_view> filter_available_device_extensions(
 		Logger const & logger,
-		// ReSharper disable once CppParameterMayBeConst
 		VkPhysicalDevice physical_device,
 		std::set<std::string_view> const & desired_device_extension_names)
 	{
@@ -398,6 +639,15 @@ struct VulkanApp
 		return matching_queue_family_idxs;
 	}
 
+	/**
+	 * Filter a list of physical devices to only those that support presentation on a given surface.
+	 *
+	 * No-op if surface is null.
+	 *
+	 * @param physical_devices
+	 * @param surface
+	 * @return
+	 */
 	static std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
 		std::vector<VkPhysicalDevice> const & physical_devices, VkSurfaceKHR surface)
 	{
@@ -510,7 +760,6 @@ struct VulkanApp
 	 * @param instance
 	 * @return
 	 */
-	// ReSharper disable once CppParameterMayBeConst
 	static VulkanDebugMessengerPtr create_debug_messenger(Logger logger, VulkanInstancePtr instance)
 	{
 		// ReSharper disable once CppDFAMemoryLeak
@@ -1117,4 +1366,39 @@ TEST_CASE("Create logical device with queues")
 	CHECK(queues.at(queue_family_idx).size() == expected_queue_count);
 	CHECK(queues.at(queue_family_idx)[0]);
 	CHECK(queues.at(queue_family_idx)[1]);
+}
+
+TEST_CASE("Create swapchain")
+{
+	using vulkandemo::VulkanApp;
+	vulkandemo::Logger const logger = vulkandemo::create_logger("Create swapchain");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+	std::vector<VkPhysicalDevice> const physical_devices =
+		VulkanApp::enumerate_physical_devices(logger, instance);
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		physical_devices,
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		VK_QUEUE_GRAPHICS_BIT,
+		surface.get());
+	auto [device, queues] = VulkanApp::create_device_and_queues(
+		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+
+	auto [swapchain, image_views] =
+		VulkanApp::create_swapchain(logger, physical_device, device, surface);
+
+	CHECK(swapchain);
+	CHECK(!image_views.empty());
+	WARN(image_views.size() == 2);
+
+	// Reuse swapchain
+	auto [new_swapchain, new_image_views] =
+		VulkanApp::create_swapchain(logger, physical_device, device, surface, std::move(swapchain));
+
+	CHECK(new_swapchain);
+	CHECK(!new_image_views.empty());
+	WARN(new_image_views.size() == 2);
 }

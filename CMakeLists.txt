@@ -80,7 +80,7 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
         # Do not continue on to run the application after running tests.
         --exit=true
         # Also report successful tests (useful due to volume of logging).
-        --success=true
+#        --success=true
     )
 
     if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
