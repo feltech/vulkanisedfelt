@@ -672,8 +672,7 @@ struct VulkanApp
 	}
 
 	/**
-	 * Get a list of all physical devices, sorted by most likely to be useful (discrete GPU,
-	 * ...).
+	 * Get a list of all physical devices.
 	 *
 	 * @param logger
 	 * @param instance
@@ -874,37 +873,6 @@ struct VulkanApp
 		return VkBool32{1};
 	}
 
-	/**
-	 * Create a window
-	 *
-	 * @param title The title of the window
-	 * @param width The width of the window
-	 * @param height The height of the window
-	 * @return The window
-	 */
-	static SDLWindowPtr create_window(char const * title, int const width, int const height)
-	{
-		// Initialize SDL
-		if (int const error_code = SDL_Init(SDL_INIT_VIDEO); error_code != 0)
-			throw std::runtime_error{std::format("Failed to initialize SDL: {}", SDL_GetError())};
-
-		// Initialize SDL_Vulkan
-		// if (const int error_code = SDL_Vulkan_LoadLibrary(nullptr); error_code != 0)
-		// 	throw std::runtime_error{
-		// 		std::format("Failed to initialize SDL_Vulkan: {}", SDL_GetError())};
-
-		SDL_Window * window = SDL_CreateWindow(
-			title,
-			SDL_WINDOWPOS_UNDEFINED,
-			SDL_WINDOWPOS_UNDEFINED,
-			width,
-			height,
-			SDL_WINDOW_VULKAN);
-		if (window == nullptr)
-			throw std::runtime_error{std::format("Failed to create window: {}", SDL_GetError())};
-
-		return make_window_ptr(window);
-	}
 
 	/**
 	 * Create VkInstance using given window and layers.
@@ -1194,6 +1162,38 @@ struct VulkanApp
 				}
 			}
 		}
+	}
+
+	/**
+	 * Create a window
+	 *
+	 * @param title The title of the window
+	 * @param width The width of the window
+	 * @param height The height of the window
+	 * @return The window
+	 */
+	static SDLWindowPtr create_window(char const * title, int const width, int const height)
+	{
+		// Initialize SDL
+		if (int const error_code = SDL_Init(SDL_INIT_VIDEO); error_code != 0)
+			throw std::runtime_error{std::format("Failed to initialize SDL: {}", SDL_GetError())};
+
+		// Initialize SDL_Vulkan
+		// if (const int error_code = SDL_Vulkan_LoadLibrary(nullptr); error_code != 0)
+		// 	throw std::runtime_error{
+		// 		std::format("Failed to initialize SDL_Vulkan: {}", SDL_GetError())};
+
+		SDL_Window * window = SDL_CreateWindow(
+			title,
+			SDL_WINDOWPOS_UNDEFINED,
+			SDL_WINDOWPOS_UNDEFINED,
+			width,
+			height,
+			SDL_WINDOW_VULKAN);
+		if (window == nullptr)
+			throw std::runtime_error{std::format("Failed to create window: {}", SDL_GetError())};
+
+		return make_window_ptr(window);
 	}
 };
 }  // namespace vulkandemo
