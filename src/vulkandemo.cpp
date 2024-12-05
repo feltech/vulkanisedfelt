@@ -2,6 +2,7 @@
 #include "vulkandemo.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -242,6 +243,38 @@ struct VulkanApp
 	}
 
 	/**
+	 * Given a list of physical devices, pick the first that has desired capabilities.
+	 *
+	 * @param logger
+	 * @param physical_devices
+	 * @param required_device_extensions
+	 * @param required_queue_capabilities
+	 * @return
+	 */
+	static std::tuple<VkPhysicalDevice, uint32_t> select_physical_device(
+		Logger const & logger,
+		std::vector<VkPhysicalDevice> const & physical_devices,
+		std::set<std::string_view> const & required_device_extensions,
+		VkQueueFlagBits const required_queue_capabilities)
+	{
+		for (VkPhysicalDevice physical_device : physical_devices)
+		{
+			auto const & filtered_device_extensions = filter_available_device_extensions(
+				logger, physical_device, required_device_extensions);
+			if (filtered_device_extensions.size() < required_device_extensions.size())
+				continue;
+			auto const & filtered_queue_families =
+				filter_available_queue_families(physical_device, required_queue_capabilities);
+			if (filtered_queue_families.empty())
+				continue;
+
+			return {physical_device, filtered_queue_families.front()};
+		}
+
+		throw std::runtime_error("Failed to find device with desired capabilities");
+	}
+
+	/**
 	 * Given a device and set of desired device extensions, filter to only those extensions that
 	 * are supported by the device.
 	 *
@@ -303,9 +336,6 @@ struct VulkanApp
 			return out;
 		}();
 
-		for (auto const & unavailable_extension : unavailable_extensions)
-			logger->warn("Requested extension is not available: {}", unavailable_extension);
-
 		if (logger->should_log(spdlog::level::debug))
 		{
 			// Log requested extensions and whether they are available.
@@ -332,57 +362,38 @@ struct VulkanApp
 	}
 
 	/**
-	 * Given a list of physical devices, pick the first that has a queue with desired
-	 * capabilities.
+	 * Filter queue families to find those with desired capabilities
 	 *
-	 * @param logger
-	 * @param physical_devices
-	 * @param desired_queue_capabilities
-	 * @return
+	 * @param physical_device Device to check queue families for
+	 * @param desired_queue_capabilities Required queue capabilities
+	 * @return Index of first matching queue family, or -1 if none found
 	 */
-	static std::tuple<VkPhysicalDevice, uint32_t> select_physical_device(
-		Logger const & logger,
-		std::vector<VkPhysicalDevice> const & physical_devices,
-		VkQueueFlagBits const desired_queue_capabilities)
+	static std::vector<uint32_t> filter_available_queue_families(
+		VkPhysicalDevice const & physical_device, VkQueueFlagBits const desired_queue_capabilities)
 	{
-		for (VkPhysicalDevice const & physical_device : physical_devices)
+		std::vector<VkQueueFamilyProperties> const queue_family_properties = [&]
 		{
-			std::vector<VkQueueFamilyProperties> const queue_family_properties = [&]
-			{
-				std::vector<VkQueueFamilyProperties> out;
-				uint32_t queue_family_count = 0;
-				vkGetPhysicalDeviceQueueFamilyProperties(
-					physical_device, &queue_family_count, nullptr);
-				out.resize(queue_family_count);
-				vkGetPhysicalDeviceQueueFamilyProperties(
-					physical_device, &queue_family_count, out.data());
-				return out;
-			}();
+			std::vector<VkQueueFamilyProperties> out;
+			uint32_t queue_family_count = 0;
+			vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
+			out.resize(queue_family_count);
+			vkGetPhysicalDeviceQueueFamilyProperties(
+				physical_device, &queue_family_count, out.data());
+			return out;
+		}();
 
-			if (auto iter = std::ranges::find_if(
-					queue_family_properties,
-					[desired_queue_capabilities](auto const & prop)
-					{ return (prop.queueFlags & desired_queue_capabilities) != 0U; });
-				iter != queue_family_properties.end())
-			{
-				auto queue_family_idx =
-					std::ranges::distance(cbegin(queue_family_properties), iter);
+		std::vector<uint32_t> matching_queue_family_idxs;
+		std::ranges::copy(
+			std::views::iota(uint32_t{0}, queue_family_properties.size()) |
+				std::views::filter(
+					[&](auto const idx)
+					{
+						return (queue_family_properties[idx].queueFlags &
+								desired_queue_capabilities) != 0U;
+					}),
+			back_inserter(matching_queue_family_idxs));
 
-				if (logger->should_log(spdlog::level::debug))
-				{
-					VkPhysicalDeviceProperties device_properties;
-					vkGetPhysicalDeviceProperties(physical_device, &device_properties);
-					logger->debug(
-						"Selected device: {} and queue {}",
-						device_properties.deviceName,
-						queue_family_idx);
-				}
-
-				return {physical_device, static_cast<uint32_t>(queue_family_idx)};
-			}
-		}
-
-		throw std::runtime_error("Failed to find device with desired queue capabilities");
+		return matching_queue_family_idxs;
 	}
 
 	/**
@@ -756,23 +767,11 @@ struct VulkanApp
 	 */
 	static void log_layer_info(
 		Logger const & logger,
+		// NOLINTNEXTLINE(*-easily-swappable-parameters)
 		std::set<std::string_view> const & desired_layer_names,
 		std::set<std::string_view> const & available_layer_names,
 		std::vector<VkLayerProperties> const & available_layer_descs)
 	{
-		// Get unavailable layers.
-		std::vector<std::string_view> const unavailable_layers = [&]
-		{
-			std::vector<std::string_view> out;
-			std::ranges::set_difference(
-				desired_layer_names, available_layer_names, std::back_inserter(out));
-			return out;
-		}();
-
-		// Warn on requested but unavailable layers.
-		for (auto const & layer_name : unavailable_layers)
-			logger->warn("Requested layer is not available: {}", layer_name);
-
 		if (logger->should_log(spdlog::level::debug))
 		{
 			// Log requested layers.
@@ -878,10 +877,6 @@ struct VulkanApp
 			return out;
 		}();
 
-		// Log unavailable extensions.
-		for (auto const & extension_name : unavailable_extensions)
-			logger->warn("Requested extension is not available: {}", extension_name);
-
 		log_instance_extensions_info(
 			logger, desired_extension_names, available_extension_names, available_extensions);
 
@@ -960,7 +955,8 @@ TEST_CASE("Create a Vulkan instance")
 		VulkanApp::create_window("", 0, 0),
 		VulkanApp::filter_available_layers(
 			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"}),
-		{});
+		VulkanApp::filter_available_instance_extensions(
+			logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, "some_unavailable_extension"}));
 	CHECK(instance);
 }
 
@@ -1004,47 +1000,55 @@ TEST_CASE("Enumerate devices")
 {
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Enumerate devices");
-	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
+
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
 
-	CHECK(!physical_devices.empty());
+	REQUIRE(!physical_devices.empty());
 
-	if (physical_devices.size() > 1)
-	{
-		VkPhysicalDeviceProperties first_device_properties;
-		vkGetPhysicalDeviceProperties(physical_devices[0], &first_device_properties);
-		// Should be sorted in order of GPU-first.
-		CHECK(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
-	}
+	VkPhysicalDeviceProperties first_device_properties;
+	vkGetPhysicalDeviceProperties(physical_devices.front(), &first_device_properties);
+	// Should be sorted in order of GPU-first.
+
+	WARN(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
+
+	std::vector<uint32_t> const available_queue_families =
+		VulkanApp::filter_available_queue_families(physical_devices.front(), VK_QUEUE_GRAPHICS_BIT);
+
+	CHECK(!available_queue_families.empty());
+
+	std::vector<std::string_view> const available_device_extensions =
+		VulkanApp::filter_available_device_extensions(
+			logger,
+			physical_devices.front(),
+			{VK_KHR_SWAPCHAIN_EXTENSION_NAME, "some_unsupported_extension"});
+
+	CHECK(available_device_extensions.size() == 1);
 }
 
 TEST_CASE("Select device with capability")
 {
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Select device with capability");
-	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, window, {}, {});
-	std::vector<VkPhysicalDevice> const physical_devices =
-		VulkanApp::enumerate_physical_devices(logger, instance);
+		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
 
-	auto [device, queue_family_idx] =
-		VulkanApp::select_physical_device(logger, physical_devices, VK_QUEUE_GRAPHICS_BIT);
+	auto [device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		VulkanApp::enumerate_physical_devices(logger, instance),
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		VK_QUEUE_GRAPHICS_BIT);
 
 	CHECK(device);
 	CHECK(queue_family_idx >= 0);
 
-	if (physical_devices.size() > 1)
-	{
-		// Get device type.
-		VkPhysicalDeviceProperties device_properties;
-		vkGetPhysicalDeviceProperties(device, &device_properties);
-		// Should be sorted in order of GPU-first.
-		CHECK(device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
-	}
+	// Get device type.
+	VkPhysicalDeviceProperties device_properties;
+	vkGetPhysicalDeviceProperties(device, &device_properties);
+	// Should be sorted in order of GPU-first.
+	WARN(device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
 }
 
 TEST_CASE("Create logical device with queues")
@@ -1052,20 +1056,21 @@ TEST_CASE("Create logical device with queues")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger =
 		vulkandemo::create_logger("Create logical device with queues");
-	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
-	auto [physical_device, queue_family_idx] =
-		VulkanApp::select_physical_device(logger, physical_devices, VK_QUEUE_GRAPHICS_BIT);
+
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger, physical_devices, {VK_KHR_SWAPCHAIN_EXTENSION_NAME}, VK_QUEUE_GRAPHICS_BIT);
+
 	constexpr uint32_t expected_queue_count = 2;
 
 	auto [device, queues] = VulkanApp::create_device_and_queues(
 		physical_device,
 		{{queue_family_idx, expected_queue_count}},
 		VulkanApp::filter_available_device_extensions(
-			logger, physical_device, {"VK_KHR_device_group", "some_unsupported_extension"}));
+			logger, physical_device, {VK_KHR_SWAPCHAIN_EXTENSION_NAME}));
 
 	CHECK(device);
 	// Check that the device has the expected number of queues.
