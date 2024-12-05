@@ -255,9 +255,11 @@ struct VulkanApp
 		Logger const & logger,
 		std::vector<VkPhysicalDevice> const & physical_devices,
 		std::set<std::string_view> const & required_device_extensions,
-		VkQueueFlagBits const required_queue_capabilities)
+		VkQueueFlagBits const required_queue_capabilities,
+		VkSurfaceKHR surface = nullptr)
 	{
-		for (VkPhysicalDevice physical_device : physical_devices)
+		for (VkPhysicalDevice physical_device :
+			 filter_physical_devices_for_surface_support(physical_devices, surface))
 		{
 			auto const & filtered_device_extensions = filter_available_device_extensions(
 				logger, physical_device, required_device_extensions);
@@ -394,6 +396,29 @@ struct VulkanApp
 			back_inserter(matching_queue_family_idxs));
 
 		return matching_queue_family_idxs;
+	}
+
+	static std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
+		std::vector<VkPhysicalDevice> const & physical_devices, VkSurfaceKHR surface)
+	{
+		if (surface == nullptr)
+			return physical_devices;
+
+		std::vector<VkPhysicalDevice> out;
+		std::ranges::copy(
+			physical_devices |
+				std::views::filter(
+					[&](VkPhysicalDevice const & physical_device)
+					{
+						VkBool32 surface_supported = VK_FALSE;
+						VK_CHECK(
+							vkGetPhysicalDeviceSurfaceSupportKHR(
+								physical_device, 0, surface, &surface_supported),
+							"Failed to check surface support");
+						return surface_supported == VK_TRUE;
+					}),
+			back_inserter(out));
+		return out;
 	}
 
 	/**
@@ -1000,8 +1025,10 @@ TEST_CASE("Enumerate devices")
 {
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Enumerate devices");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
@@ -1026,14 +1053,21 @@ TEST_CASE("Enumerate devices")
 			{VK_KHR_SWAPCHAIN_EXTENSION_NAME, "some_unsupported_extension"});
 
 	CHECK(available_device_extensions.size() == 1);
+
+	std::vector<VkPhysicalDevice> const physical_devices_with_surface_support =
+		VulkanApp::filter_physical_devices_for_surface_support(physical_devices, surface.get());
+
+	CHECK(!physical_devices_with_surface_support.empty());
 }
 
 TEST_CASE("Select device with capability")
 {
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Select device with capability");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
 	auto [device, queue_family_idx] = VulkanApp::select_physical_device(
 		logger,
@@ -1056,21 +1090,26 @@ TEST_CASE("Create logical device with queues")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger =
 		vulkandemo::create_logger("Create logical device with queues");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance =
-		VulkanApp::create_vulkan_instance(logger, VulkanApp::create_window("", 0, 0), {}, {});
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
 
 	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
-		logger, physical_devices, {VK_KHR_SWAPCHAIN_EXTENSION_NAME}, VK_QUEUE_GRAPHICS_BIT);
+		logger,
+		physical_devices,
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		VK_QUEUE_GRAPHICS_BIT,
+		surface.get());
 
 	constexpr uint32_t expected_queue_count = 2;
 
 	auto [device, queues] = VulkanApp::create_device_and_queues(
 		physical_device,
 		{{queue_family_idx, expected_queue_count}},
-		VulkanApp::filter_available_device_extensions(
-			logger, physical_device, {VK_KHR_SWAPCHAIN_EXTENSION_NAME}));
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME});
 
 	CHECK(device);
 	// Check that the device has the expected number of queues.
