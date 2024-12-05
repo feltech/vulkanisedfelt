@@ -6,8 +6,11 @@
 #include <format>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
+#include <ranges>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -16,6 +19,11 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
+#include <gsl/pointers>
+
 #include <doctest/doctest.h>
 
 #include <SDL.h>
@@ -23,8 +31,6 @@
 #include <SDL_stdinc.h>
 #include <SDL_video.h>
 #include <SDL_vulkan.h>
-#include <map>
-#include <ranges>
 
 #include <spdlog/common.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -54,6 +60,8 @@ Logger create_logger(const std::string & name)
 	logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%L] %v");
 #if SPDLOG_ACTIVE_LEVEL == SPDLOG_LEVEL_TRACE
 	logger->set_level(spdlog::level::trace);
+#elif SPDLOG_ACTIVE_LEVEL == SPDLOG_LEVEL_DEBUG
+	logger->set_level(spdlog::level::debug);
 #elif SPDLOG_ACTIVE_LEVEL == SPDLOG_LEVEL_INFO
 	logger->set_level(spdlog::level::info);
 #endif
@@ -68,7 +76,7 @@ void vulkandemo(Logger const & logger)
 struct VulkanApp
 {
 	using SDLWindowPtr = std::shared_ptr<SDL_Window>;
-	static std::shared_ptr<SDL_Window> make_window_ptr(SDL_Window * window)
+	static SDLWindowPtr make_window_ptr(SDL_Window * window)
 	{
 		return {
 			window,
@@ -120,9 +128,40 @@ struct VulkanApp
 			}};
 	}
 
+	using VulkanDebugMessengerPtr =
+		std::shared_ptr<std::remove_pointer_t<VkDebugUtilsMessengerEXT>>;
+	static VulkanDebugMessengerPtr make_debug_messenger_ptr(
+		VulkanInstancePtr instance,
+		gsl::owner<Logger *> const plogger,
+		// ReSharper disable once CppParameterMayBeConst
+		VkDebugUtilsMessengerEXT messenger)
+	{
+		auto const pvkDestroyDebugUtilsMessengerEXT =  // NOLINT(*-identifier-naming)
+													   // NOLINTNEXTLINE(*-reinterpret-cast)
+			reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+				vkGetInstanceProcAddr(instance.get(), "vkDestroyDebugUtilsMessengerEXT"));
+
+		assert(pvkDestroyDebugUtilsMessengerEXT);
+
+		return VulkanDebugMessengerPtr{
+			messenger,
+			[instance = std::move(instance),
+			 plogger,
+			 // NOLINTNEXTLINE(*-identifier-naming)
+			 pvkDestroyDebugUtilsMessengerEXT]
+			// ReSharper disable once CppParameterMayBeConst
+			(VkDebugUtilsMessengerEXT ptr)
+			{
+				if (ptr != nullptr)
+					pvkDestroyDebugUtilsMessengerEXT(instance.get(), ptr, nullptr);
+
+				delete plogger;
+			}};
+	}
+
 	/**
-	 * Given a physical device, desired queue types, and desired extensions, get a logical device
-	 * and corresponding queues.
+	 * Given a physical device, desired queue types, and desired extensions, get a logical
+	 * device and corresponding queues.
 	 *
 	 * @param physical_device
 	 * @param queue_family_and_counts
@@ -202,6 +241,15 @@ struct VulkanApp
 		return {make_device_ptr(device), std::move(queues)};
 	}
 
+	/**
+	 * Given a device and set of desired device extensions, filter to only those extensions that
+	 * are supported by the device.
+	 *
+	 * @param logger
+	 * @param physical_device
+	 * @param desired_device_extension_names
+	 * @return
+	 */
 	static std::vector<std::string_view> filter_available_device_extensions(
 		Logger const & logger,
 		// ReSharper disable once CppParameterMayBeConst
@@ -275,16 +323,17 @@ struct VulkanApp
 			}
 
 			// Log all available extensions.
-			logger->debug("Available device extensions:");
+			logger->trace("Available device extensions:");
 			for (auto const & extension_name : available_device_extension_names)
-				logger->debug("\t{}", extension_name);
+				logger->trace("\t{}", extension_name);
 		}
 
 		return extensions_to_enable;
 	}
 
 	/**
-	 * Given a list of physical devices, pick the first that has a queue with desired capabilities.
+	 * Given a list of physical devices, pick the first that has a queue with desired
+	 * capabilities.
 	 *
 	 * @param logger
 	 * @param physical_devices
@@ -337,7 +386,8 @@ struct VulkanApp
 	}
 
 	/**
-	 * Get a list of all physical devices, sorted by most likely to be useful (discrete GPU, ...).
+	 * Get a list of all physical devices, sorted by most likely to be useful (discrete GPU,
+	 * ...).
 	 *
 	 * @param logger
 	 * @param instance
@@ -356,6 +406,8 @@ struct VulkanApp
 			vkEnumeratePhysicalDevices(instance.get(), &device_count, physical_devices.data()),
 			"Failed to enumerate physical devices");
 		// Sort in order of discrete GPU, integrated GPU, virtual GPU, CPU, other.
+		// * Default order is already order of preference(?).
+		/*
 		std::ranges::sort(
 			physical_devices,
 			[&](VkPhysicalDevice const & lhs, VkPhysicalDevice const & rhs)
@@ -380,6 +432,7 @@ struct VulkanApp
 
 				return true;
 			});
+			*/
 
 		// Log device information.
 		if (logger->should_log(spdlog::level::debug))
@@ -412,6 +465,128 @@ struct VulkanApp
 				std::format("Failed to create Vulkan surface: {}", SDL_GetError())};
 
 		return make_surface_ptr(std::move(instance), surface);
+	}
+
+	/**
+	 * Create a debug log messenger for use with the VK_EXT_debug_utils extension.
+	 *
+	 * @param logger
+	 * @param instance
+	 * @return
+	 */
+	// ReSharper disable once CppParameterMayBeConst
+	static VulkanDebugMessengerPtr create_debug_messenger(Logger logger, VulkanInstancePtr instance)
+	{
+		// ReSharper disable once CppDFAMemoryLeak
+		// ReSharper disable once CppUseAuto
+		gsl::owner<Logger *> const plogger = new Logger(std::move(logger));	 // NOLINT(*-use-auto)
+
+		VkDebugUtilsMessengerCreateInfoEXT const messenger_create_info{
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+			// NOLINTBEGIN(*-signed-bitwise)
+			.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+				VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+				VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+			// NOLINTEND(*-signed-bitwise)
+			.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+				VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+			.pfnUserCallback = &VulkanApp::vulkan_debug_messenger_callback,
+			.pUserData = plogger};
+
+		auto const pvkCreateDebugUtilsMessengerEXT =  // NOLINT(*-identifier-naming)
+													  // NOLINTNEXTLINE(*-reinterpret-cast)
+			reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+				vkGetInstanceProcAddr(instance.get(), "vkCreateDebugUtilsMessengerEXT"));
+
+		if (pvkCreateDebugUtilsMessengerEXT == nullptr)
+			throw std::runtime_error{"Failed to load vkCreateDebugUtilsMessengerEXT"};
+
+		VkDebugUtilsMessengerEXT messenger = nullptr;
+		VK_CHECK(
+			pvkCreateDebugUtilsMessengerEXT(
+				instance.get(), &messenger_create_info, nullptr, &messenger),
+			"Failed to create Vulkan debug messenger");
+
+		return make_debug_messenger_ptr(std::move(instance), plogger, messenger);
+	}
+
+	/**
+	 * Callback to be called by the VK_EXT_debug_utils extension with log messages.
+	 *
+	 * @param message_severity
+	 * @param message_types
+	 * @param callback_data
+	 * @param user_data
+	 * @return
+	 */
+	static VkBool32 vulkan_debug_messenger_callback(
+		VkDebugUtilsMessageSeverityFlagBitsEXT const message_severity,
+		VkDebugUtilsMessageTypeFlagsEXT const message_types,
+		VkDebugUtilsMessengerCallbackDataEXT const * callback_data,
+		void * user_data)
+	{
+		Logger const & log = *static_cast<Logger *>(user_data);
+
+		// Short-circuit if logger is not interested.
+
+		if (!log->should_log(spdlog::level::info))
+			return VkBool32{0};
+
+		if (message_severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT &&
+			!log->should_log(spdlog::level::warn))
+			return VkBool32{0};
+
+		if (message_severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT &&
+			!log->should_log(spdlog::level::err))
+			return VkBool32{0};
+
+		// Construct message from provided data.
+		std::string const msg = std::format(
+			"Vulkan [{}]: Queues[{}] CmdBufs[{}] Objects[{}]: {}",
+			[message_types]
+			{
+				std::vector<std::string> type_strings;
+				if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
+					type_strings.emplace_back("GENERAL");
+				if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+					type_strings.emplace_back("VALIDATION");
+				if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+					type_strings.emplace_back("PERFORMANCE");
+				if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
+					type_strings.emplace_back("DEVICE_ADDRESS");
+				return fmt::format("{}", fmt::join(type_strings, "|"));
+			}(),
+			[&]
+			{
+				auto labels =
+					std::span{callback_data->pQueueLabels, callback_data->queueLabelCount} |
+					std::views::transform(&VkDebugUtilsLabelEXT::pLabelName);
+				return format("{}", fmt::join(labels, "|"));
+			}(),
+			[&]
+			{
+				auto labels =
+					std::span{callback_data->pCmdBufLabels, callback_data->cmdBufLabelCount} |
+					std::views::transform(&VkDebugUtilsLabelEXT::pLabelName);
+				return format("{}", fmt::join(labels, "|"));
+			}(),
+			[&]
+			{
+				auto names = std::span{callback_data->pObjects, callback_data->objectCount} |
+					std::views::transform(&VkDebugUtilsObjectNameInfoEXT::pObjectName);
+				return format("{}", fmt::join(names, "|"));
+			}(),
+			callback_data->pMessage);
+
+		// Log the message at appropriate severity level.
+		if (message_severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+			log->error(msg);
+		else if (message_severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+			log->warn(msg);
+		else
+			log->info(msg);
+
+		return VkBool32{1};
 	}
 
 	/**
@@ -449,12 +624,18 @@ struct VulkanApp
 	/**
 	 * Create VkInstance using given window and layers.
 	 *
+	 * @param logger
 	 * @param sdl_window
 	 * @param layers_to_enable
+	 * @param extensions_to_enable
 	 * @return
 	 */
 	static VulkanInstancePtr create_vulkan_instance(
-		SDLWindowPtr const & sdl_window, std::vector<char const *> const & layers_to_enable)
+		Logger const & logger,
+		SDLWindowPtr const & sdl_window,
+		// NOLINTNEXTLINE(*-easily-swappable-parameters)
+		std::vector<char const *> const & layers_to_enable,
+		std::vector<char const *> const & extensions_to_enable)
 	{
 		// Application metadata.
 		VkApplicationInfo const app_info = {
@@ -467,7 +648,7 @@ struct VulkanApp
 		};
 
 		// Get the available extensions from SDL
-		std::vector<char const *> const extensions = [&]
+		std::vector<char const *> sdl_extensions = [&]
 		{
 			std::vector<char const *> out;
 			uint32_t extension_count = 0;
@@ -477,13 +658,26 @@ struct VulkanApp
 			return out;
 		}();
 
+		// Merge additional extensions with SDL-provided extensions.
+		std::ranges::copy(
+			cbegin(extensions_to_enable),
+			cend(extensions_to_enable),
+			back_inserter(sdl_extensions));
+
+		// Log instance extensions.
+		if (logger->should_log(spdlog::level::debug))
+		{
+			logger->debug("Enabling instance extensions:");
+			for (auto const & extension : sdl_extensions) logger->debug("\t{}", extension);
+		}
+
 		VkInstanceCreateInfo const create_info = {
 			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			.pApplicationInfo = &app_info,
 			.enabledLayerCount = static_cast<uint32_t>(layers_to_enable.size()),
-			.ppEnabledLayerNames = layers_to_enable.empty() ? nullptr : layers_to_enable.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-			.ppEnabledExtensionNames = extensions.empty() ? nullptr : extensions.data(),
+			.ppEnabledLayerNames = layers_to_enable.data(),
+			.enabledExtensionCount = static_cast<uint32_t>(sdl_extensions.size()),
+			.ppEnabledExtensionNames = sdl_extensions.data(),
 		};
 
 		VkInstance instance = VK_NULL_HANDLE;
@@ -595,20 +789,139 @@ struct VulkanApp
 			}
 
 			// Log available layers.
-			if (!available_layer_descs.empty())
+			if (!available_layer_descs.empty() && logger->should_log(spdlog::level::trace))
 			{
-				logger->debug("Available layers:");
+				logger->trace("Available layers:");
 				for (auto const & [layerName, specVersion, implementationVersion, description] :
 					 available_layer_descs)
 				{
-					logger->debug(
+					logger->trace(
 						"\t{} (spec version: {}.{}.{}, implementation version: {})",
 						layerName,
 						VK_VERSION_MAJOR(specVersion),
 						VK_VERSION_MINOR(specVersion),
 						VK_VERSION_PATCH(specVersion),
 						implementationVersion);
-					logger->debug("\t\t{}", description);
+					logger->trace("\t\t{}", description);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Query available generic instance extensions vs. desired..
+	 *
+	 * @param logger
+	 * @param desired_extension_names
+	 * @return
+	 */
+	static std::vector<char const *> filter_available_instance_extensions(
+		Logger const & logger, std::set<std::string_view> const & desired_extension_names)
+	{
+		// Get available extensions.
+		std::vector<VkExtensionProperties> const available_extensions = []
+		{
+			std::vector<VkExtensionProperties> out;
+			uint32_t available_extensions_count = 0;
+			VK_CHECK(
+				vkEnumerateInstanceExtensionProperties(
+					nullptr, &available_extensions_count, nullptr),
+				"Failed to enumerate instance extensions");
+			out.resize(available_extensions_count);
+			VK_CHECK(
+				vkEnumerateInstanceExtensionProperties(
+					nullptr, &available_extensions_count, out.data()),
+				"Failed to enumerate instance extensions");
+
+			return out;
+		}();
+
+		// Extract extension names.
+		std::set<std::string_view> const available_extension_names = [&]
+		{
+			std::set<std::string_view> out;
+			std::ranges::transform(
+				available_extensions,
+				std::inserter(out, end(out)),
+				[](VkExtensionProperties const & extension_desc)
+				{
+					return std::string_view{
+						static_cast<char const *>(extension_desc.extensionName)};
+				});
+			return out;
+		}();
+
+		// Intersection of available extensions and desired extensions to return.
+		std::vector<char const *> extensions_to_enable = [&]
+		{
+			std::vector<std::string_view> extension_names;
+			extension_names.reserve(desired_extension_names.size());
+			std::ranges::set_intersection(
+				desired_extension_names,
+				available_extension_names,
+				std::back_inserter(extension_names));
+			std::vector<char const *> out;
+			out.reserve(extension_names.size());
+			std::ranges::transform(
+				extension_names,
+				std::back_inserter(out),
+				[](std::string_view const & name) { return name.data(); });
+			return out;
+		}();
+
+		// Get unavailable extension names.
+		std::vector<std::string_view> const unavailable_extensions = [&]
+		{
+			std::vector<std::string_view> out;
+			std::ranges::set_difference(
+				desired_extension_names, available_extension_names, std::back_inserter(out));
+			return out;
+		}();
+
+		// Log unavailable extensions.
+		for (auto const & extension_name : unavailable_extensions)
+			logger->warn("Requested extension is not available: {}", extension_name);
+
+		log_instance_extensions_info(
+			logger, desired_extension_names, available_extension_names, available_extensions);
+
+		return extensions_to_enable;
+	}
+
+	static void log_instance_extensions_info(
+		Logger const & logger,
+		// NOLINTNEXTLINE(*-easily-swappable-parameters)
+		std::set<std::string_view> const & desired_extension_names,
+		std::set<std::string_view> const & available_extension_names,
+		std::vector<VkExtensionProperties> const & available_extensions)
+	{
+		if (logger->should_log(spdlog::level::debug))
+		{
+			// Log requested extensions.
+			if (!desired_extension_names.empty())
+			{
+				logger->debug("Requested extensions:");
+				for (auto const & extension_name : desired_extension_names)
+				{
+					if (available_extension_names.contains(extension_name))
+						logger->debug("\t{} (available)", extension_name);
+					else
+						logger->debug("\t{} (unavailable)", extension_name);
+				}
+			}
+
+			// Log available extensions.
+			if (!available_extensions.empty() && logger->should_log(spdlog::level::trace))
+			{
+				logger->trace("Available extensions:");
+				for (auto const & [extensionName, specVersion] : available_extensions)
+				{
+					logger->trace(
+						"\t{} ({}.{}.{})",
+						extensionName,
+						VK_VERSION_MAJOR(specVersion),
+						VK_VERSION_MINOR(specVersion),
+						VK_VERSION_PATCH(specVersion));
 				}
 			}
 		}
@@ -643,10 +956,31 @@ TEST_CASE("Create a Vulkan instance")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Create a Vulkan instance");
 	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
+		logger,
 		VulkanApp::create_window("", 0, 0),
 		VulkanApp::filter_available_layers(
-			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"}));
+			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"}),
+		{});
 	CHECK(instance);
+}
+
+TEST_CASE("Create a Vulkan debug utils messenger")
+{
+	using vulkandemo::VulkanApp;
+	vulkandemo::Logger const logger =
+		vulkandemo::create_logger("Create a Vulkan debug utils messenger");
+
+	auto instance_extensions = VulkanApp::filter_available_instance_extensions(
+		logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+
+	REQUIRE(!instance_extensions.empty());
+
+	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
+		logger, VulkanApp::create_window("", 0, 0), {}, instance_extensions);
+	VulkanApp::VulkanDebugMessengerPtr messenger =
+		VulkanApp::create_debug_messenger(logger, std::move(instance));
+
+	CHECK(messenger);
 }
 
 TEST_CASE("Create a Vulkan surface")
@@ -654,7 +988,8 @@ TEST_CASE("Create a Vulkan surface")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Create a Vulkan surface");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
-	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(window, {});
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
 	VulkanApp::VulkanSurfacePtr surface = VulkanApp::create_surface(window, instance);
 	CHECK(surface);
 
@@ -670,7 +1005,8 @@ TEST_CASE("Enumerate devices")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Enumerate devices");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
-	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(window, {});
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
 
@@ -690,7 +1026,8 @@ TEST_CASE("Select device with capability")
 	using vulkandemo::VulkanApp;
 	vulkandemo::Logger const logger = vulkandemo::create_logger("Select device with capability");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
-	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(window, {});
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
 
@@ -716,7 +1053,8 @@ TEST_CASE("Create logical device with queues")
 	vulkandemo::Logger const logger =
 		vulkandemo::create_logger("Create logical device with queues");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
-	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(window, {});
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
 	std::vector<VkPhysicalDevice> const physical_devices =
 		VulkanApp::enumerate_physical_devices(logger, instance);
 	auto [physical_device, queue_family_idx] =

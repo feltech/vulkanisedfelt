@@ -14,6 +14,8 @@ option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" ON)
 find_package(doctest REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(spdlog REQUIRED)
+find_package(fmt REQUIRED)
+find_package(Microsoft.GSL REQUIRED)
 find_package(Vulkan REQUIRED)
 
 
@@ -38,13 +40,13 @@ set_target_properties(${_exe_target} PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(
     ${_exe_target}
     PRIVATE
-    doctest::doctest SDL2::SDL2 spdlog::spdlog Vulkan::Vulkan
+    doctest::doctest SDL2::SDL2 spdlog::spdlog fmt::fmt Microsoft.GSL::GSL Vulkan::Vulkan
 )
 
 target_compile_definitions(
     ${_exe_target}
     PRIVATE
-    SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_TRACE,SPDLOG_LEVEL_INFO>
+    SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_DEBUG,SPDLOG_LEVEL_INFO>
 )
 
 if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
@@ -77,6 +79,8 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
         ${_exe_target}
         # Do not continue on to run the application after running tests.
         --exit=true
+        # Also report successful tests (useful due to volume of logging).
+        --success=true
     )
 
     if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
