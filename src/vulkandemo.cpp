@@ -330,33 +330,35 @@ struct VulkanApp
 				"VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | "
 				"VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
 
-		// Construct swapchain create info.
-		VkSwapchainCreateInfoKHR const swapchain_create_info{
-			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = surface.get(),
-			.minImageCount = swapchain_image_count,
-			.imageFormat = format,
-			.imageColorSpace = color_space,
-			.imageExtent = surface_capabilities.currentExtent,
-			.imageArrayLayers = 1,
-			.imageUsage = usage,
-			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 0,
-			.pQueueFamilyIndices = nullptr,
-			.preTransform = surface_transform,
-			.compositeAlpha = composite_alpha,
-			.presentMode = present_mode,
-			.clipped = VK_TRUE,
-			.oldSwapchain = previous_swapchain.get()};
-
 		// Create swapchain.
-		VkSwapchainKHR pswapchain;
-		VK_CHECK(
-			vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &pswapchain),
-			"Failed to create swapchain");
+		VulkanSwapchainPtr const swapchain = [&]
+		{
+			VkSwapchainCreateInfoKHR const swapchain_create_info{
+				.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+				.surface = surface.get(),
+				.minImageCount = swapchain_image_count,
+				.imageFormat = format,
+				.imageColorSpace = color_space,
+				.imageExtent = surface_capabilities.currentExtent,
+				.imageArrayLayers = 1,
+				.imageUsage = usage,
+				.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+				.queueFamilyIndexCount = 0,
+				.pQueueFamilyIndices = nullptr,
+				.preTransform = surface_transform,
+				.compositeAlpha = composite_alpha,
+				.presentMode = present_mode,
+				.clipped = VK_TRUE,
+				.oldSwapchain = previous_swapchain.get()};
 
-		VulkanSwapchainPtr const swapchain = make_swapchain_ptr(device, pswapchain);
+			VkSwapchainKHR out;
+			VK_CHECK(
+				vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &out),
+				"Failed to create swapchain");
+			return make_swapchain_ptr(device, out);
+		}();
 
+		// Query raw images associated with swapchain.
 		std::vector<VkImage> const swapchain_images = [&]
 		{
 			uint32_t count = 0;
@@ -371,33 +373,40 @@ struct VulkanApp
 			return out;
 		}();
 
-		// Construct VkImageView create info.
-		VkImageViewCreateInfo image_view_create_info{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = nullptr,
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = format,
-			.components =
-				{VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY},
-			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+		// Construct image views.
+		std::vector<VulkanImageViewPtr> image_views = [&]
+		{
+			VkImageViewCreateInfo image_view_create_info{
+				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+				.image = nullptr,
+				.viewType = VK_IMAGE_VIEW_TYPE_2D,
+				.format = format,
+				.components =
+					{VK_COMPONENT_SWIZZLE_IDENTITY,
+					 VK_COMPONENT_SWIZZLE_IDENTITY,
+					 VK_COMPONENT_SWIZZLE_IDENTITY,
+					 VK_COMPONENT_SWIZZLE_IDENTITY},
+				.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
 
-		std::vector<VulkanImageViewPtr> image_views;
-		// Create an image view for each swapchain image.
-		std::ranges::transform(
-			swapchain_images,
-			std::back_inserter(image_views),
-			[&](VkImage image)
-			{
-				image_view_create_info.image = image;
-				VkImageView image_view;
-				VK_CHECK(
-					vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
-					"Failed to create image view");
-				return make_image_view_ptr(device, image_view);
-			});
+			std::vector<VulkanImageViewPtr> out;
+
+			// Create an image view for each swapchain image.
+			std::ranges::transform(
+				swapchain_images,
+				std::back_inserter(out),
+				[&](VkImage image)
+				{
+					image_view_create_info.image = image;
+					VkImageView image_view;
+					VK_CHECK(
+						vkCreateImageView(
+							device.get(), &image_view_create_info, nullptr, &image_view),
+						"Failed to create image view");
+					return make_image_view_ptr(device, image_view);
+				});
+
+			return out;
+		}();
 
 		return {std::move(swapchain), std::move(image_views)};
 	}
@@ -449,18 +458,22 @@ struct VulkanApp
 			return out;
 		}();
 
-		VkDeviceCreateInfo const device_create_info{
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
-			.pQueueCreateInfos = queue_create_infos.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(device_extension_cstr_names.size()),
-			.ppEnabledExtensionNames = device_extension_cstr_names.data(),
-		};
-
-		VkDevice device = nullptr;
-		VK_CHECK(
-			vkCreateDevice(physical_device, &device_create_info, nullptr, &device),
-			"Failed to create logical device");
+		// Create the device.
+		VkDevice device = [&]
+		{
+			VkDeviceCreateInfo const device_create_info{
+				.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+				.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
+				.pQueueCreateInfos = queue_create_infos.data(),
+				.enabledExtensionCount = static_cast<uint32_t>(device_extension_cstr_names.size()),
+				.ppEnabledExtensionNames = device_extension_cstr_names.data(),
+			};
+			VkDevice out;
+			VK_CHECK(
+				vkCreateDevice(physical_device, &device_create_info, nullptr, &out),
+				"Failed to create logical device");
+			return out;
+		}();
 
 		// Construct a map of queue family to vector of queues.
 		std::map<uint32_t, std::vector<VkQueue>> queues = [&]
@@ -740,7 +753,6 @@ struct VulkanApp
 	 * @param window
 	 * @param instance
 	 * @return
-	 *
 	 */
 	static VulkanSurfacePtr create_surface(SDLWindowPtr const & window, VulkanInstancePtr instance)
 	{
@@ -873,7 +885,6 @@ struct VulkanApp
 		return VkBool32{1};
 	}
 
-
 	/**
 	 * Create VkInstance using given window and layers.
 	 *
@@ -890,16 +901,6 @@ struct VulkanApp
 		std::vector<char const *> const & layers_to_enable,
 		std::vector<char const *> const & extensions_to_enable)
 	{
-		// Application metadata.
-		VkApplicationInfo const app_info = {
-			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.pApplicationName = SDL_GetWindowTitle(sdl_window.get()),
-			.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-			.pEngineName = SDL_GetWindowTitle(sdl_window.get()),
-			.engineVersion = VK_MAKE_VERSION(1, 0, 0),
-			.apiVersion = VK_API_VERSION_1_3,
-		};
-
 		// Get the available extensions from SDL
 		std::vector<char const *> sdl_extensions = [&]
 		{
@@ -924,6 +925,16 @@ struct VulkanApp
 			for (auto const & extension : sdl_extensions) logger->debug("\t{}", extension);
 		}
 
+		// Application metadata.
+		VkApplicationInfo const app_info = {
+			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+			.pApplicationName = SDL_GetWindowTitle(sdl_window.get()),
+			.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+			.pEngineName = SDL_GetWindowTitle(sdl_window.get()),
+			.engineVersion = VK_MAKE_VERSION(1, 0, 0),
+			.apiVersion = VK_API_VERSION_1_3,
+		};
+
 		VkInstanceCreateInfo const create_info = {
 			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			.pApplicationInfo = &app_info,
@@ -933,11 +944,10 @@ struct VulkanApp
 			.ppEnabledExtensionNames = sdl_extensions.data(),
 		};
 
-		VkInstance instance = VK_NULL_HANDLE;
-		VK_CHECK(
-			vkCreateInstance(&create_info, nullptr, &instance), "Failed to create Vulkan instance");
+		VkInstance out = nullptr;
+		VK_CHECK(vkCreateInstance(&create_info, nullptr, &out), "Failed to create Vulkan instance");
 
-		return make_instance_ptr(instance);
+		return make_instance_ptr(out);
 	}
 
 	/**
