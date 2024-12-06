@@ -936,7 +936,8 @@ struct VulkanApp
 
 		// Construct message from provided data.
 		std::string const msg = std::format(
-			"Vulkan [{}]: Queues[{}] CmdBufs[{}] Objects[{}]: {}",
+			"Vulkan [{}] [{}]: Queues[{}] CmdBufs[{}] Objects[{}]: {}",
+			callback_data->pMessageIdName,
 			[message_types]
 			{
 				std::vector<std::string> type_strings;
@@ -967,7 +968,13 @@ struct VulkanApp
 			[&]
 			{
 				auto names = std::span{callback_data->pObjects, callback_data->objectCount} |
-					std::views::transform(&VkDebugUtilsObjectNameInfoEXT::pObjectName);
+					std::views::transform(
+								 [](auto const & object_info)
+								 {
+									 if (object_info.pObjectName)
+										 return object_info.pObjectName;
+									 return string_VkObjectType(object_info.objectType);
+								 });
 				return format("{}", fmt::join(names, "|"));
 			}(),
 			callback_data->pMessage);
