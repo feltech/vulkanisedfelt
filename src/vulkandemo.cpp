@@ -205,6 +205,97 @@ struct VulkanApp
 			}};
 	}
 
+	using VulkanCommandPoolPtr = std::shared_ptr<std::remove_pointer_t<VkCommandPool>>;
+	static VulkanCommandPoolPtr make_command_pool_ptr(
+		VulkanDevicePtr device, VkCommandPool command_pool)
+	{
+		return VulkanCommandPoolPtr{
+			command_pool,
+			[device = std::move(device)](VkCommandPool ptr)
+			{
+				if (ptr != nullptr)
+					vkDestroyCommandPool(device.get(), ptr, nullptr);
+			}};
+	}
+
+	/**
+	 * RAII class for command buffers, which are allocated and deallocated as a batch, but are
+	 * accessed independently.
+	 */
+	class VulkanCommandBuffers
+	{
+		VulkanDevicePtr device_;
+		VulkanCommandPoolPtr pool_;
+		std::vector<VkCommandBuffer> buffers_;
+
+	public:
+		VulkanCommandBuffers(
+			VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> buffers)
+			: device_{std::move(device)}, pool_{std::move(pool)}, buffers_{std::move(buffers)}
+		{
+		}
+
+		// ReSharper disable once CppNonExplicitConversionOperator
+		explicit(false) operator std::vector<VkCommandBuffer> const &() const
+		{
+			return buffers_;
+		}
+		~VulkanCommandBuffers()
+		{
+			vkFreeCommandBuffers(device_.get(), pool_.get(), buffers_.size(), buffers_.data());
+		}
+	};
+
+	/**
+	 * Create a command buffer of primary level from a given pool.
+	 *
+	 * @param device
+	 * @param pool
+	 * @param count
+	 * @return
+	 */
+	static VulkanCommandBuffers create_primary_command_buffers(
+		VulkanDevicePtr device, VulkanCommandPoolPtr pool, uint32_t const count)
+	{
+		VkCommandBufferAllocateInfo const command_buffer_allocate_info{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.pNext = nullptr,
+			.commandPool = pool.get(),
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = count};
+
+		std::vector<VkCommandBuffer> buffers(count);
+		VK_CHECK(
+			vkAllocateCommandBuffers(device.get(), &command_buffer_allocate_info, buffers.data()),
+			"Failed to allocate command buffers");
+
+		return VulkanCommandBuffers{std::move(device), std::move(pool), std::move(buffers)};
+	}
+
+	/**
+	 * Create a command pool serving resettable command buffers for a given device queue family.
+	 *
+	 * @param device
+	 * @param queue_family_idx
+	 * @return
+	 */
+	static VulkanCommandPoolPtr create_command_pool(
+		VulkanDevicePtr device, uint32_t const queue_family_idx)
+	{
+		VkCommandPoolCreateInfo const command_pool_create_info{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+			.queueFamilyIndex = queue_family_idx};
+
+		VkCommandPool command_pool;
+		VK_CHECK(
+			vkCreateCommandPool(device.get(), &command_pool_create_info, nullptr, &command_pool),
+			"Failed to create command pool");
+
+		return make_command_pool_ptr(std::move(device), command_pool);
+	}
+
 	/**
 	 * Create a list of frame buffers, one-one mapped to a list of image views.
 	 *
@@ -231,6 +322,7 @@ struct VulkanApp
 			.flags = 0,
 			.renderPass = render_pass.get(),
 			.attachmentCount = 1,
+			// Width and height must be equal to or greater than the smallest image view.
 			.width = static_cast<uint32_t>(width),
 			.height = static_cast<uint32_t>(height),
 			.layers = 1	 // Non-stereoscopic
@@ -1664,4 +1756,36 @@ TEST_CASE("Create frame buffers")
 		VulkanApp::create_per_image_frame_buffers(window, device, render_pass, image_views);
 
 	CHECK(frame_buffers.size() == image_views.size());
+}
+
+TEST_CASE("Create command buffers")
+{
+	using vulkandemo::VulkanApp;
+	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create command buffers");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
+	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
+		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+	VulkanApp::VulkanDebugMessengerPtr messenger =
+		VulkanApp::create_debug_messenger(logger, instance);
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		VulkanApp::enumerate_physical_devices(logger, instance),
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		{},
+		surface.get());
+
+	auto [device, queues] = VulkanApp::create_device_and_queues(
+		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+
+	VulkanApp::VulkanCommandPoolPtr const command_pool =
+		VulkanApp::create_command_pool(device, queue_family_idx);
+
+	CHECK(command_pool);
+
+	VulkanApp::VulkanCommandBuffers const command_buffer =
+		VulkanApp::create_primary_command_buffers(device, command_pool, 2);
+
+	CHECK(static_cast<std::vector<VkCommandBuffer> const &>(command_buffer).size() == 2);
 }
