@@ -179,6 +179,78 @@ struct VulkanApp
 			}};
 	}
 
+	using VulkanRenderPassPtr = std::shared_ptr<std::remove_pointer_t<VkRenderPass>>;
+	static VulkanRenderPassPtr make_render_pass_ptr(
+		VulkanDevicePtr device, VkRenderPass render_pass)
+	{
+		return VulkanRenderPassPtr{
+			render_pass,
+			[device = std::move(device)](VkRenderPass ptr)
+			{
+				if (ptr != nullptr)
+					vkDestroyRenderPass(device.get(), ptr, nullptr);
+			}};
+	}
+
+	/**
+	 * Create a simple render pass of a single subpass that hosts a single color attachment whose
+	 * final layout is appropriate for presentation on a surface.
+	 *
+	 * @param surface_format
+	 * @param device
+	 * @return
+	 */
+	static VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
+		VkFormat surface_format, VulkanDevicePtr const & device)
+	{
+		// Create color attachment.
+		VkAttachmentDescription const color_attachment{
+			.format = surface_format,
+			.samples = VK_SAMPLE_COUNT_1_BIT,
+			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,  // Store after the pass so we can present it.
+			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+			.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR};
+
+		constexpr VkAttachmentReference color_attachment_ref{
+			.attachment = 0, .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+		VkSubpassDescription const subpass{
+			.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &color_attachment_ref};
+
+		// Dependency to ensure all drawing operations on the attachment from previous render passes
+		// have finished before this subpass begins.
+		constexpr VkSubpassDependency subpass_external_dependency{
+			.srcSubpass = VK_SUBPASS_EXTERNAL,
+			.dstSubpass = 0,
+			.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = 0,
+			.dstAccessMask =
+				VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+			.dependencyFlags = 0};
+
+		VkRenderPassCreateInfo const render_pass_create_info{
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+			.attachmentCount = 1,
+			.pAttachments = &color_attachment,
+			.subpassCount = 1,
+			.pSubpasses = &subpass,
+			.dependencyCount = 1,
+			.pDependencies = &subpass_external_dependency};
+
+		// Create the render pass.
+		VkRenderPass out;
+		VK_CHECK(
+			vkCreateRenderPass(device.get(), &render_pass_create_info, nullptr, &out),
+			"Failed to create render pass");
+		return make_render_pass_ptr(device, out);
+	}
+
 	/**
 	 * Create swapchain and (double-buffer) image views for given device.
 	 *
@@ -671,7 +743,7 @@ struct VulkanApp
 					[&](auto const idx)
 					{
 						return (queue_family_properties[idx].queueFlags &
-								desired_queue_capabilities) != 0U;
+								desired_queue_capabilities) == desired_queue_capabilities;
 					}),
 			back_inserter(matching_queue_family_idxs));
 
@@ -1436,4 +1508,28 @@ TEST_CASE("Create swapchain")
 	CHECK(new_swapchain);
 	CHECK(!new_image_views.empty());
 	WARN(new_image_views.size() == 2);
+}
+
+TEST_CASE("Create render pass")
+{
+	using vulkandemo::VulkanApp;
+	vulkandemo::Logger const logger = vulkandemo::create_logger("Create render pass");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
+	VulkanApp::VulkanInstancePtr const instance =
+		VulkanApp::create_vulkan_instance(logger, window, {}, {});
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+	std::vector<VkPhysicalDevice> const physical_devices =
+		VulkanApp::enumerate_physical_devices(logger, instance);
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger, physical_devices, {}, VkQueueFlagBits{}, surface.get());
+	auto [device, queues] = VulkanApp::create_device_and_queues(physical_device, {}, {});
+	std::vector<VkSurfaceFormatKHR> const available_formats =
+		VulkanApp::filter_available_surface_formats(
+			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
+	REQUIRE(!available_formats.empty());
+	auto const [format, color_space] = available_formats.front();
+
+	auto render_pass = VulkanApp::create_single_presentation_subpass_render_pass(format, device);
+
+	CHECK(render_pass);
 }
