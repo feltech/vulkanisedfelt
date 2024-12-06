@@ -246,6 +246,45 @@ struct VulkanApp
 		}
 	};
 
+	static_assert(std::is_convertible_v<VulkanCommandBuffers, std::vector<VkCommandBuffer>>);
+
+	using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
+	static VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore)
+	{
+		return VulkanSemaphorePtr{
+			semaphore,
+			[device = std::move(device)](VkSemaphore ptr)
+			{
+				if (ptr != nullptr)
+					vkDestroySemaphore(device.get(), ptr, nullptr);
+			}};
+	}
+
+	/**
+	 * Create an arbitrary (but statically known) number of semaphores.
+	 *
+	 * @tparam count
+	 * @param device 
+	 * @return 
+	 */
+	template <std::size_t count>
+	static std::array<VulkanSemaphorePtr, count> create_semaphores(VulkanDevicePtr const & device)
+	{
+		constexpr VkSemaphoreCreateInfo semaphore_create_info{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr};
+
+		std::array<VkSemaphore, count> semaphores;
+		for (std::size_t idx = 0; idx < count; ++idx)
+			vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &semaphores[idx]);
+
+		std::array<VulkanSemaphorePtr, count> out;
+		std::ranges::transform(
+			semaphores,
+			out.begin(),
+			[&device](VkSemaphore semaphore) { return make_semaphore_ptr(device, semaphore); });
+		return out;
+	}
+
 	/**
 	 * Create a command buffer of primary level from a given pool.
 	 *
@@ -1788,4 +1827,32 @@ TEST_CASE("Create command buffers")
 		VulkanApp::create_primary_command_buffers(device, command_pool, 2);
 
 	CHECK(static_cast<std::vector<VkCommandBuffer> const &>(command_buffer).size() == 2);
+}
+
+TEST_CASE("Create semaphores")
+{
+	using vulkandemo::VulkanApp;
+	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create semaphores");
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
+	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
+		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+	VulkanApp::VulkanDebugMessengerPtr messenger =
+		VulkanApp::create_debug_messenger(logger, instance);
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		VulkanApp::enumerate_physical_devices(logger, instance),
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		{},
+		surface.get());
+
+	auto [device, queues] = VulkanApp::create_device_and_queues(
+		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+
+	auto const [semaphore1, semaphore2, semaphore3] = VulkanApp::create_semaphores<3>(device);
+
+	CHECK(semaphore1);
+	CHECK(semaphore2);
+	CHECK(semaphore3);
 }
