@@ -7,8 +7,8 @@
 namespace vulkandemo
 {
 
-using Logger = std::shared_ptr<spdlog::logger>;
-Logger create_logger(const std::string & name = "console");
+using LoggerPtr = std::shared_ptr<spdlog::logger>;
+LoggerPtr create_logger(const std::string & name = "console");
 
-void vulkandemo(const Logger& logger);
+void vulkandemo(const LoggerPtr& logger);
 }  // namespace vulkandemo

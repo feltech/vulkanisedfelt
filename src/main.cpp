@@ -17,7 +17,7 @@ int main(const int argc, char ** argv)
 	if (context.shouldExit())  // i.e. --exit
 		return res;
 
-	vulkandemo::Logger const logger = vulkandemo::create_logger();
+	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger();
 	try
 	{
 		vulkandemo::vulkandemo(logger);
