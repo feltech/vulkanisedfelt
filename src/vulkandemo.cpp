@@ -188,15 +188,17 @@ struct VulkanApp
 	 * @param physical_device
 	 * @param device
 	 * @param surface
+	 * @param surface_format
 	 * @param previous_swapchain
 	 * @return
 	 */
 	static std::tuple<VulkanSwapchainPtr, std::vector<VulkanImageViewPtr>> create_swapchain(
 		Logger const & logger,
 		VkPhysicalDevice physical_device,
-		VulkanDevicePtr device,
+		VulkanDevicePtr const & device,
 		VulkanSurfacePtr const & surface,
-		VulkanSwapchainPtr previous_swapchain = nullptr)
+		VkSurfaceFormatKHR const surface_format,
+		VulkanSwapchainPtr const & previous_swapchain = nullptr)
 	{
 		if (logger->should_log(spdlog::level::debug))
 		{
@@ -273,49 +275,6 @@ struct VulkanApp
 		if (surface_capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max())
 			throw std::runtime_error{"Surface size is undefined"};
 
-		// Get available surface formats.
-		std::vector<VkSurfaceFormatKHR> const surface_formats = [&]
-		{
-			uint32_t count = 0;
-			VK_CHECK(
-				vkGetPhysicalDeviceSurfaceFormatsKHR(
-					physical_device, surface.get(), &count, nullptr),
-				"Failed to get surface format count");
-
-			std::vector<VkSurfaceFormatKHR> out(count);
-			VK_CHECK(
-				vkGetPhysicalDeviceSurfaceFormatsKHR(
-					physical_device, surface.get(), &count, out.data()),
-				"Failed to get surface formats");
-			return out;
-		}();
-
-		// Log surface formats at debug level.
-		if (logger->should_log(spdlog::level::debug))
-		{
-			std::vector<std::string_view> const surface_format_names = [&]
-			{
-				std::vector<std::string_view> out;
-				std::ranges::transform(
-					surface_formats,
-					std::back_inserter(out),
-					[](VkSurfaceFormatKHR surface_format)
-					{ return string_VkFormat(surface_format.format); });
-				return out;
-			}();
-
-			logger->debug("\tAvailable surface formats: {}", fmt::join(surface_format_names, ", "));
-		}
-
-		// Choose 8bit RGBA, or throw.
-		auto const [format, color_space] = [&]
-		{
-			for (auto const & surface_format : surface_formats)
-				if (surface_format.format == VK_FORMAT_B8G8R8A8_UNORM)
-					return surface_format;
-			throw std::runtime_error{"VK_FORMAT_B8G8R8A8_UNORM unavailable"};
-		}();
-
 		// Choose opaque composite alpha mode, or throw.
 		constexpr VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 		if ((surface_capabilities.supportedCompositeAlpha & composite_alpha) == 0U)
@@ -337,8 +296,8 @@ struct VulkanApp
 				.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
 				.surface = surface.get(),
 				.minImageCount = swapchain_image_count,
-				.imageFormat = format,
-				.imageColorSpace = color_space,
+				.imageFormat = surface_format.format,
+				.imageColorSpace = surface_format.colorSpace,
 				.imageExtent = surface_capabilities.currentExtent,
 				.imageArrayLayers = 1,
 				.imageUsage = usage,
@@ -378,9 +337,9 @@ struct VulkanApp
 		{
 			VkImageViewCreateInfo image_view_create_info{
 				.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				.image = nullptr,
+				.image = nullptr,  // Will be updated per-image, see below.
 				.viewType = VK_IMAGE_VIEW_TYPE_2D,
-				.format = format,
+				.format = surface_format.format,
 				.components =
 					{VK_COMPONENT_SWIZZLE_IDENTITY,
 					 VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -459,7 +418,7 @@ struct VulkanApp
 		}();
 
 		// Create the device.
-		VkDevice device = [&]
+		VkDevice const device = [&]
 		{
 			VkDeviceCreateInfo const device_create_info{
 				.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -479,10 +438,8 @@ struct VulkanApp
 		std::map<uint32_t, std::vector<VkQueue>> queues = [&]
 		{
 			std::map<uint32_t, std::vector<VkQueue>> out;
-			for (auto const & queue_family_and_count : queue_family_and_counts)
+			for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 			{
-				auto const [queue_family_idx, queue_count] = queue_family_and_count;
-
 				for (uint32_t queue_idx = 0; queue_idx < queue_count; ++queue_idx)
 				{
 					VkQueue queue = nullptr;
@@ -494,6 +451,75 @@ struct VulkanApp
 		}();
 
 		return {make_device_ptr(device), std::move(queues)};
+	}
+
+	/**
+	 * Given some desired image/surface formats (e.g. VK_FORMAT_B8G8R8_UNORM), filter to only those
+	 * suppored by the device and surface.
+	 *
+	 * Will preserve ordering, so that @p desired_formats can be in priority order.
+	 *
+	 * @param logger
+	 * @param physical_device
+	 * @param surface
+	 * @param desired_formats
+	 * @return
+	 */
+	static std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
+		Logger const & logger,
+		VkPhysicalDevice physical_device,
+		VulkanSurfacePtr const & surface,
+		std::vector<VkFormat> desired_formats)
+	{
+		// Get available surface formats.
+		std::vector<VkSurfaceFormatKHR> const available_surface_formats = [&]
+		{
+			uint32_t count = 0;
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfaceFormatsKHR(
+					physical_device, surface.get(), &count, nullptr),
+				"Failed to get surface format count");
+
+			std::vector<VkSurfaceFormatKHR> out(count);
+			VK_CHECK(
+				vkGetPhysicalDeviceSurfaceFormatsKHR(
+					physical_device, surface.get(), &count, out.data()),
+				"Failed to get surface formats");
+			return out;
+		}();
+
+		std::vector<VkSurfaceFormatKHR> filtered_surface_formats;
+		for (auto const & available_surface_format : available_surface_formats)
+			if (std::ranges::contains(desired_formats, available_surface_format.format))
+				filtered_surface_formats.push_back(available_surface_format);
+
+		// Log surface formats at debug level.
+		if (logger->should_log(spdlog::level::debug))
+		{
+			// Log availability of desired formats.
+			for (VkFormat const desired_format : desired_formats)
+			{
+				if (std::ranges::contains(
+						filtered_surface_formats |
+							std::views::transform(&VkSurfaceFormatKHR::format),
+						desired_format))
+					logger->debug(
+						"Requested surface format: {} (available)",
+						string_VkFormat(desired_format));
+				else
+					logger->debug(
+						"Requested surface format: {} (unavailable)",
+						string_VkFormat(desired_format));
+			}
+
+			for (auto const & [format, color_space] : available_surface_formats)
+				logger->debug(
+					"\tAvailable surface format: {} {}",
+					string_VkFormat(format),
+					string_VkColorSpaceKHR(color_space));
+		}
+
+		return filtered_surface_formats;
 	}
 
 	/**
@@ -622,7 +648,7 @@ struct VulkanApp
 	 *
 	 * @param physical_device Device to check queue families for
 	 * @param desired_queue_capabilities Required queue capabilities
-	 * @return Index of first matching queue family, or -1 if none found
+	 * @return
 	 */
 	static std::vector<uint32_t> filter_available_queue_families(
 		VkPhysicalDevice const & physical_device, VkQueueFlagBits const desired_queue_capabilities)
@@ -1120,15 +1146,6 @@ struct VulkanApp
 			return out;
 		}();
 
-		// Get unavailable extension names.
-		std::vector<std::string_view> const unavailable_extensions = [&]
-		{
-			std::vector<std::string_view> out;
-			std::ranges::set_difference(
-				desired_extension_names, available_extension_names, std::back_inserter(out));
-			return out;
-		}();
-
 		log_instance_extensions_info(
 			logger, desired_extension_names, available_extension_names, available_extensions);
 
@@ -1397,16 +1414,24 @@ TEST_CASE("Create swapchain")
 	auto [device, queues] = VulkanApp::create_device_and_queues(
 		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
 
+	std::vector<VkSurfaceFormatKHR> const available_formats =
+		VulkanApp::filter_available_surface_formats(
+			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
+
+	REQUIRE(!available_formats.empty());
+
+	VkSurfaceFormatKHR const surface_format = available_formats.front();
+
 	auto [swapchain, image_views] =
-		VulkanApp::create_swapchain(logger, physical_device, device, surface);
+		VulkanApp::create_swapchain(logger, physical_device, device, surface, surface_format);
 
 	CHECK(swapchain);
 	CHECK(!image_views.empty());
 	WARN(image_views.size() == 2);
 
 	// Reuse swapchain
-	auto [new_swapchain, new_image_views] =
-		VulkanApp::create_swapchain(logger, physical_device, device, surface, std::move(swapchain));
+	auto [new_swapchain, new_image_views] = VulkanApp::create_swapchain(
+		logger, physical_device, device, surface, surface_format, std::move(swapchain));
 
 	CHECK(new_swapchain);
 	CHECK(!new_image_views.empty());
