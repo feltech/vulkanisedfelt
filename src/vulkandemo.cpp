@@ -286,6 +286,39 @@ struct VulkanApp
 	}
 
 	/**
+	 * Acquire next swapchain image, returning empty optional if the swapchain is out of date and
+	 * needs re-creating.
+	 *
+	 * @param device
+	 * @param swapchain
+	 * @param semaphore
+	 * @return
+	 */
+	static std::optional<uint32_t> acquire_next_swapchain_image(
+		VulkanDevicePtr const & device,
+		VulkanSwapchainPtr const & swapchain,
+		VulkanSemaphorePtr const & semaphore)
+	{
+		uint32_t out = 0;
+		VkResult const result = vkAcquireNextImageKHR(
+			device.get(),
+			swapchain.get(),
+			std::numeric_limits<uint64_t>::max(),
+			semaphore.get(),
+			nullptr,
+			&out);
+
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+			return std::nullopt;
+
+		if (result != VK_SUCCESS)
+			throw std::runtime_error{
+				std::format("Failed to acquire next swapchain image: {}", string_VkResult(result))};
+
+		return out;
+	}
+
+	/**
 	 * Create a command buffer of primary level from a given pool.
 	 *
 	 * @param device
@@ -353,7 +386,7 @@ struct VulkanApp
 		// Get window surface width and height.
 		int width = 0;
 		int height = 0;
-		SDL_GetWindowSize(window.get(), &width, &height);
+		SDL_Vulkan_GetDrawableSize(window.get(), &width, &height);
 
 		VkFramebufferCreateInfo frame_buffer_create_info{
 			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -1855,4 +1888,61 @@ TEST_CASE("Create semaphores")
 	CHECK(semaphore1);
 	CHECK(semaphore2);
 	CHECK(semaphore3);
+}
+
+TEST_CASE("Acquire swapchain image")
+{
+	using vulkandemo::VulkanApp;
+
+	static int test_num = 0;
+	++test_num;
+	vulkandemo::LoggerPtr const logger =
+		vulkandemo::create_logger(std::format("Acquire swapchain image {}", test_num));
+
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 10, 10);
+	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
+		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+	VulkanApp::VulkanDebugMessengerPtr messenger =
+		VulkanApp::create_debug_messenger(logger, instance);
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		VulkanApp::enumerate_physical_devices(logger, instance),
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		{},
+		surface.get());
+
+	auto [device, queues] = VulkanApp::create_device_and_queues(
+		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+
+	std::vector<VkSurfaceFormatKHR> const available_formats =
+		VulkanApp::filter_available_surface_formats(
+			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
+
+	auto [swapchain, image_views] = VulkanApp::create_double_buffer_swapchain(
+		logger, physical_device, device, surface, available_formats.at(0));
+
+	auto const [image_available_semaphore] = VulkanApp::create_semaphores<1>(device);
+
+	SUBCASE("Acquire successful")
+	{
+		auto const image_idx =
+			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+
+		REQUIRE(image_idx);
+		CHECK(*image_idx == 0);
+	}
+
+	// TODO(DF): Figure out how to simulate this.
+	// SUBCASE("Acquire out of date")
+	// {
+	// 	// Resize window.
+	// 	SDL_SetWindowSize(window.get(), 1, 1);
+	// 	SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+	//
+	// 	auto const image_idx =
+	// 		VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+	//
+	// 	CHECK(!image_idx);
+	// }
 }
