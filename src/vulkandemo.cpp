@@ -533,16 +533,25 @@ struct VulkanApp
 			return out;
 		}();
 
+		// Static queue priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
+		// create a single array sized to the largest queue count. Array must exist until after
+		// vkCreateDevice.
+		std::vector const queue_priorities(
+			std::ranges::max(
+				queue_family_and_counts |
+				std::views::transform([](auto const & family_and_count)
+									  { return family_and_count.second; })),
+			1.0F);
+
 		std::vector<VkDeviceQueueCreateInfo> const queue_create_infos = [&]
 		{
 			std::vector<VkDeviceQueueCreateInfo> out;
 			std::ranges::transform(
 				queue_family_and_counts,
 				back_inserter(out),
-				[](auto const & queue_family_and_count)
+				[&](auto const & queue_family_and_count)
 				{
 					auto const [queue_family_idx, queue_count] = queue_family_and_count;
-					std::vector<float> const queue_priorities(1.0F, queue_count);
 
 					VkDeviceQueueCreateInfo queue_create_info{
 						.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
