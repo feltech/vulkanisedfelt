@@ -5,9 +5,12 @@
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
 
+#include <spdlog/spdlog.h>
+
+#include "Logger.hpp"
 #include "vulkandemo.hpp"
 
-int main(const int argc, char ** argv)
+int main(int const argc, char ** argv)
 {
 	doctest::Context context;
 	context.applyCommandLine(argc, argv);

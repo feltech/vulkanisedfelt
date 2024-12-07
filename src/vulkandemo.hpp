@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright 2024 David Feltell
 #pragma once
-#include <memory>
 
-#include <spdlog/logger.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
+#include "Logger.hpp"
 
 namespace vulkandemo
 {
-
-using LoggerPtr = std::shared_ptr<spdlog::logger>;
-LoggerPtr create_logger(const std::string & name = "console");
-
-void vulkandemo(const LoggerPtr& logger);
-}  // namespace vulkandemo
+void vulkandemo(LoggerPtr const & logger);
+}

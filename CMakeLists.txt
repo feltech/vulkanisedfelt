@@ -24,7 +24,14 @@ find_package(Vulkan REQUIRED)
 
 set(_exe_target vulkandemo)
 
-add_executable(${_exe_target} src/vulkandemo.cpp src/main.cpp)
+add_executable(
+    ${_exe_target}
+    src/VulkanApp.cpp
+    src/Logger.cpp
+    src/vulkandemo.cpp
+    src/vulkandemo.hpp
+    src/main.cpp
+)
 
 install(
     TARGETS ${_exe_target}
@@ -80,7 +87,7 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
         # Do not continue on to run the application after running tests.
         --exit=true
         # Also report successful tests (useful due to volume of logging).
-#        --success=true
+        #        --success=true
     )
 
     if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
