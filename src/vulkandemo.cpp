@@ -240,6 +240,10 @@ struct VulkanApp
 		{
 			return buffers_;
 		}
+		std::vector<VkCommandBuffer> const & as_vector() const
+		{
+			return buffers_;
+		}
 		~VulkanCommandBuffers()
 		{
 			vkFreeCommandBuffers(device_.get(), pool_.get(), buffers_.size(), buffers_.data());
@@ -261,28 +265,152 @@ struct VulkanApp
 	}
 
 	/**
-	 * Create an arbitrary (but statically known) number of semaphores.
+	 * Enqueue image presentation.
+	 *
+	 * Queue must support presentation, see vkGetPhysicalDeviceSurfaceSupportKHR.
+	 *
+	 * @param queue
+	 * @param swapchain
+	 * @param image_idx
+	 * @param wait_semaphore
+	 * @return
+	 */
+	static bool submit_present_image_cmd(
+		VkQueue queue,
+		VulkanSwapchainPtr const & swapchain,
+		uint32_t const image_idx,
+		VulkanSemaphorePtr const & wait_semaphore)
+	{
+		VkSwapchainKHR swapchain_handle = swapchain.get();
+		VkSemaphore wait_semaphore_handle = wait_semaphore.get();
+
+		VkPresentInfoKHR const present_info{
+			.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+			.pNext = nullptr,
+			.waitSemaphoreCount = wait_semaphore_handle != nullptr,
+			.pWaitSemaphores = &wait_semaphore_handle,
+			.swapchainCount = 1,
+			.pSwapchains = &swapchain_handle,
+			.pImageIndices = &image_idx,
+			.pResults = nullptr};
+
+		// Attempt to add commands to present image, returning false if out of date or suboptimal.
+		VkResult const result = vkQueuePresentKHR(queue, &present_info);
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+			return false;
+		if (result != VK_SUCCESS)
+			throw std::runtime_error{
+				std::format("Failed to present image: {}", string_VkResult(result))};
+		return true;
+	}
+
+	/**
+	 * Submit a single command buffer to a queue, with a single wait/signal semaphore pair.
+	 *
+	 * @param queue
+	 * @param command_buffer
+	 * @param wait_semaphore
+	 * @param signal_semaphore
+	 */
+	static void submit_command_buffer(
+		VkQueue queue,
+		VkCommandBuffer command_buffer,
+		VulkanSemaphorePtr const & wait_semaphore,
+		VulkanSemaphorePtr const & signal_semaphore)
+	{
+		// Pipeline stage(s) to associate with wait_semaphore. Ensure dependent operations do not
+		// start at this stage of the pipeline until the semaphore is signaled.
+		VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+		VkSemaphore wait_semaphore_handle = wait_semaphore.get();
+		VkSemaphore signal_semaphore_handle = signal_semaphore.get();
+
+		// Submit command buffers to queue.
+		VkSubmitInfo const submit_info{
+			.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+			.pNext = nullptr,
+			.waitSemaphoreCount = wait_semaphore_handle != nullptr,
+			.pWaitSemaphores = &wait_semaphore_handle,
+			.pWaitDstStageMask = &wait_dst_stage,
+			.commandBufferCount = 1,
+			.pCommandBuffers = &command_buffer,
+			.signalSemaphoreCount = signal_semaphore_handle != nullptr,
+			.pSignalSemaphores = &signal_semaphore_handle};
+
+		VK_CHECK(
+			vkQueueSubmit(queue, 1, &submit_info, nullptr),
+			"Failed to submit command buffer to queue");
+	}
+
+	/**
+	 * Populate a command buffer with a render pass that simply clears the frame buffer.
+	 *
+	 * @param command_buffer
+	 * @param render_pass
+	 * @param frame_buffer
+	 * @param extent
+	 * @param clear_colour
+	 */
+	static void populate_cmd_render_pass(
+		VkCommandBuffer command_buffer,
+		VulkanRenderPassPtr const & render_pass,
+		VulkanFramebufferPtr const & frame_buffer,
+		VkExtent2D const extent,
+		std::array<float, 4> const & clear_colour)
+	{
+		VkClearValue clear_value{.color = {.float32 = *clear_colour.data()}};
+
+		constexpr VkCommandBufferBeginInfo command_buffer_begin_info{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.pNext = nullptr,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+			.pInheritanceInfo = nullptr};
+		VK_CHECK(
+			vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info),
+			"Failed to begin command buffer");
+
+		VkRenderPassBeginInfo const render_pass_begin_info{
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+			.pNext = nullptr,
+			.renderPass = render_pass.get(),
+			.framebuffer = frame_buffer.get(),
+			.renderArea = {.offset = {.x = 0, .y = 0}, .extent = extent},
+			.clearValueCount = 1,
+			.pClearValues = &clear_value};
+		vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+		VkViewport const viewport{
+			.x = 0,
+			.y = 0,
+			.width = static_cast<float>(extent.width),
+			.height = static_cast<float>(extent.height)};
+		vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+		VkRect2D const scissor{.offset = {0, 0}, .extent = extent};
+		vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+		// End render pass e.g. transition colour attachment to VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+		// ready for presentation.
+		vkCmdEndRenderPass(command_buffer);
+
+		VK_CHECK(vkEndCommandBuffer(command_buffer), "Failed to end command buffer");
+	}
+
+	/**
+	 * Create a semaphore.
 	 *
 	 * @tparam count
-	 * @param device 
-	 * @return 
+	 * @param device
+	 * @return
 	 */
-	template <std::size_t count>
-	static std::array<VulkanSemaphorePtr, count> create_semaphores(VulkanDevicePtr const & device)
+	static VulkanSemaphorePtr create_semaphore(VulkanDevicePtr const & device)
 	{
 		constexpr VkSemaphoreCreateInfo semaphore_create_info{
 			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr};
 
-		std::array<VkSemaphore, count> semaphores;
-		for (std::size_t idx = 0; idx < count; ++idx)
-			vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &semaphores[idx]);
-
-		std::array<VulkanSemaphorePtr, count> out;
-		std::ranges::transform(
-			semaphores,
-			out.begin(),
-			[&device](VkSemaphore semaphore) { return make_semaphore_ptr(device, semaphore); });
-		return out;
+		VkSemaphore out;
+		vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &out);
+		return make_semaphore_ptr(device, out);
 	}
 
 	/**
@@ -371,23 +499,18 @@ struct VulkanApp
 	/**
 	 * Create a list of frame buffers, one-one mapped to a list of image views.
 	 *
-	 * @param window
 	 * @param device
 	 * @param render_pass
 	 * @param image_views
+	 * @param size
 	 * @return
 	 */
 	static std::vector<VulkanFramebufferPtr> create_per_image_frame_buffers(
-		SDLWindowPtr const & window,
 		VulkanDevicePtr const & device,
 		VulkanRenderPassPtr const & render_pass,
-		std::vector<VulkanImageViewPtr> const & image_views)
+		std::vector<VulkanImageViewPtr> const & image_views,
+		VkExtent2D const size)
 	{
-		// Get window surface width and height.
-		int width = 0;
-		int height = 0;
-		SDL_Vulkan_GetDrawableSize(window.get(), &width, &height);
-
 		VkFramebufferCreateInfo frame_buffer_create_info{
 			.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 			.pNext = nullptr,
@@ -395,8 +518,8 @@ struct VulkanApp
 			.renderPass = render_pass.get(),
 			.attachmentCount = 1,
 			// Width and height must be equal to or greater than the smallest image view.
-			.width = static_cast<uint32_t>(width),
-			.height = static_cast<uint32_t>(height),
+			.width = size.width,
+			.height = size.height,
 			.layers = 1	 // Non-stereoscopic
 		};
 
@@ -434,7 +557,7 @@ struct VulkanApp
 		VkAttachmentDescription const color_attachment{
 			.format = surface_format,
 			.samples = VK_SAMPLE_COUNT_1_BIT,
-			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+			.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,	  // See VkRenderPassBeginInfo::pClearValues
 			.storeOp = VK_ATTACHMENT_STORE_OP_STORE,  // Store after the pass so we can present it.
 			.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -582,14 +705,11 @@ struct VulkanApp
 		if ((surface_capabilities.supportedCompositeAlpha & composite_alpha) == 0U)
 			throw std::runtime_error{"VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR unavailable"};
 
-		// Swapchain images should support colour attachment, source and destination transfer.
+		// Swapchain images should support colour attachment.
 		// NOLINTNEXTLINE(*-signed-bitwise)
-		constexpr VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-		if ((surface_capabilities.supportedUsageFlags & usage) == 0U)
-			throw std::runtime_error{
-				"VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | "
-				"VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
+		constexpr VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		if ((surface_capabilities.supportedUsageFlags & usage) != usage)
+			throw std::runtime_error{"Surface VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
 
 		// Create swapchain.
 		VulkanSwapchainPtr const swapchain = [&]
@@ -1512,6 +1632,19 @@ struct VulkanApp
 	}
 
 	/**
+	 * Get the drawable size of an SDL window.
+	 *
+	 * @param window
+	 * @return
+	 */
+	static VkExtent2D window_drawable_size(SDLWindowPtr const & window)
+	{
+		int width, height;
+		SDL_Vulkan_GetDrawableSize(window.get(), &width, &height);
+		return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+	}
+
+	/**
 	 * Create a window
 	 *
 	 * @param title The title of the window
@@ -1797,7 +1930,10 @@ TEST_CASE("Create frame buffers")
 {
 	using vulkandemo::VulkanApp;
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create frame buffers");
-	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 1, 2);
+	VkExtent2D const drawable_size = VulkanApp::window_drawable_size(window);
+	CHECK(drawable_size.width > 0);
+	CHECK(drawable_size.height > 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr messenger =
@@ -1825,7 +1961,7 @@ TEST_CASE("Create frame buffers")
 		available_formats.at(0).format, device);
 
 	std::vector<VulkanApp::VulkanFramebufferPtr> const frame_buffers =
-		VulkanApp::create_per_image_frame_buffers(window, device, render_pass, image_views);
+		VulkanApp::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
 
 	CHECK(frame_buffers.size() == image_views.size());
 }
@@ -1883,11 +2019,9 @@ TEST_CASE("Create semaphores")
 	auto [device, queues] = VulkanApp::create_device_and_queues(
 		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
 
-	auto const [semaphore1, semaphore2, semaphore3] = VulkanApp::create_semaphores<3>(device);
+	VulkanApp::VulkanSemaphorePtr semaphore = VulkanApp::create_semaphore(device);
 
-	CHECK(semaphore1);
-	CHECK(semaphore2);
-	CHECK(semaphore3);
+	CHECK(semaphore);
 }
 
 TEST_CASE("Acquire swapchain image")
@@ -1922,7 +2056,7 @@ TEST_CASE("Acquire swapchain image")
 	auto [swapchain, image_views] = VulkanApp::create_double_buffer_swapchain(
 		logger, physical_device, device, surface, available_formats.at(0));
 
-	auto const [image_available_semaphore] = VulkanApp::create_semaphores<1>(device);
+	auto const image_available_semaphore = VulkanApp::create_semaphore(device);
 
 	SUBCASE("Acquire successful")
 	{
@@ -1945,4 +2079,127 @@ TEST_CASE("Acquire swapchain image")
 	//
 	// 	CHECK(!image_idx);
 	// }
+}
+
+TEST_CASE("Populate command queue and present")
+{
+	using vulkandemo::VulkanApp;
+
+	static int test_num = 0;
+	++test_num;
+	vulkandemo::LoggerPtr const logger =
+		vulkandemo::create_logger(std::format("Populate command queue and present {}", test_num));
+
+	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
+	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
+		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+	VulkanApp::VulkanDebugMessengerPtr messenger =
+		VulkanApp::create_debug_messenger(logger, instance);
+	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+		logger,
+		VulkanApp::enumerate_physical_devices(logger, instance),
+		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		{},
+		surface.get());
+
+	auto [device, queues] = VulkanApp::create_device_and_queues(
+		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+
+	auto const image_available_semaphore = VulkanApp::create_semaphore(device);
+	auto const rendering_finished_semaphore = VulkanApp::create_semaphore(device);
+
+	std::vector<VkSurfaceFormatKHR> const available_formats =
+		VulkanApp::filter_available_surface_formats(
+			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
+
+	auto [swapchain, image_views] = VulkanApp::create_double_buffer_swapchain(
+		logger, physical_device, device, surface, available_formats.at(0));
+
+	auto render_pass = VulkanApp::create_single_presentation_subpass_render_pass(
+		available_formats.at(0).format, device);
+
+	VkExtent2D const drawable_size = VulkanApp::window_drawable_size(window);
+
+	std::vector<VulkanApp::VulkanFramebufferPtr> const frame_buffers =
+		VulkanApp::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
+
+	VulkanApp::VulkanCommandPoolPtr const command_pool =
+		VulkanApp::create_command_pool(device, queue_family_idx);
+
+	VulkanApp::VulkanCommandBuffers const command_buffers =
+		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
+
+	VkQueue queue = queues[queue_family_idx].front();
+
+	// Begin "render loop".
+
+	SUBCASE("render once")
+	{
+		auto const image_idx =
+			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+
+		REQUIRE(image_idx);
+
+		VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
+		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
+
+		VulkanApp::populate_cmd_render_pass(
+			command_buffer, render_pass, frame_buffer, drawable_size, {1.0F, 0, 0, 1.0F});
+
+		VulkanApp::submit_command_buffer(
+			queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
+
+		VulkanApp::submit_present_image_cmd(
+			queue, swapchain, *image_idx, rendering_finished_semaphore);
+
+		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
+	}
+
+	SUBCASE("render twice")
+	{
+		auto const image_idx =
+			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+
+		REQUIRE(image_idx);
+		{
+			VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
+
+			// Red.
+			VulkanApp::populate_cmd_render_pass(
+				command_buffer, render_pass, frame_buffer, drawable_size, {1.0F, 0, 0, 1.0F});
+
+			VulkanApp::submit_command_buffer(
+				queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
+
+			VulkanApp::submit_present_image_cmd(
+				queue, swapchain, *image_idx, rendering_finished_semaphore);
+		}
+
+		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
+
+		auto const image_idx_2 =
+			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+
+		REQUIRE(image_idx_2);
+		CHECK(*image_idx_2 != *image_idx);
+
+		{
+			VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx_2];
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx_2];
+
+			// Green
+			VulkanApp::populate_cmd_render_pass(
+				command_buffer, render_pass, frame_buffer, drawable_size, {0, 0, 1.0F, 1.0F});
+
+			VulkanApp::submit_command_buffer(
+				queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
+
+			VulkanApp::submit_present_image_cmd(
+				queue, swapchain, *image_idx_2, rendering_finished_semaphore);
+		}
+
+		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
+	}
 }
