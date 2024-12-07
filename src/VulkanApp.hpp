@@ -78,29 +78,18 @@ struct VulkanApp
 
 	public:
 		VulkanCommandBuffers(
-			VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> buffers)
-			: device_{std::move(device)}, pool_{std::move(pool)}, buffers_{std::move(buffers)}
-		{
-		}
+			VulkanDevicePtr device,
+			VulkanCommandPoolPtr pool,
+			std::vector<VkCommandBuffer> buffers);
 		VulkanCommandBuffers(VulkanCommandBuffers const & other) = delete;
 		VulkanCommandBuffers(VulkanCommandBuffers && other) noexcept = default;
 		VulkanCommandBuffers & operator=(VulkanCommandBuffers const & other) = delete;
 		VulkanCommandBuffers & operator=(VulkanCommandBuffers && other) noexcept = default;
 
 		// ReSharper disable once CppNonExplicitConversionOperator
-		explicit(false) operator std::vector<VkCommandBuffer> const &() const
-		{
-			return buffers_;
-		}
-		std::vector<VkCommandBuffer> const & as_vector() const
-		{
-			return buffers_;
-		}
-		~VulkanCommandBuffers()
-		{
-			if (device_)  // Defend against moved-from.
-				vkFreeCommandBuffers(device_.get(), pool_.get(), buffers_.size(), buffers_.data());
-		}
+		explicit(false) operator std::vector<VkCommandBuffer> const &() const;
+		std::vector<VkCommandBuffer> const & as_vector() const;
+		~VulkanCommandBuffers();
 	};
 
 	static_assert(std::is_convertible_v<VulkanCommandBuffers, std::vector<VkCommandBuffer>>);

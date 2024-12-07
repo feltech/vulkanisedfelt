@@ -226,6 +226,28 @@ VulkanApp::VulkanCommandPoolPtr VulkanApp::make_command_pool_ptr(
 		}};
 }
 
+VulkanApp::VulkanCommandBuffers::VulkanCommandBuffers(
+	VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> buffers)
+	: device_{std::move(device)}, pool_{std::move(pool)}, buffers_{std::move(buffers)}
+{
+}
+
+VulkanApp::VulkanCommandBuffers::operator std::vector<VkCommandBuffer_T *> const &() const
+{
+	return buffers_;
+}
+
+std::vector<VkCommandBuffer> const & VulkanApp::VulkanCommandBuffers::as_vector() const
+{
+	return buffers_;
+}
+
+VulkanApp::VulkanCommandBuffers::~VulkanCommandBuffers()
+{
+	if (device_)  // Defend against moved-from.
+		vkFreeCommandBuffers(device_.get(), pool_.get(), buffers_.size(), buffers_.data());
+}
+
 VulkanApp::VulkanSemaphorePtr VulkanApp::make_semaphore_ptr(
 	VulkanDevicePtr device, VkSemaphore semaphore)
 {
