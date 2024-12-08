@@ -4,8 +4,7 @@
 
 #define DOCTEST_CONFIG_IMPLEMENT
 #include <doctest/doctest.h>
-
-#include <spdlog/spdlog.h>
+#include <spdlog/logger.h> // NOLINT(*-include-cleaner)
 
 #include "Logger.hpp"
 #include "vulkandemo.hpp"

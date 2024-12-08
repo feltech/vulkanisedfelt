@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <array>
+#include <cstdint>
+#include <map>
 #include <memory>
+#include <optional>
+#include <set>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <vector>
 
 #include <SDL_video.h>
 #include <SDL_vulkan.h>
@@ -11,10 +20,6 @@
 #include <gsl/pointers>
 
 #include "Logger.hpp"
-
-#include <map>
-#include <optional>
-#include <set>
 
 namespace vulkandemo
 {
@@ -87,8 +92,9 @@ struct VulkanApp
 		VulkanCommandBuffers & operator=(VulkanCommandBuffers && other) noexcept = default;
 
 		// ReSharper disable once CppNonExplicitConversionOperator
+		// NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
 		explicit(false) operator std::vector<VkCommandBuffer> const &() const;
-		std::vector<VkCommandBuffer> const & as_vector() const;
+		[[nodiscard]] std::vector<VkCommandBuffer> const & as_vector() const;
 		~VulkanCommandBuffers();
 	};
 
@@ -402,6 +408,6 @@ struct VulkanApp
 	 * @param height The height of the window
 	 * @return The window
 	 */
-	static SDLWindowPtr create_window(char const * title, int width, int const height);
+	static SDLWindowPtr create_window(char const * title, int width, int height);
 };
 }  // namespace vulkandemo

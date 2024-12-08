@@ -1,19 +1,31 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
+
+// The following CLion check conflicts with clang-tidy wrt vulkan handle typedefs.
+// ReSharper disable CppParameterMayBeConst
+
 #include "vulkandemo.hpp"
 
-#include <SDL_events.h>
-#include <fmt/ranges.h>
-#include <spdlog/spdlog.h>
+#include <array>
+#include <tuple>
+#include <vector>
 
-#include <vulkan/vk_enum_string_helper.h>
+#include <SDL_events.h>
+#include <SDL_video.h>
+
+#include <fmt/ranges.h>
+
+#include <spdlog/logger.h>	// NOLINT(misc-include-cleaner) for `logger`
+
+#include <vulkan/vk_enum_string_helper.h>  // NOLINT(misc-include-cleaner) for `VK_CHECK`
+#include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
 #include "VulkanApp.hpp"
 
 namespace vulkandemo
 {
-void vulkandemo(LoggerPtr const & logger)
+void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognitive-complexity)
 {
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
 
@@ -25,7 +37,7 @@ void vulkandemo(LoggerPtr const & logger)
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);
 
-	VulkanApp::VulkanDebugMessengerPtr messenger = optional_instance_extensions.empty()
+	VulkanApp::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.empty()
 		? nullptr
 		: VulkanApp::create_debug_messenger(logger, instance);
 
@@ -35,7 +47,7 @@ void vulkandemo(LoggerPtr const & logger)
 		logger,
 		VulkanApp::enumerate_physical_devices(logger, instance),
 		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
-		{VK_QUEUE_GRAPHICS_BIT},
+		VK_QUEUE_GRAPHICS_BIT,
 		surface.get());
 
 	auto [device, queues] = VulkanApp::create_device_and_queues(
@@ -62,10 +74,10 @@ void vulkandemo(LoggerPtr const & logger)
 	VulkanApp::VulkanCommandPoolPtr const command_pool =
 		VulkanApp::create_command_pool(device, queue_family_idx);
 
-	VulkanApp::VulkanCommandBuffers command_buffers =
+	VulkanApp::VulkanCommandBuffers const command_buffers =
 		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
 
-	VkQueue const queue = queues[queue_family_idx].front();
+	VkQueue queue = queues[queue_family_idx].front();
 
 	std::array<float, 4> clear_colour = {1.0F, 0, 0, 1.0F};
 
@@ -74,7 +86,7 @@ void vulkandemo(LoggerPtr const & logger)
 	{
 		// SDL event loop.
 		SDL_Event event;
-		while (SDL_PollEvent(&event))
+		while (SDL_PollEvent(&event) != 0)
 		{
 			if (event.type == SDL_QUIT)
 				return;
@@ -108,7 +120,7 @@ void vulkandemo(LoggerPtr const & logger)
 			continue;
 		}
 
-		VkCommandBuffer const command_buffer = command_buffers.as_vector()[*image_idx];
+		VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
 		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
 
 		VulkanApp::populate_cmd_render_pass(

@@ -7,4 +7,4 @@
 namespace vulkandemo
 {
 void vulkandemo(LoggerPtr const & logger);
-}
+}  // namespace vulkandemo

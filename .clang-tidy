@@ -13,6 +13,8 @@
 #     De-facto standard #pragma once is preferred.
 # - *-default-arguments-declaration
 #     Default arguments are useful.
+# - -clion-misra-cpp2023-19-6-1
+#     Allow `#pragma once`.
 Checks: >
     *,
     -llvmlibc-*,
@@ -22,7 +24,8 @@ Checks: >
     -*-braces-around-statements,
     -*-use-trailing-return-type,
     -llvm-header-guard,
-    -*-default-arguments-declarations
+    -*-default-arguments-declarations,
+    -clion-misra-cpp2023-19-6-1
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: file

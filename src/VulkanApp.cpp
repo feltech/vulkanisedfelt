@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
+
+// Conflicts with clang-tidy wrt vulkan handle typedefs:
+// ReSharper disable CppParameterMayBeConst
+// ReSharper disable CppLocalVariableMayBeConst
+
 #include "VulkanApp.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <format>
@@ -11,19 +17,22 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <span>
+#include <spdlog/common.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+
+#include <spdlog/logger.h>	// NOLINT(misc-include-cleaner)
 
 #include <gsl/pointers>
 
@@ -35,21 +44,19 @@
 #include <SDL_video.h>
 #include <SDL_vulkan.h>
 
-#include <spdlog/spdlog.h>
-
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
 
-// The following CLion check conflicts with clang-tidy wrt vulkan handle typedefs.
-// ReSharper disable CppParameterMayBeConst
-
 using namespace std::literals;
 
 namespace vulkandemo
 {
+// Forward declarations of utility functions.
 
+namespace
+{
 /**
  * Log desired instance extensions vs. available.
  *
@@ -94,6 +101,9 @@ void log_layer_info(
 	std::set<std::string_view> const & desired_layer_names,
 	std::set<std::string_view> const & available_layer_names,
 	std::vector<VkLayerProperties> const & available_layer_descs);
+}  // namespace
+
+// Factories for shared_ptr wrappers of Vulkan handles.
 
 VulkanApp::SDLWindowPtr VulkanApp::make_window_ptr(SDL_Window * window)
 {
@@ -260,6 +270,8 @@ VulkanApp::VulkanSemaphorePtr VulkanApp::make_semaphore_ptr(
 		}};
 }
 
+// Main functionality.
+
 bool VulkanApp::submit_present_image_cmd(
 	VkQueue queue,
 	VulkanSwapchainPtr const & swapchain,
@@ -272,7 +284,7 @@ bool VulkanApp::submit_present_image_cmd(
 	VkPresentInfoKHR const present_info{
 		.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
 		.pNext = nullptr,
-		.waitSemaphoreCount = wait_semaphore_handle != nullptr,
+		.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphore_handle != nullptr),
 		.pWaitSemaphores = &wait_semaphore_handle,
 		.swapchainCount = 1,
 		.pSwapchains = &swapchain_handle,
@@ -297,7 +309,7 @@ void VulkanApp::submit_command_buffer(
 {
 	// Pipeline stage(s) to associate with wait_semaphore. Ensure dependent operations do not
 	// start at this stage of the pipeline until the semaphore is signaled.
-	VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	constexpr VkPipelineStageFlags wait_dst_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
 	VkSemaphore wait_semaphore_handle = wait_semaphore.get();
 	VkSemaphore signal_semaphore_handle = signal_semaphore.get();
@@ -306,12 +318,12 @@ void VulkanApp::submit_command_buffer(
 	VkSubmitInfo const submit_info{
 		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
 		.pNext = nullptr,
-		.waitSemaphoreCount = wait_semaphore_handle != nullptr,
+		.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphore_handle != nullptr),
 		.pWaitSemaphores = &wait_semaphore_handle,
 		.pWaitDstStageMask = &wait_dst_stage,
 		.commandBufferCount = 1,
 		.pCommandBuffers = &command_buffer,
-		.signalSemaphoreCount = signal_semaphore_handle != nullptr,
+		.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphore_handle != nullptr),
 		.pSignalSemaphores = &signal_semaphore_handle};
 
 	VK_CHECK(
@@ -326,7 +338,7 @@ void VulkanApp::populate_cmd_render_pass(
 	std::array<float, 4> const & clear_colour)
 {
 	VkClearValue clear_value{};
-	std::ranges::copy(clear_colour, clear_value.color.float32);
+	std::ranges::copy(clear_colour, begin(std::span(clear_value.color.float32)));
 
 	constexpr VkCommandBufferBeginInfo command_buffer_begin_info{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -369,7 +381,7 @@ VulkanApp::VulkanSemaphorePtr VulkanApp::create_semaphore(VulkanDevicePtr const 
 	constexpr VkSemaphoreCreateInfo semaphore_create_info{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr};
 
-	VkSemaphore out;
+	VkSemaphore out = nullptr;
 	vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &out);
 	return make_semaphore_ptr(device, out);
 }
@@ -425,7 +437,7 @@ VulkanApp::VulkanCommandPoolPtr VulkanApp::create_command_pool(
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 		.queueFamilyIndex = queue_family_idx};
 
-	VkCommandPool command_pool;
+	VkCommandPool command_pool = nullptr;
 	VK_CHECK(
 		vkCreateCommandPool(device.get(), &command_pool_create_info, nullptr, &command_pool),
 		"Failed to create command pool");
@@ -458,12 +470,13 @@ std::vector<VulkanApp::VulkanFramebufferPtr> VulkanApp::create_per_image_frame_b
 		back_inserter(frame_buffers),
 		[&](VulkanImageViewPtr const & image_view)
 		{
-			VkImageView const image_view_handles[] = {image_view.get()};
-			frame_buffer_create_info.pAttachments = image_view_handles;
-			VkFramebuffer out;
+			VkImageView image_view_handle = image_view.get();
+			frame_buffer_create_info.pAttachments = &image_view_handle;
+			VkFramebuffer out = nullptr;
 			VK_CHECK(
 				vkCreateFramebuffer(device.get(), &frame_buffer_create_info, nullptr, &out),
 				"Failed to create framebuffer");
+			frame_buffer_create_info.pAttachments = nullptr;  // reset.
 			return make_framebuffer_ptr(device, out);
 		});
 
@@ -515,7 +528,7 @@ VulkanApp::VulkanRenderPassPtr VulkanApp::create_single_presentation_subpass_ren
 		.pDependencies = &subpass_external_dependency};
 
 	// Create the render pass.
-	VkRenderPass out;
+	VkRenderPass out = nullptr;
 	VK_CHECK(
 		vkCreateRenderPass(device.get(), &render_pass_create_info, nullptr, &out),
 		"Failed to create render pass");
@@ -523,6 +536,8 @@ VulkanApp::VulkanRenderPassPtr VulkanApp::create_single_presentation_subpass_ren
 }
 
 std::tuple<VulkanApp::VulkanSwapchainPtr, std::vector<VulkanApp::VulkanImageViewPtr>>
+// TODO(DF): Split function.
+// NOLINTNEXTLINE(*-function-cognitive-complexity)
 VulkanApp::create_double_buffer_swapchain(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
@@ -618,7 +633,7 @@ VulkanApp::create_double_buffer_swapchain(
 		throw std::runtime_error{"Surface VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
 
 	// Create swapchain.
-	VulkanSwapchainPtr const swapchain = [&]
+	VulkanSwapchainPtr swapchain = [&]
 	{
 		VkSwapchainCreateInfoKHR const swapchain_create_info{
 			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -638,7 +653,7 @@ VulkanApp::create_double_buffer_swapchain(
 			.clipped = VK_TRUE,
 			.oldSwapchain = previous_swapchain.get()};
 
-		VkSwapchainKHR out;
+		VkSwapchainKHR out = nullptr;
 		VK_CHECK(
 			vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &out),
 			"Failed to create swapchain");
@@ -684,7 +699,7 @@ VulkanApp::create_double_buffer_swapchain(
 			[&](VkImage image)
 			{
 				image_view_create_info.image = image;
-				VkImageView image_view;
+				VkImageView image_view = nullptr;
 				VK_CHECK(
 					vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
 					"Failed to create image view");
@@ -711,7 +726,7 @@ VulkanApp::create_device_and_queues(
 		return out;
 	}();
 
-	// queue VulkanApp::priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
+	// Queue priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
 	// create a single array sized to the largest queue count. Array must exist until after
 	// vkCreateDevice.
 	std::vector const queue_priorities(
@@ -743,7 +758,7 @@ VulkanApp::create_device_and_queues(
 	}();
 
 	// Create the device.
-	VkDevice const device = [&]
+	VkDevice device = [&]
 	{
 		VkDeviceCreateInfo const device_create_info{
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -752,7 +767,7 @@ VulkanApp::create_device_and_queues(
 			.enabledExtensionCount = static_cast<uint32_t>(device_extension_cstr_names.size()),
 			.ppEnabledExtensionNames = device_extension_cstr_names.data(),
 		};
-		VkDevice out;
+		VkDevice out = nullptr;
 		VK_CHECK(
 			vkCreateDevice(physical_device, &device_create_info, nullptr, &out),
 			"Failed to create logical device");
@@ -868,10 +883,16 @@ std::vector<std::string_view> VulkanApp::filter_available_device_extensions(
 	std::vector<VkExtensionProperties> const available_device_extensions = [&]
 	{
 		uint32_t extension_count = 0;
-		vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &extension_count, nullptr);
+		VK_CHECK(
+			vkEnumerateDeviceExtensionProperties(
+				physical_device, nullptr, &extension_count, nullptr),
+			"Failed to get device extension count");
 		std::vector<VkExtensionProperties> out(extension_count);
-		vkEnumerateDeviceExtensionProperties(
-			physical_device, nullptr, &extension_count, out.data());
+		VK_CHECK(
+			vkEnumerateDeviceExtensionProperties(
+				physical_device, nullptr, &extension_count, out.data()),
+			"Failed to get device extensions");
+
 		return out;
 	}();
 
@@ -890,15 +911,6 @@ std::vector<std::string_view> VulkanApp::filter_available_device_extensions(
 		std::vector<std::string_view> out;
 		out.reserve(desired_device_extension_names.size());
 		std::ranges::set_intersection(
-			desired_device_extension_names, available_device_extension_names, back_inserter(out));
-		return out;
-	}();
-
-	std::vector<std::string_view> const unavailable_extensions = [&]
-	{
-		std::vector<std::string_view> out;
-		out.reserve(desired_device_extension_names.size());
-		std::ranges::set_difference(
 			desired_device_extension_names, available_device_extension_names, back_inserter(out));
 		return out;
 	}();
@@ -1053,6 +1065,8 @@ VulkanApp::VulkanDebugMessengerPtr VulkanApp::create_debug_messenger(
 	return make_debug_messenger_ptr(std::move(instance), plogger, messenger);
 }
 
+namespace
+{
 VkBool32 vulkan_debug_messenger_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT const message_severity,
 	VkDebugUtilsMessageTypeFlagsEXT const message_types,
@@ -1127,6 +1141,7 @@ VkBool32 vulkan_debug_messenger_callback(
 
 	return VkBool32{1};
 }
+}  // namespace
 
 VulkanApp::VulkanInstancePtr VulkanApp::create_vulkan_instance(
 	LoggerPtr const & logger,
@@ -1234,6 +1249,8 @@ std::vector<char const *> VulkanApp::filter_available_layers(
 	return layers_to_enable;
 }
 
+namespace
+{
 void log_layer_info(
 	LoggerPtr const & logger,
 	// NOLINTNEXTLINE(*-easily-swappable-parameters)
@@ -1275,6 +1292,7 @@ void log_layer_info(
 		}
 	}
 }
+}  // namespace
 
 std::vector<char const *> VulkanApp::filter_available_instance_extensions(
 	LoggerPtr const & logger, std::set<std::string_view> const & desired_extension_names)
@@ -1332,6 +1350,8 @@ std::vector<char const *> VulkanApp::filter_available_instance_extensions(
 	return extensions_to_enable;
 }
 
+namespace
+{
 void log_instance_extensions_info(
 	LoggerPtr const & logger,
 	// NOLINTNEXTLINE(*-easily-swappable-parameters)
@@ -1370,10 +1390,12 @@ void log_instance_extensions_info(
 		}
 	}
 }
+}  // namespace
 
 VkExtent2D VulkanApp::window_drawable_size(SDLWindowPtr const & window)
 {
-	int width, height;
+	int width = 0;
+	int height = 0;
 	SDL_Vulkan_GetDrawableSize(window.get(), &width, &height);
 	return {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
 }
@@ -1467,7 +1489,7 @@ TEST_CASE("Create a Vulkan surface")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
 	VulkanApp::VulkanSurfacePtr surface = VulkanApp::create_surface(window, instance);
@@ -1488,7 +1510,7 @@ TEST_CASE("Enumerate devices")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
@@ -1529,7 +1551,7 @@ TEST_CASE("Select device with capability")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
 	auto [device, queue_family_idx] = VulkanApp::select_physical_device(
@@ -1614,12 +1636,12 @@ TEST_CASE("Create swapchain")
 	WARN(image_views.size() == 2);
 
 	// Reuse swapchain
-	auto [new_swapchain, new_image_views] = VulkanApp::create_double_buffer_swapchain(
-		logger, physical_device, device, surface, surface_format, std::move(swapchain));
+	std::tie(swapchain, image_views) = VulkanApp::create_double_buffer_swapchain(
+		logger, physical_device, device, surface, surface_format, swapchain);
 
-	CHECK(new_swapchain);
-	CHECK(!new_image_views.empty());
-	WARN(new_image_views.size() == 2);
+	CHECK(swapchain);
+	CHECK(!image_views.empty());
+	WARN(image_views.size() == 2);
 }
 
 TEST_CASE("Create render pass")
@@ -1629,7 +1651,7 @@ TEST_CASE("Create render pass")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
@@ -1663,7 +1685,7 @@ TEST_CASE("Create frame buffers")
 	CHECK(drawable_size.height > 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
@@ -1700,7 +1722,7 @@ TEST_CASE("Create command buffers")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
@@ -1732,7 +1754,7 @@ TEST_CASE("Create semaphores")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 
@@ -1763,7 +1785,7 @@ TEST_CASE("Acquire swapchain image")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 10, 10);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
@@ -1791,7 +1813,7 @@ TEST_CASE("Acquire swapchain image")
 			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
 
 		REQUIRE(image_idx);
-		CHECK(*image_idx == 0);
+		CHECK(*image_idx == 0);	 // NOLINT(bugprone-unchecked-optional-access)
 	}
 
 	// TODO(DF): Figure out how to simulate this.
@@ -1819,7 +1841,7 @@ TEST_CASE("Populate render pass")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 1, 1);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
@@ -1842,7 +1864,7 @@ TEST_CASE("Populate render pass")
 	auto [swapchain, image_views] = VulkanApp::create_double_buffer_swapchain(
 		logger, physical_device, device, surface, available_formats.at(0));
 
-	auto render_pass = VulkanApp::create_single_presentation_subpass_render_pass(
+	auto const render_pass = VulkanApp::create_single_presentation_subpass_render_pass(
 		available_formats.at(0).format, device);
 
 	VkExtent2D const drawable_size = VulkanApp::window_drawable_size(window);
@@ -1869,7 +1891,7 @@ TEST_CASE("Populate render pass")
 		command_buffer, render_pass, frame_buffer, drawable_size, {1.0F, 0, 0, 1.0F});
 }
 
-TEST_CASE("Populate command queue and present")
+TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-complexity)
 {
 	using vulkandemo::VulkanApp;
 
@@ -1881,7 +1903,7 @@ TEST_CASE("Populate command queue and present")
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
-	VulkanApp::VulkanDebugMessengerPtr messenger =
+	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
 	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
@@ -1924,13 +1946,15 @@ TEST_CASE("Populate command queue and present")
 
 	SUBCASE("render once")
 	{
-		auto const image_idx =
+		auto const maybe_image_idx =
 			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
 
-		REQUIRE(image_idx);
+		CHECK(maybe_image_idx);
 
-		VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
-		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
+		auto const image_idx =
+			maybe_image_idx.value();  // NOLINT(bugprone-unchecked-optional-access)
+		VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx];
+		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx];
 
 		VulkanApp::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, {1.0F, 0, 0, 1.0F});
@@ -1939,20 +1963,22 @@ TEST_CASE("Populate command queue and present")
 			queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
 
 		VulkanApp::submit_present_image_cmd(
-			queue, swapchain, *image_idx, rendering_finished_semaphore);
+			queue, swapchain, image_idx, rendering_finished_semaphore);
 
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
 	}
 
 	SUBCASE("render twice")
 	{
-		auto const image_idx =
+		auto const maybe_image_idx =
 			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+		REQUIRE(maybe_image_idx);
+		auto const image_idx =
+			maybe_image_idx.value();  // NOLINT(bugprone-unchecked-optional-access)
 
-		REQUIRE(image_idx);
 		{
-			VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
-			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
+			VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx];
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx];
 
 			// Red.
 			VulkanApp::populate_cmd_render_pass(
@@ -1962,20 +1988,22 @@ TEST_CASE("Populate command queue and present")
 				queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
 
 			VulkanApp::submit_present_image_cmd(
-				queue, swapchain, *image_idx, rendering_finished_semaphore);
+				queue, swapchain, image_idx, rendering_finished_semaphore);
 		}
 
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
 
-		auto const image_idx_2 =
+		auto const maybe_image_idx_2 =
 			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
-
-		REQUIRE(image_idx_2);
-		CHECK(*image_idx_2 != *image_idx);
+		REQUIRE(maybe_image_idx_2);
+		auto const image_idx_2 =
+			maybe_image_idx_2.value();	// NOLINT(bugprone-unchecked-optional-access)
 
 		{
-			VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx_2];
-			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx_2];
+			CHECK(image_idx_2 != image_idx);
+
+			VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx_2];
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx_2];
 
 			// Green
 			VulkanApp::populate_cmd_render_pass(
@@ -1985,7 +2013,7 @@ TEST_CASE("Populate command queue and present")
 				queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
 
 			VulkanApp::submit_present_image_cmd(
-				queue, swapchain, *image_idx_2, rendering_finished_semaphore);
+				queue, swapchain, image_idx_2, rendering_finished_semaphore);
 		}
 
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");

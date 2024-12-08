@@ -4,8 +4,9 @@
 
 #include <string>
 
+#include <spdlog/common.h>
+#include <spdlog/logger.h>	// NOLINT(misc-include-cleaner)
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
 
 namespace vulkandemo
 {
