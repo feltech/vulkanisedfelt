@@ -30,6 +30,7 @@ class vulkandemoRecipe(ConanFile):
         tc = CMakeToolchain(self)
         tc.variables["CMAKE_C_VISIBILITY_PRESET"] = "default"
         tc.variables["CMAKE_CXX_VISIBILITY_PRESET"] = "hidden"
+        tc.variables["CMAKE_INTERPROCEDURAL_OPTIMIZATION"] = "ON"
         tc.generate()
 
     def build(self):
