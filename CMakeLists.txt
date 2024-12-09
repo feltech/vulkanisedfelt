@@ -16,6 +16,7 @@ find_package(SDL2 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Microsoft.GSL REQUIRED)
+find_package(strong_type REQUIRED)
 find_package(Vulkan REQUIRED)
 
 
@@ -47,7 +48,13 @@ set_target_properties(${_exe_target} PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(
     ${_exe_target}
     PRIVATE
-    doctest::doctest SDL2::SDL2 spdlog::spdlog fmt::fmt Microsoft.GSL::GSL Vulkan::Vulkan
+    doctest::doctest
+    SDL2::SDL2
+    spdlog::spdlog
+    fmt::fmt
+    Microsoft.GSL::GSL
+    Vulkan::Vulkan
+    rollbear::strong_type
 )
 
 target_compile_definitions(

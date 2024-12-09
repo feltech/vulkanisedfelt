@@ -1146,9 +1146,8 @@ VkBool32 vulkan_debug_messenger_callback(
 VulkanApp::VulkanInstancePtr VulkanApp::create_vulkan_instance(
 	LoggerPtr const & logger,
 	SDLWindowPtr const & sdl_window,
-	// NOLINTNEXTLINE(*-easily-swappable-parameters)
-	std::vector<char const *> const & layers_to_enable,
-	std::vector<char const *> const & extensions_to_enable)
+	InstanceLayerNameCstrList const & layers_to_enable,
+	InstanceExtensionNameCstrList const & extensions_to_enable)
 {
 	// Get the available extensions from SDL
 	std::vector<char const *> sdl_extensions = [&]
@@ -1163,7 +1162,9 @@ VulkanApp::VulkanInstancePtr VulkanApp::create_vulkan_instance(
 
 	// Merge additional extensions with SDL-provided extensions.
 	std::ranges::copy(
-		cbegin(extensions_to_enable), cend(extensions_to_enable), back_inserter(sdl_extensions));
+		cbegin(extensions_to_enable.value_of()),
+		cend(extensions_to_enable.value_of()),
+		back_inserter(sdl_extensions));
 
 	// Log instance extensions.
 	if (logger->should_log(spdlog::level::debug))
@@ -1185,8 +1186,8 @@ VulkanApp::VulkanInstancePtr VulkanApp::create_vulkan_instance(
 	VkInstanceCreateInfo const create_info = {
 		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 		.pApplicationInfo = &app_info,
-		.enabledLayerCount = static_cast<uint32_t>(layers_to_enable.size()),
-		.ppEnabledLayerNames = layers_to_enable.data(),
+		.enabledLayerCount = static_cast<uint32_t>(layers_to_enable.value_of().size()),
+		.ppEnabledLayerNames = layers_to_enable.value_of().data(),
 		.enabledExtensionCount = static_cast<uint32_t>(sdl_extensions.size()),
 		.ppEnabledExtensionNames = sdl_extensions.data(),
 	};
@@ -1456,10 +1457,10 @@ TEST_CASE("Create a Vulkan instance")
 	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
 		logger,
 		VulkanApp::create_window("", 0, 0),
-		VulkanApp::filter_available_layers(
-			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"}),
-		VulkanApp::filter_available_instance_extensions(
-			logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, "some_unavailable_extension"}));
+		VulkanApp::InstanceLayerNameCstrList{VulkanApp::filter_available_layers(
+			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"})},
+		VulkanApp::InstanceExtensionNameCstrList{VulkanApp::filter_available_instance_extensions(
+			logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, "some_unavailable_extension"})});
 	CHECK(instance);
 }
 
@@ -1475,7 +1476,10 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 	REQUIRE(!instance_extensions.empty());
 
 	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
-		logger, VulkanApp::create_window("", 0, 0), {}, instance_extensions);
+		logger,
+		VulkanApp::create_window("", 0, 0),
+		{},
+		VulkanApp::InstanceExtensionNameCstrList{instance_extensions});
 	VulkanApp::VulkanDebugMessengerPtr messenger =
 		VulkanApp::create_debug_messenger(logger, std::move(instance));
 
@@ -1488,7 +1492,10 @@ TEST_CASE("Create a Vulkan surface")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create a Vulkan surface");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
@@ -1509,7 +1516,10 @@ TEST_CASE("Enumerate devices")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Enumerate devices");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1550,7 +1560,10 @@ TEST_CASE("Select device with capability")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Select device with capability");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
@@ -1650,7 +1663,10 @@ TEST_CASE("Create render pass")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create render pass");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1684,7 +1700,10 @@ TEST_CASE("Create frame buffers")
 	CHECK(drawable_size.width > 0);
 	CHECK(drawable_size.height > 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1721,7 +1740,10 @@ TEST_CASE("Create command buffers")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create command buffers");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1753,7 +1775,10 @@ TEST_CASE("Create semaphores")
 	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create semaphores");
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 0, 0);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1784,7 +1809,10 @@ TEST_CASE("Acquire swapchain image")
 
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 10, 10);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1840,7 +1868,10 @@ TEST_CASE("Populate render pass")
 
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 1, 1);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1902,7 +1933,10 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
-		logger, window, {"VK_LAYER_KHRONOS_validation"}, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		window,
+		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1996,10 +2030,10 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 		auto const maybe_image_idx_2 =
 			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
 		REQUIRE(maybe_image_idx_2);
-		auto const image_idx_2 =
-			maybe_image_idx_2.value();	// NOLINT(bugprone-unchecked-optional-access)
 
 		{
+			auto const image_idx_2 =
+				maybe_image_idx_2.value();	// NOLINT(bugprone-unchecked-optional-access)
 			CHECK(image_idx_2 != image_idx);
 
 			VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx_2];

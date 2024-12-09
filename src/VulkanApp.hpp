@@ -10,6 +10,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <SDL_video.h>
@@ -18,6 +19,9 @@
 #include <vulkan/vulkan_core.h>
 
 #include <gsl/pointers>
+
+#include <strong_type/semiregular.hpp>
+#include <strong_type/strong_type.hpp>
 
 #include "Logger.hpp"
 
@@ -356,6 +360,11 @@ struct VulkanApp
 	static VulkanDebugMessengerPtr create_debug_messenger(
 		LoggerPtr logger, VulkanInstancePtr instance);
 
+	using InstanceLayerNameCstrList = strong::
+		type<std::vector<char const *>, struct InstanceLayerNameCstrList_, strong::semiregular>;
+	using InstanceExtensionNameCstrList = strong::
+		type<std::vector<char const *>, struct InstanceExtensionNameCstrList_, strong::semiregular>;
+
 	/**
 	 * Create VkInstance using given window and layers.
 	 *
@@ -368,9 +377,8 @@ struct VulkanApp
 	static VulkanInstancePtr create_vulkan_instance(
 		LoggerPtr const & logger,
 		SDLWindowPtr const & sdl_window,
-		// NOLINTNEXTLINE(*-easily-swappable-parameters)
-		std::vector<char const *> const & layers_to_enable,
-		std::vector<char const *> const & extensions_to_enable);
+		InstanceLayerNameCstrList const & layers_to_enable,
+		InstanceExtensionNameCstrList const & extensions_to_enable);
 
 	/**
 	 * Query available layers vs. desired layers.
