@@ -13,7 +13,7 @@
 #include <SDL_events.h>
 #include <SDL_video.h>
 
-#include <fmt/ranges.h>
+#include <fmt/format.h>
 
 #include <spdlog/logger.h>	// NOLINT(misc-include-cleaner) for `logger`
 
