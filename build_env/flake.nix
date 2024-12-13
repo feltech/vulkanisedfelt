@@ -28,6 +28,8 @@
               vulkan-headers
               vulkan-validation-layers
               vulkan-utility-libraries
+              # For clang-tidy
+              llvmPackages_19.clang-tools
               # For conan */system packages. Hint: nix-locate --whole-name dependency_name.pc | grep -v "^("
               pkg-config
               # For Conan egl/system
