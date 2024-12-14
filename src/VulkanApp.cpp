@@ -235,26 +235,17 @@ VulkanApp::VulkanCommandPoolPtr VulkanApp::make_command_pool_ptr(
 		}};
 }
 
-VulkanApp::VulkanCommandBuffers::VulkanCommandBuffers(
-	VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> buffers)
-	: device_{std::move(device)}, pool_{std::move(pool)}, buffers_{std::move(buffers)}
+VulkanApp::VulkanCommandBuffersPtr VulkanApp::make_command_buffers_ptr(
+	VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> command_buffers)
 {
-}
-
-VulkanApp::VulkanCommandBuffers::operator std::vector<VkCommandBuffer_T *> const &() const
-{
-	return buffers_;
-}
-
-std::vector<VkCommandBuffer> const & VulkanApp::VulkanCommandBuffers::as_vector() const
-{
-	return buffers_;
-}
-
-VulkanApp::VulkanCommandBuffers::~VulkanCommandBuffers()
-{
-	if (device_)  // Defend against moved-from.
-		vkFreeCommandBuffers(device_.get(), pool_.get(), buffers_.size(), buffers_.data());
+	return VulkanCommandBuffersPtr{
+		new std::vector<VkCommandBuffer>{std::move(command_buffers)},
+		[device = std::move(device),
+		 pool = std::move(pool)](gsl::owner<std::vector<VkCommandBuffer> *> buffers)
+		{
+			vkFreeCommandBuffers(device.get(), pool.get(), buffers->size(), buffers->data());
+			delete buffers;
+		}};
 }
 
 VulkanApp::VulkanSemaphorePtr VulkanApp::make_semaphore_ptr(
@@ -409,7 +400,7 @@ std::optional<uint32_t> VulkanApp::acquire_next_swapchain_image(
 	return out;
 }
 
-VulkanApp::VulkanCommandBuffers VulkanApp::create_primary_command_buffers(
+VulkanApp::VulkanCommandBuffersPtr VulkanApp::create_primary_command_buffers(
 	VulkanDevicePtr device, VulkanCommandPoolPtr pool, uint32_t const count)
 {
 	VkCommandBufferAllocateInfo const command_buffer_allocate_info{
@@ -424,7 +415,7 @@ VulkanApp::VulkanCommandBuffers VulkanApp::create_primary_command_buffers(
 		vkAllocateCommandBuffers(device.get(), &command_buffer_allocate_info, buffers.data()),
 		"Failed to allocate command buffers");
 
-	return VulkanCommandBuffers{std::move(device), std::move(pool), std::move(buffers)};
+	return make_command_buffers_ptr(std::move(device), std::move(pool), std::move(buffers));
 }
 
 VulkanApp::VulkanCommandPoolPtr VulkanApp::create_command_pool(
@@ -1772,10 +1763,10 @@ TEST_CASE("Create command buffers")
 
 	CHECK(command_pool);
 
-	VulkanApp::VulkanCommandBuffers const command_buffer =
+	VulkanApp::VulkanCommandBuffersPtr const command_buffer =
 		VulkanApp::create_primary_command_buffers(device, command_pool, 2);
 
-	CHECK(static_cast<std::vector<VkCommandBuffer> const &>(command_buffer).size() == 2);
+	CHECK(command_buffer->size() == 2);
 }
 
 TEST_CASE("Create semaphores")
@@ -1915,7 +1906,7 @@ TEST_CASE("Populate render pass")
 	VulkanApp::VulkanCommandPoolPtr const command_pool =
 		VulkanApp::create_command_pool(device, queue_family_idx);
 
-	VulkanApp::VulkanCommandBuffers command_buffers =
+	VulkanApp::VulkanCommandBuffersPtr command_buffers =
 		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
 
 	// Re-create command buffers and ensure we can populate with new command buffer - regression
@@ -1923,7 +1914,7 @@ TEST_CASE("Populate render pass")
 	command_buffers =
 		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
 
-	VkCommandBuffer command_buffer = command_buffers.as_vector().front();
+	VkCommandBuffer command_buffer = command_buffers->front();
 
 	VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.front();
 
@@ -1980,7 +1971,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 	VulkanApp::VulkanCommandPoolPtr const command_pool =
 		VulkanApp::create_command_pool(device, queue_family_idx);
 
-	VulkanApp::VulkanCommandBuffers const command_buffers =
+	VulkanApp::VulkanCommandBuffersPtr const command_buffers =
 		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
 
 	VkQueue queue = queues[queue_family_idx].front();
@@ -1996,8 +1987,8 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 
 		auto const image_idx =
 			maybe_image_idx.value();  // NOLINT(bugprone-unchecked-optional-access)
-		VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx];
-		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx];
+		VkCommandBuffer command_buffer = command_buffers->at(image_idx);
+		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(image_idx);
 
 		VulkanApp::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, {1.0F, 0, 0, 1.0F});
@@ -2020,8 +2011,8 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 			maybe_image_idx.value();  // NOLINT(bugprone-unchecked-optional-access)
 
 		{
-			VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx];
-			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx];
+			VkCommandBuffer command_buffer = command_buffers->at(image_idx);
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(image_idx);
 
 			// Red.
 			VulkanApp::populate_cmd_render_pass(
@@ -2045,8 +2036,8 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 				maybe_image_idx_2.value();	// NOLINT(bugprone-unchecked-optional-access)
 			CHECK(image_idx_2 != image_idx);
 
-			VkCommandBuffer command_buffer = command_buffers.as_vector()[image_idx_2];
-			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[image_idx_2];
+			VkCommandBuffer command_buffer = command_buffers->at(image_idx_2);
+			VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(image_idx_2);
 
 			// Green
 			VulkanApp::populate_cmd_render_pass(

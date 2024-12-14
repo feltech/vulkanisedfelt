@@ -79,7 +79,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	VulkanApp::VulkanCommandPoolPtr const command_pool =
 		VulkanApp::create_command_pool(device, queue_family_idx);
 
-	VulkanApp::VulkanCommandBuffers const command_buffers =
+	VulkanApp::VulkanCommandBuffersPtr const command_buffers =
 		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
 
 	VkQueue queue = queues.at(queue_family_idx).front();
@@ -125,8 +125,8 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 			continue;
 		}
 
-		VkCommandBuffer command_buffer = command_buffers.as_vector()[*image_idx];
-		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers[*image_idx];
+		VkCommandBuffer command_buffer = command_buffers->at(*image_idx);
+		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
 
 		VulkanApp::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, clear_colour);

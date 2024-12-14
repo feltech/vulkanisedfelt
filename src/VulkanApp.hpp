@@ -75,34 +75,11 @@ struct VulkanApp
 	static VulkanCommandPoolPtr make_command_pool_ptr(
 		VulkanDevicePtr device, VkCommandPool command_pool);
 
-	/**
-	 * RAII class for command buffers, which are allocated and deallocated as a batch, but are
-	 * accessed independently.
-	 */
-	class VulkanCommandBuffers
-	{
-		VulkanDevicePtr device_;
-		VulkanCommandPoolPtr pool_;
-		std::vector<VkCommandBuffer> buffers_;
-
-	public:
-		VulkanCommandBuffers(
-			VulkanDevicePtr device,
-			VulkanCommandPoolPtr pool,
-			std::vector<VkCommandBuffer> buffers);
-		VulkanCommandBuffers(VulkanCommandBuffers const & other) = delete;
-		VulkanCommandBuffers(VulkanCommandBuffers && other) noexcept = default;
-		VulkanCommandBuffers & operator=(VulkanCommandBuffers const & other) = delete;
-		VulkanCommandBuffers & operator=(VulkanCommandBuffers && other) noexcept = default;
-
-		// ReSharper disable once CppNonExplicitConversionOperator
-		// NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
-		explicit(false) operator std::vector<VkCommandBuffer> const &() const;
-		[[nodiscard]] std::vector<VkCommandBuffer> const & as_vector() const;
-		~VulkanCommandBuffers();
-	};
-
-	static_assert(std::is_convertible_v<VulkanCommandBuffers, std::vector<VkCommandBuffer>>);
+	using VulkanCommandBuffersPtr = std::shared_ptr<std::vector<VkCommandBuffer>>;
+	static VulkanCommandBuffersPtr make_command_buffers_ptr(
+		VulkanDevicePtr device,
+		VulkanCommandPoolPtr pool,
+		std::vector<VkCommandBuffer> command_buffers);
 
 	using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
 	static VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore);
@@ -185,7 +162,7 @@ struct VulkanApp
 	 * @param count
 	 * @return
 	 */
-	static VulkanCommandBuffers create_primary_command_buffers(
+	static VulkanCommandBuffersPtr create_primary_command_buffers(
 		VulkanDevicePtr device, VulkanCommandPoolPtr pool, uint32_t count);
 
 	/**
