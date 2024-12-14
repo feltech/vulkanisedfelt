@@ -27,6 +27,7 @@ set(_exe_target vulkandemo)
 
 add_executable(
     ${_exe_target}
+    src/types.cpp
     src/VulkanApp.cpp
     src/Logger.cpp
     src/vulkandemo.cpp

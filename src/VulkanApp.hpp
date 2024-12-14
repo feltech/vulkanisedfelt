@@ -1,92 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
-#include <array>
-#include <cstdint>
-#include <map>
-#include <memory>
 #include <optional>
-#include <set>
-#include <string_view>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <SDL_video.h>
 #include <SDL_vulkan.h>
 
 #include <vulkan/vulkan_core.h>
 
-#include <gsl/pointers>
-
-#include <strong_type/ordered.hpp>
-#include <strong_type/semiregular.hpp>
-#include <strong_type/strong_type.hpp>
-
 #include "Logger.hpp"
+#include "types.hpp"
 
 namespace vulkandemo::setup
 {
-
-#define VK_CHECK(func, msg)                                                                \
-	do { /* NOLINT(cppcoreguidelines-avoid-do-while)  */                                   \
-		if (const VkResult result = func; result != VK_SUCCESS)                            \
-		{                                                                                  \
-			throw std::runtime_error{std::format("{}: {}", msg, string_VkResult(result))}; \
-		}                                                                                  \
-	} while (false)
-
-using SDLWindowPtr = std::shared_ptr<SDL_Window>;
-SDLWindowPtr make_window_ptr(SDL_Window * window);
-
-using VulkanInstancePtr = std::shared_ptr<std::remove_pointer_t<VkInstance>>;
-VulkanInstancePtr make_instance_ptr(VkInstance instance);
-
-using VulkanSurfacePtr = std::shared_ptr<std::remove_pointer_t<VkSurfaceKHR>>;
-VulkanSurfacePtr make_surface_ptr(VulkanInstancePtr instance, VkSurfaceKHR surface);
-
-using VulkanDevicePtr = std::shared_ptr<std::remove_pointer_t<VkDevice>>;
-VulkanDevicePtr make_device_ptr(VkDevice device);
-
-using VulkanDebugMessengerPtr = std::shared_ptr<std::remove_pointer_t<VkDebugUtilsMessengerEXT>>;
-VulkanDebugMessengerPtr make_debug_messenger_ptr(
-	VulkanInstancePtr instance,
-	gsl::owner<LoggerPtr *> plogger,
-	VkDebugUtilsMessengerEXT messenger);
-
-using VulkanSwapchainPtr = std::shared_ptr<std::remove_pointer_t<VkSwapchainKHR>>;
-VulkanSwapchainPtr make_swapchain_ptr(VulkanDevicePtr device, VkSwapchainKHR swapchain);
-
-using VulkanImageViewPtr = std::shared_ptr<std::remove_pointer_t<VkImageView>>;
-VulkanImageViewPtr make_image_view_ptr(VulkanDevicePtr device, VkImageView image_view);
-
-using VulkanRenderPassPtr = std::shared_ptr<std::remove_pointer_t<VkRenderPass>>;
-VulkanRenderPassPtr make_render_pass_ptr(VulkanDevicePtr device, VkRenderPass render_pass);
-
-using VulkanFramebufferPtr = std::shared_ptr<std::remove_pointer_t<VkFramebuffer>>;
-VulkanFramebufferPtr make_framebuffer_ptr(VulkanDevicePtr device, VkFramebuffer framebuffer);
-
-using VulkanCommandPoolPtr = std::shared_ptr<std::remove_pointer_t<VkCommandPool>>;
-VulkanCommandPoolPtr make_command_pool_ptr(
-	VulkanDevicePtr device, VkCommandPool command_pool);
-
-using VulkanCommandBuffersPtr = std::shared_ptr<std::vector<VkCommandBuffer>>;
-VulkanCommandBuffersPtr make_command_buffers_ptr(
-	VulkanDevicePtr device,
-	VulkanCommandPoolPtr pool,
-	std::vector<VkCommandBuffer> command_buffers);
-
-using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
-VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore);
-
-using VulkanImageIdx = strong::type<
-	uint32_t,
-	struct TagForVulkanImageIdx,
-	strong::regular,
-	strong::implicitly_convertible_to<uint32_t, std::size_t>,
-	strong::equality,
-	strong::equality_with<uint32_t, std::size_t>>;
 
 /**
  * Enqueue image presentation.
@@ -101,9 +29,9 @@ using VulkanImageIdx = strong::type<
  */
 bool submit_present_image_cmd(
 	VkQueue queue,
-	VulkanSwapchainPtr const & swapchain,
-	VulkanImageIdx image_idx,
-	VulkanSemaphorePtr const & wait_semaphore);
+	types::VulkanSwapchainPtr const & swapchain,
+	types::VulkanImageIdx image_idx,
+	types::VulkanSemaphorePtr const & wait_semaphore);
 
 /**
  * Submit a single command buffer to a queue, with a single wait/signal semaphore pair.
@@ -116,15 +44,8 @@ bool submit_present_image_cmd(
 void submit_command_buffer(
 	VkQueue queue,
 	VkCommandBuffer command_buffer,
-	VulkanSemaphorePtr const & wait_semaphore,
-	VulkanSemaphorePtr const & signal_semaphore);
-
-using VulkanClearColour = strong::type<
-	std::array<float, 4>,
-	struct TagForRgbaColourFractions,
-	strong::regular,
-	strong::indexed<>,
-	strong::range>;
+	types::VulkanSemaphorePtr const & wait_semaphore,
+	types::VulkanSemaphorePtr const & signal_semaphore);
 
 /**
  * Populate a command buffer with a render pass that simply clears the frame buffer.
@@ -137,10 +58,10 @@ using VulkanClearColour = strong::type<
  */
 void populate_cmd_render_pass(
 	VkCommandBuffer command_buffer,
-	VulkanRenderPassPtr const & render_pass,
-	VulkanFramebufferPtr const & frame_buffer,
+	types::VulkanRenderPassPtr const & render_pass,
+	types::VulkanFramebufferPtr const & frame_buffer,
 	VkExtent2D extent,
-	VulkanClearColour const & clear_colour);
+	types::VulkanClearColour const & clear_colour);
 
 /**
  * Create a semaphore.
@@ -148,7 +69,7 @@ void populate_cmd_render_pass(
  * @param device
  * @return
  */
-VulkanSemaphorePtr create_semaphore(VulkanDevicePtr const & device);
+types::VulkanSemaphorePtr create_semaphore(types::VulkanDevicePtr const & device);
 
 /**
  * Acquire next swapchain image, returning empty optional if the swapchain is out of date and
@@ -159,18 +80,10 @@ VulkanSemaphorePtr create_semaphore(VulkanDevicePtr const & device);
  * @param semaphore
  * @return
  */
-std::optional<VulkanImageIdx> acquire_next_swapchain_image(
-	VulkanDevicePtr const & device,
-	VulkanSwapchainPtr const & swapchain,
-	VulkanSemaphorePtr const & semaphore);
-
-using VulkanCommandBufferCount = strong::type<
-	uint32_t,
-	struct TagForVulkanCommandBufferCount,
-	strong::regular,
-	strong::implicitly_convertible_to<uint32_t, std::size_t>,
-	strong::equality,
-	strong::equality_with<uint32_t, std::size_t>>;
+std::optional<types::VulkanImageIdx> acquire_next_swapchain_image(
+	types::VulkanDevicePtr const & device,
+	types::VulkanSwapchainPtr const & swapchain,
+	types::VulkanSemaphorePtr const & semaphore);
 
 /**
  * Create command buffers of primary level from a given pool.
@@ -180,18 +93,10 @@ using VulkanCommandBufferCount = strong::type<
  * @param count
  * @return
  */
-VulkanCommandBuffersPtr create_primary_command_buffers(
-	VulkanDevicePtr device, VulkanCommandPoolPtr pool, VulkanCommandBufferCount count);
-
-using VulkanQueueFamilyIdx = strong::type<
-	uint32_t,
-	struct TagForVulkanQueueFamilyIdx,
-	strong::regular,
-	strong::implicitly_convertible_to<uint32_t>,
-	strong::equality,
-	strong::equality_with<uint32_t>,
-	strong::bicrementable,
-	strong::strongly_ordered>;
+types::VulkanCommandBuffersPtr create_primary_command_buffers(
+	types::VulkanDevicePtr device,
+	types::VulkanCommandPoolPtr pool,
+	types::VulkanCommandBufferCount count);
 
 /**
  * Create a command pool serving resettable command buffers for a given device queue family.
@@ -200,8 +105,8 @@ using VulkanQueueFamilyIdx = strong::type<
  * @param queue_family_idx
  * @return
  */
-VulkanCommandPoolPtr create_command_pool(
-	VulkanDevicePtr device, VulkanQueueFamilyIdx queue_family_idx);
+types::VulkanCommandPoolPtr create_command_pool(
+	types::VulkanDevicePtr device, types::VulkanQueueFamilyIdx queue_family_idx);
 
 /**
  * Create a list of frame buffers, one-one mapped to a list of image views.
@@ -212,10 +117,10 @@ VulkanCommandPoolPtr create_command_pool(
  * @param size
  * @return
  */
-std::vector<VulkanFramebufferPtr> create_per_image_frame_buffers(
-	VulkanDevicePtr const & device,
-	VulkanRenderPassPtr const & render_pass,
-	std::vector<VulkanImageViewPtr> const & image_views,
+std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
+	types::VulkanDevicePtr const & device,
+	types::VulkanRenderPassPtr const & render_pass,
+	std::vector<types::VulkanImageViewPtr> const & image_views,
 	VkExtent2D size);
 
 /**
@@ -226,8 +131,8 @@ std::vector<VulkanFramebufferPtr> create_per_image_frame_buffers(
  * @param device
  * @return
  */
-VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
-	VkFormat surface_format, VulkanDevicePtr const & device);
+types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
+	VkFormat surface_format, types::VulkanDevicePtr const & device);
 
 /**
  * Create swapchain and (double-buffer) image views for given device.
@@ -242,33 +147,14 @@ VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
  * @param previous_swapchain
  * @return
  */
-std::tuple<VulkanSwapchainPtr, std::vector<VulkanImageViewPtr>>
+std::tuple<types::VulkanSwapchainPtr, std::vector<types::VulkanImageViewPtr>>
 create_double_buffer_swapchain(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	VulkanDevicePtr const & device,
-	VulkanSurfacePtr const & surface,
+	types::VulkanDevicePtr const & device,
+	types::VulkanSurfacePtr const & surface,
 	VkSurfaceFormatKHR surface_format,
-	VulkanSwapchainPtr const & previous_swapchain = nullptr);
-
-using VulkanQueueCount = strong::type<
-	uint32_t,
-	struct TagForVulkanQueueCount,
-	strong::implicitly_convertible_to<uint32_t, std::size_t>,
-	strong::equality,
-	strong::equality_with<uint32_t, std::size_t>,
-	strong::strongly_ordered,
-	strong::bicrementable>;
-
-using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
-	std::map<VulkanQueueFamilyIdx, std::vector<VkQueue>>;
-
-using VectorOfAvailableDeviceExtensionNameViews = strong::type<
-	std::vector<std::string_view>,
-	struct TagForVectorOfAvailableDeviceExtensionNameViews,
-	strong::regular,
-	strong::range,
-	strong::indexed<>>;
+	types::VulkanSwapchainPtr const & previous_swapchain = nullptr);
 
 /**
  * Given a physical device, desired queue types, and desired extensions, get a logical
@@ -279,11 +165,12 @@ using VectorOfAvailableDeviceExtensionNameViews = strong::type<
  * @param device_extension_names
  * @return
  */
-std::tuple<VulkanDevicePtr, MapOfVulkanQueueFamilyIdxToVectorOfQueues>
+std::tuple<types::VulkanDevicePtr, types::MapOfVulkanQueueFamilyIdxToVectorOfQueues>
 create_device_and_queues(
 	VkPhysicalDevice physical_device,
-	std::vector<std::pair<VulkanQueueFamilyIdx, VulkanQueueCount>> const & queue_family_and_counts,
-	VectorOfAvailableDeviceExtensionNameViews const & device_extension_names);
+	std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>> const &
+		queue_family_and_counts,
+	types::VectorOfAvailableDeviceExtensionNameViews const & device_extension_names);
 
 /**
  * Given some desired image/surface formats (e.g. VK_FORMAT_B8G8R8_UNORM), filter to only those
@@ -300,14 +187,8 @@ create_device_and_queues(
 std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	VulkanSurfacePtr const & surface,
+	types::VulkanSurfacePtr const & surface,
 	std::vector<VkFormat> desired_formats);
-
-using SetOfDesiredDeviceExtensionNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredDeviceExtensionNameViews,
-	strong::regular,
-	strong::range>;
 
 /**
  * Given a list of physical devices, pick the first that has desired capabilities.
@@ -319,10 +200,10 @@ using SetOfDesiredDeviceExtensionNameViews = strong::type<
  * @param surface
  * @return
  */
-std::tuple<VkPhysicalDevice, VulkanQueueFamilyIdx> select_physical_device(
+std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device(
 	LoggerPtr const & logger,
 	std::vector<VkPhysicalDevice> const & physical_devices,
-	SetOfDesiredDeviceExtensionNameViews const & required_device_extensions,
+	types::SetOfDesiredDeviceExtensionNameViews const & required_device_extensions,
 	VkQueueFlagBits required_queue_capabilities,
 	VkSurfaceKHR surface = nullptr);
 
@@ -335,10 +216,10 @@ std::tuple<VkPhysicalDevice, VulkanQueueFamilyIdx> select_physical_device(
  * @param desired_device_extension_names
  * @return
  */
-VectorOfAvailableDeviceExtensionNameViews filter_available_device_extensions(
+types::VectorOfAvailableDeviceExtensionNameViews filter_available_device_extensions(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	SetOfDesiredDeviceExtensionNameViews const & desired_device_extension_names);
+	types::SetOfDesiredDeviceExtensionNameViews const & desired_device_extension_names);
 
 /**
  * Filter queue families to find those with desired capabilities
@@ -347,7 +228,7 @@ VectorOfAvailableDeviceExtensionNameViews filter_available_device_extensions(
  * @param desired_queue_capabilities Required queue capabilities
  * @return
  */
-std::vector<VulkanQueueFamilyIdx> filter_available_queue_families(
+std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 	VkPhysicalDevice const & physical_device, VkQueueFlagBits desired_queue_capabilities);
 
 /**
@@ -370,7 +251,7 @@ std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
  * @return
  */
 std::vector<VkPhysicalDevice> enumerate_physical_devices(
-	LoggerPtr const & logger, VulkanInstancePtr const & instance);
+	LoggerPtr const & logger, types::VulkanInstancePtr const & instance);
 
 /**
  * Create vulkan surface compatible with SDL window to render to.
@@ -378,7 +259,8 @@ std::vector<VkPhysicalDevice> enumerate_physical_devices(
  * @param instance
  * @return
  */
-VulkanSurfacePtr create_surface(SDLWindowPtr const & window, VulkanInstancePtr instance);
+types::VulkanSurfacePtr create_surface(
+	types::SDLWindowPtr const & window, types::VulkanInstancePtr instance);
 
 /**
  * Create a debug log messenger for use with the VK_EXT_debug_utils extension.
@@ -387,19 +269,8 @@ VulkanSurfacePtr create_surface(SDLWindowPtr const & window, VulkanInstancePtr i
  * @param instance
  * @return
  */
-VulkanDebugMessengerPtr create_debug_messenger(LoggerPtr logger, VulkanInstancePtr instance);
-
-using VectorOfAvailableInstanceLayerNameCstrs = strong::type<
-	std::vector<char const *>,
-	struct TagForVectorOfAvailableInstanceLayerNameCstrs,
-	strong::regular,
-	strong::range>;
-
-using VectorOfAvailableInstanceExtensionNameCstrs = strong::type<
-	std::vector<char const *>,
-	struct TagForVectorOfAvailableInstanceExtensionNameCstrs,
-	strong::semiregular,
-	strong::range>;
+types::VulkanDebugMessengerPtr create_debug_messenger(
+	LoggerPtr logger, types::VulkanInstancePtr instance);
 
 /**
  * Create VkInstance using given window and layers.
@@ -410,17 +281,11 @@ using VectorOfAvailableInstanceExtensionNameCstrs = strong::type<
  * @param extensions_to_enable
  * @return
  */
-VulkanInstancePtr create_vulkan_instance(
+types::VulkanInstancePtr create_vulkan_instance(
 	LoggerPtr const & logger,
-	SDLWindowPtr const & sdl_window,
-	VectorOfAvailableInstanceLayerNameCstrs const & layers_to_enable,
-	VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable);
-
-using SetOfDesiredInstanceLayerNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredInstanceLayerNameViews,
-	strong::regular,
-	strong::range>;
+	types::SDLWindowPtr const & sdl_window,
+	types::VectorOfAvailableInstanceLayerNameCstrs const & layers_to_enable,
+	types::VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable);
 
 /**
  * Query available layers vs. desired layers.
@@ -429,14 +294,9 @@ using SetOfDesiredInstanceLayerNameViews = strong::type<
  * @param desired_layer_names
  * @return
  */
-VectorOfAvailableInstanceLayerNameCstrs filter_available_layers(
-	LoggerPtr const & logger, SetOfDesiredInstanceLayerNameViews const & desired_layer_names);
-
-using SetOfDesiredInstanceExtensionNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredInstanceExtensionNameViews,
-	strong::semiregular,
-	strong::range>;
+types::VectorOfAvailableInstanceLayerNameCstrs filter_available_layers(
+	LoggerPtr const & logger,
+	types::SetOfDesiredInstanceLayerNameViews const & desired_layer_names);
 
 /**
  * Query available generic instance extensions vs. desired..
@@ -445,9 +305,9 @@ using SetOfDesiredInstanceExtensionNameViews = strong::type<
  * @param desired_extension_names
  * @return
  */
-VectorOfAvailableInstanceExtensionNameCstrs filter_available_instance_extensions(
+types::VectorOfAvailableInstanceExtensionNameCstrs filter_available_instance_extensions(
 	LoggerPtr const & logger,
-	SetOfDesiredInstanceExtensionNameViews const & desired_extension_names);
+	types::SetOfDesiredInstanceExtensionNameViews const & desired_extension_names);
 
 /**
  * Get the drawable size of an SDL window.
@@ -455,7 +315,7 @@ VectorOfAvailableInstanceExtensionNameCstrs filter_available_instance_extensions
  * @param window
  * @return
  */
-VkExtent2D window_drawable_size(SDLWindowPtr const & window);
+VkExtent2D window_drawable_size(types::SDLWindowPtr const & window);
 
 /**
  * Create a window
@@ -465,5 +325,5 @@ VkExtent2D window_drawable_size(SDLWindowPtr const & window);
  * @param height The height of the window
  * @return The window
  */
-SDLWindowPtr create_window(char const * title, int width, int height);
+types::SDLWindowPtr create_window(char const * title, int width, int height);
 }  // namespace vulkandemo::setup

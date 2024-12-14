@@ -23,6 +23,8 @@
 
 #include "Logger.hpp"
 #include "VulkanApp.hpp"
+#include "macros.hpp"
+#include "types.hpp"
 
 namespace vulkandemo
 {
@@ -30,39 +32,39 @@ using namespace std::literals;
 
 void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognitive-complexity)
 {
-	setup::SDLWindowPtr const window = setup::create_window("", 100, 100);
+	types::SDLWindowPtr const window = setup::create_window("", 100, 100);
 
-	setup::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
+	types::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
 		setup::filter_available_layers(
-			logger, setup::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
+			logger, types::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
 
-	setup::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
+	types::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
 		setup::filter_available_instance_extensions(
 			logger,
-			setup::SetOfDesiredInstanceExtensionNameViews{
+			types::SetOfDesiredInstanceExtensionNameViews{
 				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
 
-	setup::VulkanInstancePtr const instance = setup::create_vulkan_instance(
+	types::VulkanInstancePtr const instance = setup::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);
 
-	setup::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.value_of().empty()
+	types::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.value_of().empty()
 		? nullptr
 		: setup::create_debug_messenger(logger, instance);
 
-	setup::VulkanSurfacePtr const surface = setup::create_surface(window, instance);
+	types::VulkanSurfacePtr const surface = setup::create_surface(window, instance);
 
 	auto [physical_device, queue_family_idx] = setup::select_physical_device(
 		logger,
 		setup::enumerate_physical_devices(logger, instance),
-		setup::SetOfDesiredDeviceExtensionNameViews{
+		types::SetOfDesiredDeviceExtensionNameViews{
 			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
 		surface.get());
 
 	auto [device, queues] = setup::create_device_and_queues(
 		physical_device,
-		{{queue_family_idx, setup::VulkanQueueCount{1}}},
-		setup::VectorOfAvailableDeviceExtensionNameViews{
+		{{queue_family_idx, types::VulkanQueueCount{1}}},
+		types::VectorOfAvailableDeviceExtensionNameViews{
 			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}});
 
 	auto const image_available_semaphore = setup::create_semaphore(device);
@@ -80,18 +82,18 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 
 	VkExtent2D drawable_size = setup::window_drawable_size(window);
 
-	std::vector<setup::VulkanFramebufferPtr> frame_buffers =
+	std::vector<types::VulkanFramebufferPtr> frame_buffers =
 		setup::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
 
-	setup::VulkanCommandPoolPtr const command_pool =
+	types::VulkanCommandPoolPtr const command_pool =
 		setup::create_command_pool(device, queue_family_idx);
 
-	setup::VulkanCommandBuffersPtr const command_buffers = setup::create_primary_command_buffers(
-		device, command_pool, setup::VulkanCommandBufferCount{frame_buffers.size()});
+	types::VulkanCommandBuffersPtr const command_buffers = setup::create_primary_command_buffers(
+		device, command_pool, types::VulkanCommandBufferCount{frame_buffers.size()});
 
 	VkQueue queue = queues.at(queue_family_idx).front();
 
-	setup::VulkanClearColour clear_colour{std::array{1.0F, .0F, .0F, 1.0F}};
+	types::VulkanClearColour clear_colour{std::array{1.0F, .0F, .0F, 1.0F}};
 
 	// Application loop.
 	while (true)
@@ -133,7 +135,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		}
 
 		VkCommandBuffer command_buffer = command_buffers->at(*image_idx);
-		setup::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
+		types::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
 
 		setup::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, clear_colour);
