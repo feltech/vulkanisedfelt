@@ -29,6 +29,7 @@ add_executable(
     ${_exe_target}
     src/types.cpp
     src/setup.cpp
+    src/draw.cpp
     src/Logger.cpp
     src/vulkandemo.cpp
     src/vulkandemo.hpp

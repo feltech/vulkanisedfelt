@@ -22,6 +22,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
+#include "draw.hpp"
 #include "macros.hpp"
 #include "setup.hpp"
 #include "types.hpp"
@@ -126,7 +127,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		}
 
 		auto const image_idx =
-			setup::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+			draw::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
 
 		if (!image_idx.has_value())
 		{
@@ -137,13 +138,13 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		VkCommandBuffer command_buffer = command_buffers->at(*image_idx);
 		types::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
 
-		setup::populate_cmd_render_pass(
+		draw::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, clear_colour);
 
-		setup::submit_command_buffer(
+		draw::submit_command_buffer(
 			queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
 
-		setup::submit_present_image_cmd(queue, swapchain, *image_idx, rendering_finished_semaphore);
+		draw::submit_present_image_cmd(queue, swapchain, *image_idx, rendering_finished_semaphore);
 
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
 	}
