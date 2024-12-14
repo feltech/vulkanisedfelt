@@ -7,6 +7,7 @@
 #include "vulkandemo.hpp"
 
 #include <array>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -25,18 +26,21 @@
 
 namespace vulkandemo
 {
+using namespace std::literals;
+
 void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognitive-complexity)
 {
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
 
-	auto const optional_layers = VulkanApp::VectorOfInstanceLayerNameCstrs{
-		VulkanApp::filter_available_layers(logger, {"VK_LAYER_KHRONOS_validation"})};
-	auto const optional_instance_extensions =
-		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{
-			VulkanApp::filter_available_instance_extensions(
-				logger,
-				VulkanApp::SetOfDesiredInstanceExtensionNameViews{
-					std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})};
+	VulkanApp::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
+		VulkanApp::filter_available_layers(
+			logger, VulkanApp::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
+
+	VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
+		VulkanApp::filter_available_instance_extensions(
+			logger,
+			VulkanApp::SetOfDesiredInstanceExtensionNameViews{
+				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
 
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);
@@ -51,12 +55,16 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
 		logger,
 		VulkanApp::enumerate_physical_devices(logger, instance),
-		{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+		VulkanApp::SetOfDesiredDeviceExtensionNameViews{
+			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
 		surface.get());
 
 	auto [device, queues] = VulkanApp::create_device_and_queues(
-		physical_device, {{queue_family_idx, 1}}, {VK_KHR_SWAPCHAIN_EXTENSION_NAME});
+		physical_device,
+		{{queue_family_idx, VulkanApp::VulkanQueueCount{1}}},
+		VulkanApp::VectorOfAvailableDeviceExtensionNameViews{
+			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}});
 
 	auto const image_available_semaphore = VulkanApp::create_semaphore(device);
 	auto const rendering_finished_semaphore = VulkanApp::create_semaphore(device);
@@ -80,11 +88,12 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		VulkanApp::create_command_pool(device, queue_family_idx);
 
 	VulkanApp::VulkanCommandBuffersPtr const command_buffers =
-		VulkanApp::create_primary_command_buffers(device, command_pool, frame_buffers.size());
+		VulkanApp::create_primary_command_buffers(
+			device, command_pool, VulkanApp::VulkanCommandBufferCount{frame_buffers.size()});
 
 	VkQueue queue = queues.at(queue_family_idx).front();
 
-	std::array<float, 4> clear_colour = {1.0F, 0, 0, 1.0F};
+	VulkanApp::VulkanClearColour clear_colour{std::array{1.0F, .0F, .0F, 1.0F}};
 
 	// Application loop.
 	while (true)

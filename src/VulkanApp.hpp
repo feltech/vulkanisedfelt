@@ -20,6 +20,7 @@
 
 #include <gsl/pointers>
 
+#include <strong_type/ordered.hpp>
 #include <strong_type/semiregular.hpp>
 #include <strong_type/strong_type.hpp>
 
@@ -84,6 +85,14 @@ struct VulkanApp
 	using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
 	static VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore);
 
+	using VulkanImageIdx = strong::type<
+		uint32_t,
+		struct TagForVulkanImageIdx,
+		strong::regular,
+		strong::implicitly_convertible_to<uint32_t, std::size_t>,
+		strong::equality,
+		strong::equality_with<uint32_t, std::size_t>>;
+
 	/**
 	 * Enqueue image presentation.
 	 *
@@ -98,7 +107,7 @@ struct VulkanApp
 	static bool submit_present_image_cmd(
 		VkQueue queue,
 		VulkanSwapchainPtr const & swapchain,
-		uint32_t image_idx,
+		VulkanImageIdx image_idx,
 		VulkanSemaphorePtr const & wait_semaphore);
 
 	/**
@@ -115,6 +124,13 @@ struct VulkanApp
 		VulkanSemaphorePtr const & wait_semaphore,
 		VulkanSemaphorePtr const & signal_semaphore);
 
+	using VulkanClearColour = strong::type<
+		std::array<float, 4>,
+		struct TagForRgbaColourFractions,
+		strong::regular,
+		strong::indexed<>,
+		strong::range>;
+
 	/**
 	 * Populate a command buffer with a render pass that simply clears the frame buffer.
 	 *
@@ -129,12 +145,11 @@ struct VulkanApp
 		VulkanRenderPassPtr const & render_pass,
 		VulkanFramebufferPtr const & frame_buffer,
 		VkExtent2D extent,
-		std::array<float, 4> const & clear_colour);
+		VulkanClearColour const & clear_colour);
 
 	/**
 	 * Create a semaphore.
 	 *
-	 * @tparam count
 	 * @param device
 	 * @return
 	 */
@@ -149,13 +164,21 @@ struct VulkanApp
 	 * @param semaphore
 	 * @return
 	 */
-	static std::optional<uint32_t> acquire_next_swapchain_image(
+	static std::optional<VulkanImageIdx> acquire_next_swapchain_image(
 		VulkanDevicePtr const & device,
 		VulkanSwapchainPtr const & swapchain,
 		VulkanSemaphorePtr const & semaphore);
 
+	using VulkanCommandBufferCount = strong::type<
+		uint32_t,
+		struct TagForVulkanCommandBufferCount,
+		strong::regular,
+		strong::implicitly_convertible_to<uint32_t, std::size_t>,
+		strong::equality,
+		strong::equality_with<uint32_t, std::size_t>>;
+
 	/**
-	 * Create a command buffer of primary level from a given pool.
+	 * Create command buffers of primary level from a given pool.
 	 *
 	 * @param device
 	 * @param pool
@@ -163,7 +186,17 @@ struct VulkanApp
 	 * @return
 	 */
 	static VulkanCommandBuffersPtr create_primary_command_buffers(
-		VulkanDevicePtr device, VulkanCommandPoolPtr pool, uint32_t count);
+		VulkanDevicePtr device, VulkanCommandPoolPtr pool, VulkanCommandBufferCount count);
+
+	using VulkanQueueFamilyIdx = strong::type<
+		uint32_t,
+		struct TagForVulkanQueueFamilyIdx,
+		strong::regular,
+		strong::implicitly_convertible_to<uint32_t>,
+		strong::equality,
+		strong::equality_with<uint32_t>,
+		strong::bicrementable,
+		strong::strongly_ordered>;
 
 	/**
 	 * Create a command pool serving resettable command buffers for a given device queue family.
@@ -173,7 +206,7 @@ struct VulkanApp
 	 * @return
 	 */
 	static VulkanCommandPoolPtr create_command_pool(
-		VulkanDevicePtr device, uint32_t queue_family_idx);
+		VulkanDevicePtr device, VulkanQueueFamilyIdx queue_family_idx);
 
 	/**
 	 * Create a list of frame buffers, one-one mapped to a list of image views.
@@ -223,6 +256,25 @@ struct VulkanApp
 		VkSurfaceFormatKHR surface_format,
 		VulkanSwapchainPtr const & previous_swapchain = nullptr);
 
+	using VulkanQueueCount = strong::type<
+		uint32_t,
+		struct TagForVulkanQueueCount,
+		strong::implicitly_convertible_to<uint32_t, std::size_t>,
+		strong::equality,
+		strong::equality_with<uint32_t, std::size_t>,
+		strong::strongly_ordered,
+		strong::bicrementable>;
+
+	using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
+		std::map<VulkanQueueFamilyIdx, std::vector<VkQueue>>;
+
+	using VectorOfAvailableDeviceExtensionNameViews = strong::type<
+		std::vector<std::string_view>,
+		struct TagForVectorOfAvailableDeviceExtensionNameViews,
+		strong::regular,
+		strong::range,
+		strong::indexed<>>;
+
 	/**
 	 * Given a physical device, desired queue types, and desired extensions, get a logical
 	 * device and corresponding queues.
@@ -232,11 +284,12 @@ struct VulkanApp
 	 * @param device_extension_names
 	 * @return
 	 */
-	static std::tuple<VulkanDevicePtr, std::map<uint32_t, std::vector<VkQueue>>>
+	static std::tuple<VulkanDevicePtr, MapOfVulkanQueueFamilyIdxToVectorOfQueues>
 	create_device_and_queues(
 		VkPhysicalDevice physical_device,
-		std::vector<std::pair<uint32_t, uint32_t>> const & queue_family_and_counts,
-		std::vector<std::string_view> const & device_extension_names);
+		std::vector<std::pair<VulkanQueueFamilyIdx, VulkanQueueCount>> const &
+			queue_family_and_counts,
+		VectorOfAvailableDeviceExtensionNameViews const & device_extension_names);
 
 	/**
 	 * Given some desired image/surface formats (e.g. VK_FORMAT_B8G8R8_UNORM), filter to only those
@@ -256,6 +309,12 @@ struct VulkanApp
 		VulkanSurfacePtr const & surface,
 		std::vector<VkFormat> desired_formats);
 
+	using SetOfDesiredDeviceExtensionNameViews = strong::type<
+		std::set<std::string_view>,
+		struct TagForSetOfDesiredDeviceExtensionNameViews,
+		strong::regular,
+		strong::range>;
+
 	/**
 	 * Given a list of physical devices, pick the first that has desired capabilities.
 	 *
@@ -266,10 +325,10 @@ struct VulkanApp
 	 * @param surface
 	 * @return
 	 */
-	static std::tuple<VkPhysicalDevice, uint32_t> select_physical_device(
+	static std::tuple<VkPhysicalDevice, VulkanQueueFamilyIdx> select_physical_device(
 		LoggerPtr const & logger,
 		std::vector<VkPhysicalDevice> const & physical_devices,
-		std::set<std::string_view> const & required_device_extensions,
+		SetOfDesiredDeviceExtensionNameViews const & required_device_extensions,
 		VkQueueFlagBits required_queue_capabilities,
 		VkSurfaceKHR surface = nullptr);
 
@@ -282,10 +341,10 @@ struct VulkanApp
 	 * @param desired_device_extension_names
 	 * @return
 	 */
-	static std::vector<std::string_view> filter_available_device_extensions(
+	static VectorOfAvailableDeviceExtensionNameViews filter_available_device_extensions(
 		LoggerPtr const & logger,
 		VkPhysicalDevice physical_device,
-		std::set<std::string_view> const & desired_device_extension_names);
+		SetOfDesiredDeviceExtensionNameViews const & desired_device_extension_names);
 
 	/**
 	 * Filter queue families to find those with desired capabilities
@@ -294,7 +353,7 @@ struct VulkanApp
 	 * @param desired_queue_capabilities Required queue capabilities
 	 * @return
 	 */
-	static std::vector<uint32_t> filter_available_queue_families(
+	static std::vector<VulkanQueueFamilyIdx> filter_available_queue_families(
 		VkPhysicalDevice const & physical_device, VkQueueFlagBits desired_queue_capabilities);
 
 	/**
@@ -337,19 +396,10 @@ struct VulkanApp
 	static VulkanDebugMessengerPtr create_debug_messenger(
 		LoggerPtr logger, VulkanInstancePtr instance);
 
-	using VectorOfInstanceLayerNameCstrs = strong::
-		type<std::vector<char const *>, struct InstanceLayerNameCstrList_, strong::semiregular>;
-
-	using SetOfDesiredInstanceExtensionNameViews = strong::type<
-		std::set<std::string_view>,
-		struct TagForSetOfDesiredInstanceExtensionNameViews,
-		strong::semiregular,
-		strong::range>;
-
-	using SetOfAvailableInstanceExtensionNameViews = strong::type<
-		std::set<std::string_view>,
-		struct TagForSetOfAvailableInstanceExtensionNameViews,
-		strong::semiregular,
+	using VectorOfAvailableInstanceLayerNameCstrs = strong::type<
+		std::vector<char const *>,
+		struct TagForVectorOfAvailableInstanceLayerNameCstrs,
+		strong::regular,
 		strong::range>;
 
 	using VectorOfAvailableInstanceExtensionNameCstrs = strong::type<
@@ -370,8 +420,14 @@ struct VulkanApp
 	static VulkanInstancePtr create_vulkan_instance(
 		LoggerPtr const & logger,
 		SDLWindowPtr const & sdl_window,
-		VectorOfInstanceLayerNameCstrs const & layers_to_enable,
+		VectorOfAvailableInstanceLayerNameCstrs const & layers_to_enable,
 		VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable);
+
+	using SetOfDesiredInstanceLayerNameViews = strong::type<
+		std::set<std::string_view>,
+		struct TagForSetOfDesiredInstanceLayerNameViews,
+		strong::regular,
+		strong::range>;
 
 	/**
 	 * Query available layers vs. desired layers.
@@ -380,8 +436,14 @@ struct VulkanApp
 	 * @param desired_layer_names
 	 * @return
 	 */
-	static std::vector<char const *> filter_available_layers(
-		LoggerPtr const & logger, std::set<std::string_view> const & desired_layer_names);
+	static VectorOfAvailableInstanceLayerNameCstrs filter_available_layers(
+		LoggerPtr const & logger, SetOfDesiredInstanceLayerNameViews const & desired_layer_names);
+
+	using SetOfDesiredInstanceExtensionNameViews = strong::type<
+		std::set<std::string_view>,
+		struct TagForSetOfDesiredInstanceExtensionNameViews,
+		strong::semiregular,
+		strong::range>;
 
 	/**
 	 * Query available generic instance extensions vs. desired..
