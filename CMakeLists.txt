@@ -5,7 +5,7 @@ project(vulkandemo CXX C)
 # Options
 
 option(${PROJECT_NAME}_ENABLE_TESTS "Enable unit tests" OFF)
-option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" ON)
+option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" OFF)
 
 
 ####################################################################################################
@@ -112,12 +112,7 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
         # Uncomment below to provide more reporting (but run slower).
         # list(APPEND _envvars "ASAN_OPTIONS=fast_unwind_on_malloc=0")
 
-        set_tests_properties(
-            ${_exe_target}
-            PROPERTIES
-            ENVIRONMENT
-            "${_envvars}"
-        )
+        set_tests_properties(${_exe_target} PROPERTIES ENVIRONMENT "${_envvars}")
     endif ()
 
 else ()
