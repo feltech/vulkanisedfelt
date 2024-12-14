@@ -22,8 +22,8 @@
 #include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
-#include "VulkanApp.hpp"
 #include "macros.hpp"
+#include "setup.hpp"
 #include "types.hpp"
 
 namespace vulkandemo

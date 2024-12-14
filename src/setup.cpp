@@ -5,7 +5,7 @@
 // ReSharper disable CppParameterMayBeConst
 // ReSharper disable CppLocalVariableMayBeConst
 
-#include "VulkanApp.hpp"
+#include "setup.hpp"
 
 #include <algorithm>
 #include <array>
@@ -69,6 +69,7 @@ using SetOfAvailableInstanceExtensionNameViews = strong::type<
 	struct TagForSetOfAvailableInstanceExtensionNameViews,
 	strong::semiregular,
 	strong::range>;
+
 /**
  * Log desired instance extensions vs. available.
  *
