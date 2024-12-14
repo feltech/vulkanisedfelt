@@ -16,7 +16,7 @@ class vulkandemoRecipe(ConanFile):
         "spdlog/1.14.1",
         "fmt/10.2.1",
         "ms-gsl/4.1.0",
-        "strong_type/v15"
+        "strong_type/v14"
     ]
 
     settings = "build_type", "os"
