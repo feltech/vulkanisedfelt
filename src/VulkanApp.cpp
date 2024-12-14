@@ -63,14 +63,13 @@ namespace
  * @param logger
  * @param desired_extension_names
  * @param available_extension_names
- * @param available_extensions
+ * @param available_extension_properties
  */
 void log_instance_extensions_info(
 	LoggerPtr const & logger,
-	// NOLINTNEXTLINE(*-easily-swappable-parameters)
-	std::set<std::string_view> const & desired_extension_names,
-	std::set<std::string_view> const & available_extension_names,
-	std::vector<VkExtensionProperties> const & available_extensions);
+	VulkanApp::SetOfDesiredInstanceExtensionNameViews const & desired_extension_names,
+	VulkanApp::SetOfAvailableInstanceExtensionNameViews const & available_extension_names,
+	std::vector<VkExtensionProperties> const & available_extension_properties);
 
 /**
  * Callback to be called by the VK_EXT_debug_utils extension with log messages.
@@ -1021,7 +1020,7 @@ std::vector<VkPhysicalDevice> VulkanApp::enumerate_physical_devices(
 VulkanApp::VulkanSurfacePtr VulkanApp::create_surface(
 	SDLWindowPtr const & window, VulkanInstancePtr instance)
 {
-	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkSurfaceKHR surface = nullptr;
 	if (SDL_Vulkan_CreateSurface(window.get(), instance.get(), &surface) != SDL_TRUE)
 		throw std::runtime_error{
 			std::format("Failed to create Vulkan surface: {}", SDL_GetError())};
@@ -1146,8 +1145,8 @@ VkBool32 vulkan_debug_messenger_callback(
 VulkanApp::VulkanInstancePtr VulkanApp::create_vulkan_instance(
 	LoggerPtr const & logger,
 	SDLWindowPtr const & sdl_window,
-	InstanceLayerNameCstrList const & layers_to_enable,
-	InstanceExtensionNameCstrList const & extensions_to_enable)
+	VectorOfInstanceLayerNameCstrs const & layers_to_enable,
+	VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable)
 {
 	// Get the available extensions from SDL
 	std::vector<char const *> sdl_extensions = [&]
@@ -1295,8 +1294,10 @@ void log_layer_info(
 }
 }  // namespace
 
-std::vector<char const *> VulkanApp::filter_available_instance_extensions(
-	LoggerPtr const & logger, std::set<std::string_view> const & desired_extension_names)
+VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs
+VulkanApp::filter_available_instance_extensions(
+	LoggerPtr const & logger,
+	SetOfDesiredInstanceExtensionNameViews const & desired_extension_names)
 {
 	// Get available extensions.
 	std::vector<VkExtensionProperties> const available_extensions = []
@@ -1316,34 +1317,38 @@ std::vector<char const *> VulkanApp::filter_available_instance_extensions(
 	}();
 
 	// Extract extension names.
-	std::set<std::string_view> const available_extension_names = [&]
-	{
-		std::set<std::string_view> out;
-		std::ranges::transform(
-			available_extensions,
-			std::inserter(out, end(out)),
-			[](VkExtensionProperties const & extension_desc)
-			{ return std::string_view{static_cast<char const *>(extension_desc.extensionName)}; });
-		return out;
-	}();
+	SetOfAvailableInstanceExtensionNameViews const available_extension_names{
+		[&]
+		{
+			std::set<std::string_view> out;
+			std::ranges::transform(
+				available_extensions,
+				std::inserter(out, end(out)),
+				[](VkExtensionProperties const & extension_desc) {
+					return std::string_view{
+						static_cast<char const *>(extension_desc.extensionName)};
+				});
+			return out;
+		}()};
 
 	// Intersection of available extensions and desired extensions to return.
-	std::vector<char const *> extensions_to_enable = [&]
-	{
-		std::vector<std::string_view> extension_names;
-		extension_names.reserve(desired_extension_names.size());
-		std::ranges::set_intersection(
-			desired_extension_names,
-			available_extension_names,
-			std::back_inserter(extension_names));
-		std::vector<char const *> out;
-		out.reserve(extension_names.size());
-		std::ranges::transform(
-			extension_names,
-			std::back_inserter(out),
-			[](std::string_view const & name) { return name.data(); });
-		return out;
-	}();
+	VectorOfAvailableInstanceExtensionNameCstrs extensions_to_enable{
+		[&]
+		{
+			std::vector<std::string_view> extension_names;
+			extension_names.reserve(desired_extension_names.value_of().size());
+			std::ranges::set_intersection(
+				desired_extension_names.value_of(),
+				available_extension_names.value_of(),
+				std::back_inserter(extension_names));
+			std::vector<char const *> out;
+			out.reserve(extension_names.size());
+			std::ranges::transform(
+				extension_names,
+				std::back_inserter(out),
+				[](std::string_view const & name) { return name.data(); });
+			return out;
+		}()};
 
 	log_instance_extensions_info(
 		logger, desired_extension_names, available_extension_names, available_extensions);
@@ -1355,40 +1360,42 @@ namespace
 {
 void log_instance_extensions_info(
 	LoggerPtr const & logger,
-	// NOLINTNEXTLINE(*-easily-swappable-parameters)
-	std::set<std::string_view> const & desired_extension_names,
-	std::set<std::string_view> const & available_extension_names,
-	std::vector<VkExtensionProperties> const & available_extensions)
+	VulkanApp::SetOfDesiredInstanceExtensionNameViews const & desired_extension_names,
+	VulkanApp::SetOfAvailableInstanceExtensionNameViews const & available_extension_names,
+	std::vector<VkExtensionProperties> const & available_extension_properties)
 {
-	if (logger->should_log(spdlog::level::debug))
-	{
-		// Log requested extensions.
-		if (!desired_extension_names.empty())
-		{
-			logger->debug("Requested extensions:");
-			for (auto const & extension_name : desired_extension_names)
-			{
-				if (available_extension_names.contains(extension_name))
-					logger->debug("\t{} (available)", extension_name);
-				else
-					logger->debug("\t{} (unavailable)", extension_name);
-			}
-		}
+	if (!logger->should_log(spdlog::level::debug))
+		return;
 
-		// Log available extensions.
-		if (!available_extensions.empty() && logger->should_log(spdlog::level::trace))
+	// Log requested extensions.
+	if (!desired_extension_names.value_of().empty())
+	{
+		logger->debug("Requested extensions:");
+		for (auto const & extension_name : desired_extension_names)
 		{
-			logger->trace("Available extensions:");
-			for (auto const & [extensionName, specVersion] : available_extensions)
-			{
-				logger->trace(
-					"\t{} ({}.{}.{})",
-					extensionName,
-					VK_VERSION_MAJOR(specVersion),
-					VK_VERSION_MINOR(specVersion),
-					VK_VERSION_PATCH(specVersion));
-			}
+			if (available_extension_names.value_of().contains(extension_name))
+				logger->debug("\t{} (available)", extension_name);
+			else
+				logger->debug("\t{} (unavailable)", extension_name);
 		}
+	}
+
+	if (!logger->should_log(spdlog::level::debug))
+		return;
+
+	// Log available extensions.
+	if (available_extension_properties.empty())
+		return;
+
+	logger->trace("Available extensions:");
+	for (auto const & [extensionName, specVersion] : available_extension_properties)
+	{
+		logger->trace(
+			"\t{} ({}.{}.{})",
+			extensionName,
+			VK_VERSION_MAJOR(specVersion),
+			VK_VERSION_MINOR(specVersion),
+			VK_VERSION_PATCH(specVersion));
 	}
 }
 }  // namespace
@@ -1457,10 +1464,13 @@ TEST_CASE("Create a Vulkan instance")
 	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
 		logger,
 		VulkanApp::create_window("", 0, 0),
-		VulkanApp::InstanceLayerNameCstrList{VulkanApp::filter_available_layers(
+		VulkanApp::VectorOfInstanceLayerNameCstrs{VulkanApp::filter_available_layers(
 			logger, {"some_unavailable_layer", "VK_LAYER_KHRONOS_validation"})},
-		VulkanApp::InstanceExtensionNameCstrList{VulkanApp::filter_available_instance_extensions(
-			logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME, "some_unavailable_extension"})});
+		VulkanApp::filter_available_instance_extensions(
+			logger,
+			VulkanApp::SetOfDesiredInstanceExtensionNameViews{
+				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+				"some_unavailable_extension"sv}));
 	CHECK(instance);
 }
 
@@ -1471,15 +1481,14 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 		vulkandemo::create_logger("Create a Vulkan debug utils messenger");
 
 	auto instance_extensions = VulkanApp::filter_available_instance_extensions(
-		logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		logger,
+		VulkanApp::SetOfDesiredInstanceExtensionNameViews{
+			std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
 
-	REQUIRE(!instance_extensions.empty());
+	REQUIRE(!instance_extensions.value_of().empty());
 
 	VulkanApp::VulkanInstancePtr instance = VulkanApp::create_vulkan_instance(
-		logger,
-		VulkanApp::create_window("", 0, 0),
-		{},
-		VulkanApp::InstanceExtensionNameCstrList{instance_extensions});
+		logger, VulkanApp::create_window("", 0, 0), {}, instance_extensions);
 	VulkanApp::VulkanDebugMessengerPtr messenger =
 		VulkanApp::create_debug_messenger(logger, std::move(instance));
 
@@ -1494,8 +1503,8 @@ TEST_CASE("Create a Vulkan surface")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
@@ -1518,8 +1527,8 @@ TEST_CASE("Enumerate devices")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1562,8 +1571,8 @@ TEST_CASE("Select device with capability")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 
@@ -1665,8 +1674,8 @@ TEST_CASE("Create render pass")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1702,8 +1711,8 @@ TEST_CASE("Create frame buffers")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1742,8 +1751,8 @@ TEST_CASE("Create command buffers")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1777,8 +1786,8 @@ TEST_CASE("Create semaphores")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1811,8 +1820,8 @@ TEST_CASE("Acquire swapchain image")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1870,8 +1879,8 @@ TEST_CASE("Populate render pass")
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
@@ -1935,8 +1944,8 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger,
 		window,
-		VulkanApp::InstanceLayerNameCstrList{"VK_LAYER_KHRONOS_validation"},
-		VulkanApp::InstanceExtensionNameCstrList{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
+		VulkanApp::VectorOfInstanceLayerNameCstrs{"VK_LAYER_KHRONOS_validation"},
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{VK_EXT_DEBUG_UTILS_EXTENSION_NAME});
 	VulkanApp::VulkanDebugMessengerPtr const messenger =
 		VulkanApp::create_debug_messenger(logger, instance);
 	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);

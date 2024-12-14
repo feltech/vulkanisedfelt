@@ -29,11 +29,14 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 {
 	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
 
-	auto const optional_layers = VulkanApp::InstanceLayerNameCstrList{
+	auto const optional_layers = VulkanApp::VectorOfInstanceLayerNameCstrs{
 		VulkanApp::filter_available_layers(logger, {"VK_LAYER_KHRONOS_validation"})};
 	auto const optional_instance_extensions =
-		VulkanApp::InstanceExtensionNameCstrList{VulkanApp::filter_available_instance_extensions(
-			logger, {VK_EXT_DEBUG_UTILS_EXTENSION_NAME})};
+		VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs{
+			VulkanApp::filter_available_instance_extensions(
+				logger,
+				VulkanApp::SetOfDesiredInstanceExtensionNameViews{
+					std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})};
 
 	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);

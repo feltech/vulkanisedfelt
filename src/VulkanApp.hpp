@@ -360,10 +360,26 @@ struct VulkanApp
 	static VulkanDebugMessengerPtr create_debug_messenger(
 		LoggerPtr logger, VulkanInstancePtr instance);
 
-	using InstanceLayerNameCstrList = strong::
+	using VectorOfInstanceLayerNameCstrs = strong::
 		type<std::vector<char const *>, struct InstanceLayerNameCstrList_, strong::semiregular>;
-	using InstanceExtensionNameCstrList = strong::
-		type<std::vector<char const *>, struct InstanceExtensionNameCstrList_, strong::semiregular>;
+
+	using SetOfDesiredInstanceExtensionNameViews = strong::type<
+		std::set<std::string_view>,
+		struct TagForSetOfDesiredInstanceExtensionNameViews,
+		strong::semiregular,
+		strong::range>;
+
+	using SetOfAvailableInstanceExtensionNameViews = strong::type<
+		std::set<std::string_view>,
+		struct TagForSetOfAvailableInstanceExtensionNameViews,
+		strong::semiregular,
+		strong::range>;
+
+	using VectorOfAvailableInstanceExtensionNameCstrs = strong::type<
+		std::vector<char const *>,
+		struct TagForVectorOfAvailableInstanceExtensionNameCstrs,
+		strong::semiregular,
+		strong::range>;
 
 	/**
 	 * Create VkInstance using given window and layers.
@@ -377,8 +393,8 @@ struct VulkanApp
 	static VulkanInstancePtr create_vulkan_instance(
 		LoggerPtr const & logger,
 		SDLWindowPtr const & sdl_window,
-		InstanceLayerNameCstrList const & layers_to_enable,
-		InstanceExtensionNameCstrList const & extensions_to_enable);
+		VectorOfInstanceLayerNameCstrs const & layers_to_enable,
+		VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable);
 
 	/**
 	 * Query available layers vs. desired layers.
@@ -397,8 +413,9 @@ struct VulkanApp
 	 * @param desired_extension_names
 	 * @return
 	 */
-	static std::vector<char const *> filter_available_instance_extensions(
-		LoggerPtr const & logger, std::set<std::string_view> const & desired_extension_names);
+	static VectorOfAvailableInstanceExtensionNameCstrs filter_available_instance_extensions(
+		LoggerPtr const & logger,
+		SetOfDesiredInstanceExtensionNameViews const & desired_extension_names);
 
 	/**
 	 * Get the drawable size of an SDL window.
