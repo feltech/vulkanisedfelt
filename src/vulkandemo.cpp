@@ -30,70 +30,68 @@ using namespace std::literals;
 
 void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognitive-complexity)
 {
-	VulkanApp::SDLWindowPtr const window = VulkanApp::create_window("", 100, 100);
+	setup::SDLWindowPtr const window = setup::create_window("", 100, 100);
 
-	VulkanApp::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
-		VulkanApp::filter_available_layers(
-			logger, VulkanApp::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
+	setup::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
+		setup::filter_available_layers(
+			logger, setup::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
 
-	VulkanApp::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
-		VulkanApp::filter_available_instance_extensions(
+	setup::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
+		setup::filter_available_instance_extensions(
 			logger,
-			VulkanApp::SetOfDesiredInstanceExtensionNameViews{
+			setup::SetOfDesiredInstanceExtensionNameViews{
 				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
 
-	VulkanApp::VulkanInstancePtr const instance = VulkanApp::create_vulkan_instance(
+	setup::VulkanInstancePtr const instance = setup::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);
 
-	VulkanApp::VulkanDebugMessengerPtr const messenger =
-		optional_instance_extensions.value_of().empty()
+	setup::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.value_of().empty()
 		? nullptr
-		: VulkanApp::create_debug_messenger(logger, instance);
+		: setup::create_debug_messenger(logger, instance);
 
-	VulkanApp::VulkanSurfacePtr const surface = VulkanApp::create_surface(window, instance);
+	setup::VulkanSurfacePtr const surface = setup::create_surface(window, instance);
 
-	auto [physical_device, queue_family_idx] = VulkanApp::select_physical_device(
+	auto [physical_device, queue_family_idx] = setup::select_physical_device(
 		logger,
-		VulkanApp::enumerate_physical_devices(logger, instance),
-		VulkanApp::SetOfDesiredDeviceExtensionNameViews{
+		setup::enumerate_physical_devices(logger, instance),
+		setup::SetOfDesiredDeviceExtensionNameViews{
 			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
 		surface.get());
 
-	auto [device, queues] = VulkanApp::create_device_and_queues(
+	auto [device, queues] = setup::create_device_and_queues(
 		physical_device,
-		{{queue_family_idx, VulkanApp::VulkanQueueCount{1}}},
-		VulkanApp::VectorOfAvailableDeviceExtensionNameViews{
+		{{queue_family_idx, setup::VulkanQueueCount{1}}},
+		setup::VectorOfAvailableDeviceExtensionNameViews{
 			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}});
 
-	auto const image_available_semaphore = VulkanApp::create_semaphore(device);
-	auto const rendering_finished_semaphore = VulkanApp::create_semaphore(device);
+	auto const image_available_semaphore = setup::create_semaphore(device);
+	auto const rendering_finished_semaphore = setup::create_semaphore(device);
 
 	std::vector<VkSurfaceFormatKHR> const available_formats =
-		VulkanApp::filter_available_surface_formats(
+		setup::filter_available_surface_formats(
 			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = VulkanApp::create_double_buffer_swapchain(
+	auto [swapchain, image_views] = setup::create_double_buffer_swapchain(
 		logger, physical_device, device, surface, available_formats.at(0));
 
-	auto const render_pass = VulkanApp::create_single_presentation_subpass_render_pass(
+	auto const render_pass = setup::create_single_presentation_subpass_render_pass(
 		available_formats.at(0).format, device);
 
-	VkExtent2D drawable_size = VulkanApp::window_drawable_size(window);
+	VkExtent2D drawable_size = setup::window_drawable_size(window);
 
-	std::vector<VulkanApp::VulkanFramebufferPtr> frame_buffers =
-		VulkanApp::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
+	std::vector<setup::VulkanFramebufferPtr> frame_buffers =
+		setup::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
 
-	VulkanApp::VulkanCommandPoolPtr const command_pool =
-		VulkanApp::create_command_pool(device, queue_family_idx);
+	setup::VulkanCommandPoolPtr const command_pool =
+		setup::create_command_pool(device, queue_family_idx);
 
-	VulkanApp::VulkanCommandBuffersPtr const command_buffers =
-		VulkanApp::create_primary_command_buffers(
-			device, command_pool, VulkanApp::VulkanCommandBufferCount{frame_buffers.size()});
+	setup::VulkanCommandBuffersPtr const command_buffers = setup::create_primary_command_buffers(
+		device, command_pool, setup::VulkanCommandBufferCount{frame_buffers.size()});
 
 	VkQueue queue = queues.at(queue_family_idx).front();
 
-	VulkanApp::VulkanClearColour clear_colour{std::array{1.0F, .0F, .0F, 1.0F}};
+	setup::VulkanClearColour clear_colour{std::array{1.0F, .0F, .0F, 1.0F}};
 
 	// Application loop.
 	while (true)
@@ -109,11 +107,11 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 				VK_CHECK(vkDeviceWaitIdle(device.get()), "Failed to wait for device to be idle");
 
 				// Recreate swapchain and dependent resources
-				drawable_size = VulkanApp::window_drawable_size(window);
-				std::tie(swapchain, image_views) = VulkanApp::create_double_buffer_swapchain(
+				drawable_size = setup::window_drawable_size(window);
+				std::tie(swapchain, image_views) = setup::create_double_buffer_swapchain(
 					logger, physical_device, device, surface, available_formats.at(0), swapchain);
 
-				frame_buffers = VulkanApp::create_per_image_frame_buffers(
+				frame_buffers = setup::create_per_image_frame_buffers(
 					device, render_pass, image_views, drawable_size);
 
 				clear_colour[0] = 1.0F - clear_colour[0];
@@ -126,7 +124,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		}
 
 		auto const image_idx =
-			VulkanApp::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
+			setup::acquire_next_swapchain_image(device, swapchain, image_available_semaphore);
 
 		if (!image_idx.has_value())
 		{
@@ -135,16 +133,15 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		}
 
 		VkCommandBuffer command_buffer = command_buffers->at(*image_idx);
-		VulkanApp::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
+		setup::VulkanFramebufferPtr const & frame_buffer = frame_buffers.at(*image_idx);
 
-		VulkanApp::populate_cmd_render_pass(
+		setup::populate_cmd_render_pass(
 			command_buffer, render_pass, frame_buffer, drawable_size, clear_colour);
 
-		VulkanApp::submit_command_buffer(
+		setup::submit_command_buffer(
 			queue, command_buffer, image_available_semaphore, rendering_finished_semaphore);
 
-		VulkanApp::submit_present_image_cmd(
-			queue, swapchain, *image_idx, rendering_finished_semaphore);
+		setup::submit_present_image_cmd(queue, swapchain, *image_idx, rendering_finished_semaphore);
 
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
 	}
