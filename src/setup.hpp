@@ -85,7 +85,7 @@ types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
  * @return
  */
 std::tuple<types::VulkanSwapchainPtr, std::vector<types::VulkanImageViewPtr>>
-create_double_buffer_swapchain(
+create_exclusive_double_buffer_swapchain_and_image_views(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
 	types::VulkanDevicePtr const & device,

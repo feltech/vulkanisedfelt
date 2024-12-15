@@ -75,8 +75,9 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		setup::filter_available_surface_formats(
 			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = setup::create_double_buffer_swapchain(
-		logger, physical_device, device, surface, available_formats.at(0));
+	auto [swapchain, image_views] =
+		setup::create_exclusive_double_buffer_swapchain_and_image_views(
+			logger, physical_device, device, surface, available_formats.at(0));
 
 	auto const render_pass = setup::create_single_presentation_subpass_render_pass(
 		available_formats.at(0).format, device);
@@ -111,8 +112,14 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 
 				// Recreate swapchain and dependent resources
 				drawable_size = setup::window_drawable_size(window);
-				std::tie(swapchain, image_views) = setup::create_double_buffer_swapchain(
-					logger, physical_device, device, surface, available_formats.at(0), swapchain);
+				std::tie(swapchain, image_views) =
+					setup::create_exclusive_double_buffer_swapchain_and_image_views(
+						logger,
+						physical_device,
+						device,
+						surface,
+						available_formats.at(0),
+						swapchain);
 
 				frame_buffers = setup::create_per_image_frame_buffers(
 					device, render_pass, image_views, drawable_size);

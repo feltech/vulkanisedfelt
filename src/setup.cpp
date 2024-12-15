@@ -63,6 +63,40 @@ namespace vulkandemo::setup
 
 namespace
 {
+
+/**
+ * Create double buffering presentation swapchain, for exclusive use by a single queue.
+ *
+ * @param logger
+ * @param physical_device
+ * @param device
+ * @param surface
+ * @param surface_format
+ * @param previous_swapchain
+ * @return
+ */
+types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
+	LoggerPtr const & logger,
+	VkPhysicalDevice physical_device,
+	types::VulkanDevicePtr const & device,
+	types::VulkanSurfacePtr const & surface,
+	VkSurfaceFormatKHR surface_format,
+	types::VulkanSwapchainPtr const & previous_swapchain);
+
+/**
+ * Create swapchain image view of a single mip level and single array layer colour aspect.
+ *
+ * @param device
+ * @param surface_format
+ * @param swapchain
+ * @return
+ */
+std::vector<types::VulkanImageViewPtr>
+create_colour_aspect_single_mip_single_layer_swapchain_image_views(
+	types::VulkanDevicePtr const & device,
+	VkSurfaceFormatKHR surface_format,
+	types::VulkanSwapchainPtr const & swapchain);
+
 using SetOfAvailableInstanceExtensionNameViews = strong::type<
 	std::set<std::string_view>,
 	struct TagForSetOfAvailableInstanceExtensionNameViews,
@@ -260,9 +294,7 @@ types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
 }
 
 std::tuple<types::VulkanSwapchainPtr, std::vector<types::VulkanImageViewPtr>>
-// TODO(DF): Split function.
-// NOLINTNEXTLINE(*-function-cognitive-complexity)
-create_double_buffer_swapchain(
+create_exclusive_double_buffer_swapchain_and_image_views(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
 	types::VulkanDevicePtr const & device,
@@ -278,6 +310,82 @@ create_double_buffer_swapchain(
 		logger->debug("Creating swapchain for device {}", device_properties.deviceName);
 	}
 
+	types::VulkanSwapchainPtr swapchain = create_exclusive_double_buffer_swapchain(
+		logger, physical_device, device, surface, surface_format, previous_swapchain);
+
+	// Query raw images associated with swapchain.
+
+	// Construct image views.
+	std::vector<types::VulkanImageViewPtr> image_views =
+		create_colour_aspect_single_mip_single_layer_swapchain_image_views(
+			device, surface_format, swapchain);
+
+	return {std::move(swapchain), std::move(image_views)};
+}
+
+namespace
+{
+std::vector<types::VulkanImageViewPtr>
+create_colour_aspect_single_mip_single_layer_swapchain_image_views(
+	types::VulkanDevicePtr const & device,
+	VkSurfaceFormatKHR const surface_format,
+	types::VulkanSwapchainPtr const & swapchain)
+{
+	// Query raw images associated with swapchain.
+	std::vector<VkImage> const swapchain_images = [&]
+	{
+		uint32_t count = 0;
+		VK_CHECK(
+			vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
+			"Failed to get swapchain image count");
+
+		std::vector<VkImage> out(count);
+		VK_CHECK(
+			vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
+			"Failed to get swapchain images");
+		return out;
+	}();
+
+	// Construct image views.
+	VkImageViewCreateInfo image_view_create_info{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = nullptr,  // Will be updated per-image, see below.
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = surface_format.format,
+		.components =
+			{VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY},
+		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+
+	std::vector<types::VulkanImageViewPtr> out;
+
+	// Create an image view for each swapchain image.
+	std::ranges::transform(
+		swapchain_images,
+		std::back_inserter(out),
+		[&](VkImage image)
+		{
+			image_view_create_info.image = image;
+			VkImageView image_view = nullptr;
+			VK_CHECK(
+				vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
+				"Failed to create image view");
+			return types::make_image_view_ptr(device, image_view);
+		});
+
+	return out;
+}
+
+types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
+	LoggerPtr const & logger,
+	VkPhysicalDevice physical_device,
+	types::VulkanDevicePtr const & device,
+	types::VulkanSurfacePtr const & surface,
+	VkSurfaceFormatKHR const surface_format,
+	types::VulkanSwapchainPtr const & previous_swapchain)
+{
 	// Get surface capabilities.
 	VkSurfaceCapabilitiesKHR surface_capabilities{};
 	VK_CHECK(
@@ -357,84 +465,32 @@ create_double_buffer_swapchain(
 		throw std::runtime_error{"Surface VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
 
 	// Create swapchain.
-	types::VulkanSwapchainPtr swapchain = [&]
-	{
-		VkSwapchainCreateInfoKHR const swapchain_create_info{
-			.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			.surface = surface.get(),
-			.minImageCount = swapchain_image_count,
-			.imageFormat = surface_format.format,
-			.imageColorSpace = surface_format.colorSpace,
-			.imageExtent = surface_capabilities.currentExtent,
-			.imageArrayLayers = 1,
-			.imageUsage = usage,
-			.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 0,
-			.pQueueFamilyIndices = nullptr,
-			.preTransform = surface_transform,
-			.compositeAlpha = composite_alpha,
-			.presentMode = present_mode,
-			.clipped = VK_TRUE,
-			.oldSwapchain = previous_swapchain.get()};
+	VkSwapchainCreateInfoKHR const swapchain_create_info{
+		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		.surface = surface.get(),
+		.minImageCount = swapchain_image_count,
+		.imageFormat = surface_format.format,
+		.imageColorSpace = surface_format.colorSpace,
+		.imageExtent = surface_capabilities.currentExtent,
+		.imageArrayLayers = 1,
+		.imageUsage = usage,
+		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.queueFamilyIndexCount = 0,
+		.pQueueFamilyIndices = nullptr,
+		.preTransform = surface_transform,
+		.compositeAlpha = composite_alpha,
+		.presentMode = present_mode,
+		.clipped = VK_TRUE,
+		.oldSwapchain = previous_swapchain.get()};
 
-		VkSwapchainKHR out = nullptr;
-		VK_CHECK(
-			vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &out),
-			"Failed to create swapchain");
-		return types::make_swapchain_ptr(device, out);
-	}();
-
-	// Query raw images associated with swapchain.
-	std::vector<VkImage> const swapchain_images = [&]
-	{
-		uint32_t count = 0;
-		VK_CHECK(
-			vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
-			"Failed to get swapchain image count");
-
-		std::vector<VkImage> out(count);
-		VK_CHECK(
-			vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
-			"Failed to get swapchain images");
-		return out;
-	}();
-
-	// Construct image views.
-	std::vector<types::VulkanImageViewPtr> image_views = [&]
-	{
-		VkImageViewCreateInfo image_view_create_info{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-			.image = nullptr,  // Will be updated per-image, see below.
-			.viewType = VK_IMAGE_VIEW_TYPE_2D,
-			.format = surface_format.format,
-			.components =
-				{VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY,
-				 VK_COMPONENT_SWIZZLE_IDENTITY},
-			.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
-
-		std::vector<types::VulkanImageViewPtr> out;
-
-		// Create an image view for each swapchain image.
-		std::ranges::transform(
-			swapchain_images,
-			std::back_inserter(out),
-			[&](VkImage image)
-			{
-				image_view_create_info.image = image;
-				VkImageView image_view = nullptr;
-				VK_CHECK(
-					vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
-					"Failed to create image view");
-				return types::make_image_view_ptr(device, image_view);
-			});
-
-		return out;
-	}();
-
-	return {std::move(swapchain), std::move(image_views)};
+	VkSwapchainKHR out = nullptr;
+	VK_CHECK(
+		vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &out),
+		"Failed to create swapchain");
+	return types::make_swapchain_ptr(device, out);
 }
+
+}  // namespace
 
 std::tuple<types::VulkanDevicePtr, std::map<types::VulkanQueueFamilyIdx, std::vector<VkQueue>>>
 create_device_and_queues(
@@ -1373,15 +1429,15 @@ TEST_CASE("Create swapchain")
 	REQUIRE(!available_formats.empty());
 	VkSurfaceFormatKHR const surface_format = available_formats.front();
 
-	auto [swapchain, image_views] =
-		create_double_buffer_swapchain(logger, physical_device, device, surface, surface_format);
+	auto [swapchain, image_views] = create_exclusive_double_buffer_swapchain_and_image_views(
+		logger, physical_device, device, surface, surface_format);
 
 	CHECK(swapchain);
 	CHECK(!image_views.empty());
 	WARN(image_views.size() == 2);
 
 	// Reuse swapchain
-	std::tie(swapchain, image_views) = create_double_buffer_swapchain(
+	std::tie(swapchain, image_views) = create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, surface_format, swapchain);
 
 	CHECK(swapchain);
@@ -1456,7 +1512,7 @@ TEST_CASE("Create frame buffers")
 	std::vector<VkSurfaceFormatKHR> const available_formats = filter_available_surface_formats(
 		logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = create_double_buffer_swapchain(
+	auto [swapchain, image_views] = create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, available_formats.at(0));
 
 	auto render_pass =

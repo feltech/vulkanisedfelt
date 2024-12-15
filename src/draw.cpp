@@ -202,7 +202,7 @@ TEST_CASE("Acquire swapchain image")
 		setup::filter_available_surface_formats(
 			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = setup::create_double_buffer_swapchain(
+	auto [swapchain, image_views] = setup::create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, available_formats.at(0));
 
 	auto const image_available_semaphore = setup::create_semaphore(device);
@@ -267,7 +267,7 @@ TEST_CASE("Populate render pass")
 		setup::filter_available_surface_formats(
 			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = setup::create_double_buffer_swapchain(
+	auto [swapchain, image_views] = setup::create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, available_formats.at(0));
 
 	auto const render_pass = setup::create_single_presentation_subpass_render_pass(
@@ -338,7 +338,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 		setup::filter_available_surface_formats(
 			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
 
-	auto [swapchain, image_views] = setup::create_double_buffer_swapchain(
+	auto [swapchain, image_views] = setup::create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, available_formats.at(0));
 
 	auto render_pass = setup::create_single_presentation_subpass_render_pass(
