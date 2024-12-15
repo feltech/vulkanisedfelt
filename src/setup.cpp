@@ -127,7 +127,9 @@ types::VulkanSemaphorePtr create_semaphore(types::VulkanDevicePtr const & device
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, .pNext = nullptr};
 
 	VkSemaphore out = nullptr;
-	vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &out);
+	VK_CHECK(
+		vkCreateSemaphore(device.get(), &semaphore_create_info, nullptr, &out),
+		"Failed to create semaphore");
 	return types::make_semaphore_ptr(device, out);
 }
 
@@ -138,7 +140,6 @@ types::VulkanCommandBuffersPtr create_primary_command_buffers(
 {
 	VkCommandBufferAllocateInfo const command_buffer_allocate_info{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-		.pNext = nullptr,
 		.commandPool = pool.get(),
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 		.commandBufferCount = count};
