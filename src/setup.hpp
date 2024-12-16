@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -11,6 +12,8 @@
 
 #include "Logger.hpp"
 #include "types.hpp"
+
+#include <span>
 
 namespace vulkandemo::setup
 {
@@ -57,7 +60,7 @@ types::VulkanCommandPoolPtr create_command_pool(
 std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 	types::VulkanDevicePtr const & device,
 	types::VulkanRenderPassPtr const & render_pass,
-	std::vector<types::VulkanImageViewPtr> const & image_views,
+	std::span<types::VulkanImageViewPtr const> image_views,
 	VkExtent2D size);
 
 /**
@@ -105,9 +108,9 @@ create_exclusive_double_buffer_swapchain_and_image_views(
 std::tuple<types::VulkanDevicePtr, types::MapOfVulkanQueueFamilyIdxToVectorOfQueues>
 create_device_and_queues(
 	VkPhysicalDevice physical_device,
-	std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>> const &
+	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
 		queue_family_and_counts,
-	types::VectorOfAvailableDeviceExtensionNameViews const & device_extension_names);
+	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names);
 
 /**
  * Given some desired image/surface formats (e.g. VK_FORMAT_B8G8R8_UNORM), filter to only those
@@ -125,7 +128,7 @@ std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
 	types::VulkanSurfacePtr const & surface,
-	std::vector<VkFormat> desired_formats);
+	std::span<VkFormat const> desired_formats);
 
 /**
  * Given a list of physical devices, pick the first that has desired capabilities.
@@ -140,7 +143,7 @@ std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
 std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device(
 	LoggerPtr const & logger,
 	std::vector<VkPhysicalDevice> const & physical_devices,
-	types::SetOfDesiredDeviceExtensionNameViews const & required_device_extensions,
+	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits required_queue_capabilities,
 	VkSurfaceKHR surface = nullptr);
 
@@ -153,10 +156,10 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
  * @param desired_device_extension_names
  * @return
  */
-types::VectorOfAvailableDeviceExtensionNameViews filter_available_device_extensions(
+std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_extensions(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	types::SetOfDesiredDeviceExtensionNameViews const & desired_device_extension_names);
+	std::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names);
 
 /**
  * Filter queue families to find those with desired capabilities
@@ -178,7 +181,7 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
  * @return
  */
 std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
-	std::vector<VkPhysicalDevice> const & physical_devices, VkSurfaceKHR surface);
+	std::span<VkPhysicalDevice const> physical_devices, VkSurfaceKHR surface);
 
 /**
  * Get a list of all physical devices.
@@ -221,8 +224,8 @@ types::VulkanDebugMessengerPtr create_debug_messenger(
 types::VulkanInstancePtr create_vulkan_instance(
 	LoggerPtr const & logger,
 	types::SDLWindowPtr const & sdl_window,
-	types::VectorOfAvailableInstanceLayerNameCstrs const & layers_to_enable,
-	types::VectorOfAvailableInstanceExtensionNameCstrs const & extensions_to_enable);
+	std::span<types::AvailableInstanceLayerNameCstr const> layers_to_enable,
+	std::span<types::AvailableInstanceExtensionNameCstr const> extensions_to_enable);
 
 /**
  * Query available layers vs. desired layers.
@@ -231,9 +234,9 @@ types::VulkanInstancePtr create_vulkan_instance(
  * @param desired_layer_names
  * @return
  */
-types::VectorOfAvailableInstanceLayerNameCstrs filter_available_layers(
+std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 	LoggerPtr const & logger,
-	types::SetOfDesiredInstanceLayerNameViews const & desired_layer_names);
+	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names);
 
 /**
  * Query available generic instance extensions vs. desired..
@@ -242,9 +245,9 @@ types::VectorOfAvailableInstanceLayerNameCstrs filter_available_layers(
  * @param desired_extension_names
  * @return
  */
-types::VectorOfAvailableInstanceExtensionNameCstrs filter_available_instance_extensions(
+std::vector<types::AvailableInstanceExtensionNameCstr> filter_available_instance_extensions(
 	LoggerPtr const & logger,
-	types::SetOfDesiredInstanceExtensionNameViews const & desired_extension_names);
+	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names);
 
 /**
  * Get the drawable size of an SDL window.

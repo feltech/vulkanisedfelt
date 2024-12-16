@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <set>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -19,8 +18,10 @@
 #include <gsl/pointers>
 
 #include <strong_type/bicrementable.hpp>
+#include <strong_type/convertible_to.hpp>
 #include <strong_type/equality.hpp>
 #include <strong_type/equality_with.hpp>
+#include <strong_type/formattable.hpp>
 #include <strong_type/implicitly_convertible_to.hpp>
 #include <strong_type/indexed.hpp>
 #include <strong_type/ordered.hpp>
@@ -33,6 +34,25 @@
 
 namespace vulkandemo::types
 {
+/**
+ * Returns a lambda that performs a static_cast to the given type.
+ *
+ * Useful in ranges transformations.
+ *
+ * @tparam T The type to cast to.
+ *
+ * @return A lambda that takes any object and returns it cast to T.
+ */
+template <typename T>
+constexpr auto cast_fn()
+{
+	return [](auto && obj) { return static_cast<T>(std::forward<decltype(obj)>(obj)); };
+};
+
+constexpr auto value_of_fn()
+{
+	return [](auto && obj) { return std::forward<decltype(obj)>(obj).value_of(); };
+}
 
 using SDLWindowPtr = std::shared_ptr<SDL_Window>;
 SDLWindowPtr make_window_ptr(SDL_Window * window);
@@ -121,41 +141,54 @@ using VulkanQueueCount = strong::type<
 using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
 	std::map<VulkanQueueFamilyIdx, std::vector<VkQueue>>;
 
-using VectorOfAvailableDeviceExtensionNameViews = strong::type<
-	std::vector<std::string_view>,
-	struct TagForVectorOfAvailableDeviceExtensionNameViews,
+using AvailableDeviceExtensionNameView = strong::type<
+	std::string_view,
+	struct TagForAvailableDeviceExtensionNameView,
 	strong::regular,
-	strong::range,
-	strong::indexed<>>;
+	strong::partially_ordered,
+	strong::formattable>;
 
-using SetOfDesiredDeviceExtensionNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredDeviceExtensionNameViews,
+using DesiredDeviceExtensionNameView = strong::type<
+	std::string_view,
+	struct TagForDesiredDeviceExtensionNameView,
 	strong::regular,
-	strong::range>;
+	strong::partially_ordered,
+	strong::formattable,
+	strong::convertible_to<AvailableDeviceExtensionNameView>>;
 
-using VectorOfAvailableInstanceLayerNameCstrs = strong::type<
-	std::vector<char const *>,
-	struct TagForVectorOfAvailableInstanceLayerNameCstrs,
+using AvailableInstanceExtensionNameCstr = strong::
+	type<char const *, struct TagForAvailableInstanceExtensionNameCstr, strong::semiregular>;
+
+using AvailableInstanceExtensionNameView = strong::type<
+	std::string_view,
+	struct TagForAvailableInstanceExtensionNameView,
 	strong::regular,
-	strong::range>;
+	strong::partially_ordered,
+	strong::formattable>;
 
-using VectorOfAvailableInstanceExtensionNameCstrs = strong::type<
-	std::vector<char const *>,
-	struct TagForVectorOfAvailableInstanceExtensionNameCstrs,
-	strong::semiregular,
-	strong::range>;
-
-using SetOfDesiredInstanceLayerNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredInstanceLayerNameViews,
+using DesiredInstanceExtensionNameView = strong::type<
+	std::string_view,
+	struct TagForDesiredInstanceExtensionNameView,
 	strong::regular,
-	strong::range>;
+	strong::partially_ordered,
+	strong::formattable,
+	strong::convertible_to<AvailableInstanceExtensionNameView>>;
 
-using SetOfDesiredInstanceExtensionNameViews = strong::type<
-	std::set<std::string_view>,
-	struct TagForSetOfDesiredInstanceExtensionNameViews,
-	strong::semiregular,
-	strong::range>;
+using AvailableInstanceLayerNameCstr =
+	strong::type<char const *, struct TagForAvailableInstanceLayerNameCstr, strong::semiregular>;
 
+using AvailableInstanceLayerNameView = strong::type<
+	std::string_view,
+	struct TagForAvailableInstanceLayerNameView,
+	strong::regular,
+	strong::partially_ordered,
+	strong::formattable>;
+
+using DesiredInstanceLayerNameView = strong::type<
+	std::string_view,
+	struct TagForDesiredInstanceLayerNameView,
+	strong::regular,
+	strong::partially_ordered,
+	strong::formattable,
+	strong::convertible_to<AvailableInstanceLayerNameView>>;
 }  // namespace vulkandemo::types

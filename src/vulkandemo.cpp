@@ -9,6 +9,7 @@
 #include <array>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <SDL_events.h>
@@ -35,20 +36,20 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 {
 	types::SDLWindowPtr const window = setup::create_window("", 100, 100);
 
-	types::VectorOfAvailableInstanceLayerNameCstrs const optional_layers =
+	std::vector<types::AvailableInstanceLayerNameCstr> const optional_layers =
 		setup::filter_available_layers(
-			logger, types::SetOfDesiredInstanceLayerNameViews{"VK_LAYER_KHRONOS_validation"sv});
+			logger, {types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}});
 
-	types::VectorOfAvailableInstanceExtensionNameCstrs const optional_instance_extensions =
+	std::vector<types::AvailableInstanceExtensionNameCstr> const optional_instance_extensions =
 		setup::filter_available_instance_extensions(
 			logger,
-			types::SetOfDesiredInstanceExtensionNameViews{
-				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
+			{types::DesiredInstanceExtensionNameView{
+				std::string_view{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
 
 	types::VulkanInstancePtr const instance = setup::create_vulkan_instance(
 		logger, window, optional_layers, optional_instance_extensions);
 
-	types::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.value_of().empty()
+	types::VulkanDebugMessengerPtr const messenger = optional_instance_extensions.empty()
 		? nullptr
 		: setup::create_debug_messenger(logger, instance);
 
@@ -57,27 +58,24 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	auto [physical_device, queue_family_idx] = setup::select_physical_device(
 		logger,
 		setup::enumerate_physical_devices(logger, instance),
-		types::SetOfDesiredDeviceExtensionNameViews{
-			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
 		surface.get());
 
 	auto [device, queues] = setup::create_device_and_queues(
 		physical_device,
-		{{queue_family_idx, types::VulkanQueueCount{1}}},
-		types::VectorOfAvailableDeviceExtensionNameViews{
-			std::string_view{VK_KHR_SWAPCHAIN_EXTENSION_NAME}});
+		{{std::pair{queue_family_idx, types::VulkanQueueCount{1}}}},
+		{{types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}}});
 
 	auto const image_available_semaphore = setup::create_semaphore(device);
 	auto const rendering_finished_semaphore = setup::create_semaphore(device);
 
 	std::vector<VkSurfaceFormatKHR> const available_formats =
 		setup::filter_available_surface_formats(
-			logger, physical_device, surface, {VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM});
+			logger, physical_device, surface, {{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}});
 
-	auto [swapchain, image_views] =
-		setup::create_exclusive_double_buffer_swapchain_and_image_views(
-			logger, physical_device, device, surface, available_formats.at(0));
+	auto [swapchain, image_views] = setup::create_exclusive_double_buffer_swapchain_and_image_views(
+		logger, physical_device, device, surface, available_formats.at(0));
 
 	auto const render_pass = setup::create_single_presentation_subpass_render_pass(
 		available_formats.at(0).format, device);
