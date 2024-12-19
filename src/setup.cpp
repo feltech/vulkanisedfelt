@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -24,6 +25,10 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+
+#include <range/v3/range/conversion.hpp>
+#include <range/v3/view/set_algorithm.hpp>
+#include <range/v3/view/transform.hpp>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -493,12 +498,9 @@ create_device_and_queues(
 								  { return static_cast<std::size_t>(family_and_count.second); })),
 		1.0F);
 
-	std::vector<VkDeviceQueueCreateInfo> const queue_create_infos = [&]
-	{
-		std::vector<VkDeviceQueueCreateInfo> out;
-		std::ranges::transform(
-			queue_family_and_counts,
-			back_inserter(out),
+	std::vector<VkDeviceQueueCreateInfo> const queue_create_infos =
+		queue_family_and_counts |
+		std::views::transform(
 			[&](auto const & queue_family_and_count)
 			{
 				auto const [queue_family_idx, queue_count] = queue_family_and_count;
@@ -510,9 +512,8 @@ create_device_and_queues(
 					.pQueuePriorities = queue_priorities.data()};
 
 				return queue_create_info;
-			});
-		return out;
-	}();
+			}) |
+		ranges::to<std::vector>();
 
 	// Create the device.
 	VkDevice device = [&]
@@ -535,11 +536,13 @@ create_device_and_queues(
 	types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 	for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 	{
+		auto & queues_for_family = queues[queue_family_idx];
+		queues_for_family.reserve(queue_count);
 		for (types::VulkanQueueCount queue_idx{0}; queue_idx < queue_count; ++queue_idx)
 		{
 			VkQueue queue = nullptr;
 			vkGetDeviceQueue(device, queue_family_idx, queue_idx, &queue);
-			queues[queue_family_idx].push_back(queue);
+			queues_for_family.push_back(queue);
 		}
 	}
 
@@ -649,32 +652,18 @@ std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_ext
 		return out;
 	}();
 
-	std::set<types::AvailableDeviceExtensionNameView> const available_device_extension_names = [&]
-	{
-		std::set<types::AvailableDeviceExtensionNameView> out;
-		std::ranges::copy(
-			available_device_extensions |
-				std::views::transform(
-					[](VkExtensionProperties const & extension)
-					{ return types::AvailableDeviceExtensionNameView{extension.extensionName}; }),
-			inserter(out, end(out)));
+	std::set<types::AvailableDeviceExtensionNameView> const available_device_extension_names =
+		available_device_extensions |
+		std::views::transform(
+			[](VkExtensionProperties const & extension)
+			{ return types::AvailableDeviceExtensionNameView{extension.extensionName}; }) |
+		ranges::to<std::set>();
 
-		return out;
-	}();
-
-	std::vector<types::AvailableDeviceExtensionNameView> const extensions_to_enable{
-		[&]
-		{
-			std::vector<types::AvailableDeviceExtensionNameView> out;
-			out.reserve(desired_device_extension_names.size());
-			std::ranges::set_intersection(
-				desired_device_extension_names |
-					std::views::transform(
-						types::cast_fn<types::AvailableDeviceExtensionNameView>()),
-				available_device_extension_names,
-				back_inserter(out));
-			return out;
-		}()};
+	std::vector<types::AvailableDeviceExtensionNameView> const extensions_to_enable =
+		ranges::views::set_intersection(
+			available_device_extension_names | ranges::views::transform(types::value_of_fn()),
+			desired_device_extension_names | ranges::views::transform(types::value_of_fn())) |
+		ranges::to<std::vector<types::AvailableDeviceExtensionNameView>>();
 
 	if (logger->should_log(spdlog::level::debug))
 	{
@@ -714,19 +703,14 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 		return out;
 	}();
 
-	std::vector<types::VulkanQueueFamilyIdx> matching_queue_family_idxs;
-	std::ranges::copy(
-		std::views::iota(0U, queue_family_properties.size()) |
-			std::views::filter(
-				[&](auto const idx)
-				{
-					return (queue_family_properties[idx].queueFlags & desired_queue_capabilities) ==
-						desired_queue_capabilities;
-				}) |
-			std::views::transform([](auto const idx) { return types::VulkanQueueFamilyIdx{idx}; }),
-		back_inserter(matching_queue_family_idxs));
-
-	return matching_queue_family_idxs;
+	return std::views::iota(0U, queue_family_properties.size()) |
+		std::views::filter(
+			   [&](auto const idx)
+			   {
+				   return (queue_family_properties[idx].queueFlags & desired_queue_capabilities) ==
+					   desired_queue_capabilities;
+			   }) |
+		ranges::to<std::vector<types::VulkanQueueFamilyIdx>>();
 }
 
 std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
@@ -735,21 +719,18 @@ std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
 	if (surface == nullptr)
 		return {cbegin(physical_devices), cend(physical_devices)};
 
-	std::vector<VkPhysicalDevice> out;
-	std::ranges::copy(
-		physical_devices |
-			std::views::filter(
-				[&](VkPhysicalDevice const & physical_device)
-				{
-					VkBool32 surface_supported = VK_FALSE;
-					VK_CHECK(
-						vkGetPhysicalDeviceSurfaceSupportKHR(
-							physical_device, 0, surface, &surface_supported),
-						"Failed to check surface support");
-					return surface_supported == VK_TRUE;
-				}),
-		back_inserter(out));
-	return out;
+	return physical_devices |
+		std::views::filter(
+			   [&](VkPhysicalDevice const & physical_device)
+			   {
+				   VkBool32 surface_supported = VK_FALSE;
+				   VK_CHECK(
+					   vkGetPhysicalDeviceSurfaceSupportKHR(
+						   physical_device, 0, surface, &surface_supported),
+					   "Failed to check surface support");
+				   return surface_supported == VK_TRUE;
+			   }) |
+		ranges::to<std::vector>();
 }
 
 std::vector<VkPhysicalDevice> enumerate_physical_devices(
@@ -985,42 +966,18 @@ std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 	}();
 
 	// Extract available layer names.
-	std::set const available_layer_names{
-		[&]
-		{
-			std::set<types::AvailableInstanceLayerNameView> out;
-			std::ranges::transform(
-				available_layer_descs,
-				std::inserter(out, end(out)),
-				[](VkLayerProperties const & layer_desc)
-				{ return types::AvailableInstanceLayerNameView{layer_desc.layerName}; });
-			return out;
-		}()};
-
-	// Get intersection of desired layers and available layers.
-	std::vector layers_to_enable{
-		[&]
-		{
-			std::vector<types::AvailableInstanceLayerNameView> layer_names;
-			layer_names.reserve(desired_layer_names.size());
-			std::ranges::set_intersection(
-				desired_layer_names |
-					std::views::transform(types::cast_fn<types::AvailableInstanceLayerNameView>()),
-				available_layer_names,
-				std::back_inserter(layer_names));
-			std::vector<types::AvailableInstanceLayerNameCstr> out;
-			out.reserve(layer_names.size());
-			std::ranges::transform(
-				layer_names,
-				back_inserter(out),
-				[](auto const & name)
-				{ return types::AvailableInstanceLayerNameCstr{name.value_of().data()}; });
-			return out;
-		}()};
+	auto const available_layer_names = available_layer_descs |
+		std::views::transform(&VkLayerProperties::layerName) |
+		ranges::to<std::set<types::AvailableInstanceLayerNameView>>;
 
 	log_layer_info(logger, desired_layer_names, available_layer_names, available_layer_descs);
 
-	return layers_to_enable;
+	// Get intersection of desired layers and available layers, converted to C strings.
+	return ranges::views::set_intersection(
+			   desired_layer_names | ranges::views::transform(types::value_of_fn()),
+			   available_layer_names | ranges::views::transform(types::value_of_fn())) |
+		ranges::views::transform(std::mem_fn(&std::string_view::data)) |
+		ranges::to<std::vector<types::AvailableInstanceLayerNameCstr>>;
 }
 
 namespace

@@ -51,7 +51,7 @@ constexpr auto cast_fn()
 
 constexpr auto value_of_fn()
 {
-	return [](auto && obj) { return std::forward<decltype(obj)>(obj).value_of(); };
+	return []<typename T>(T && obj) { return std::forward<T>(obj).value_of(); };
 }
 
 using SDLWindowPtr = std::shared_ptr<SDL_Window>;
@@ -100,9 +100,9 @@ using VulkanImageIdx = strong::type<
 	uint32_t,
 	struct TagForVulkanImageIdx,
 	strong::regular,
-	strong::implicitly_convertible_to<uint32_t, std::size_t>,
+	strong::implicitly_convertible_to<uint32_t>,
 	strong::equality,
-	strong::equality_with<uint32_t, std::size_t>>;
+	strong::equality_with<uint32_t>>;
 
 using VulkanClearColour = strong::type<
 	std::array<float, 4>,
