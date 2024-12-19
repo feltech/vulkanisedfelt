@@ -104,6 +104,14 @@ using VulkanImageIdx = strong::type<
 	strong::equality,
 	strong::equality_with<uint32_t>>;
 
+using VulkanMemoryTypeIdx = strong::type<
+	uint32_t,
+	struct TagForVulkanImageIdx,
+	strong::regular,
+	strong::implicitly_convertible_to<uint32_t>,
+	strong::equality,
+	strong::equality_with<uint32_t>>;
+
 using VulkanClearColour = strong::type<
 	std::array<float, 4>,
 	struct TagForRgbaColourFractions,

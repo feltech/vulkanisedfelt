@@ -713,6 +713,21 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 		ranges::to<std::vector<types::VulkanQueueFamilyIdx>>();
 }
 
+std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
+	VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags)
+{
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+	std::span const memory_types =
+		std::span{memory_properties.memoryTypes}.subspan(0, memory_properties.memoryTypeCount);
+
+	return std::views::iota(0U, memory_types.size()) |
+		std::views::filter(
+			   [&](uint32_t const idx)
+			   { return (memory_types[idx].propertyFlags & memory_flags) == memory_flags; }) |
+		ranges::to<std::vector<types::VulkanMemoryTypeIdx>>();
+}
+
 std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
 	std::span<VkPhysicalDevice const> const physical_devices, VkSurfaceKHR surface)
 {
@@ -1271,6 +1286,12 @@ TEST_CASE("Enumerate devices")
 		filter_available_queue_families(physical_devices.front(), VK_QUEUE_GRAPHICS_BIT);
 
 	CHECK(!available_queue_families.empty());
+
+	std::vector<types::VulkanMemoryTypeIdx> const available_memory_types =
+		filter_available_memory_types(
+			physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	CHECK(!available_memory_types.empty());
 
 	std::vector<types::AvailableDeviceExtensionNameView> const available_device_extensions =
 		filter_available_device_extensions(

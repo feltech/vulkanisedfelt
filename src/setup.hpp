@@ -172,6 +172,17 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 	VkPhysicalDevice const & physical_device, VkQueueFlagBits desired_queue_capabilities);
 
 /**
+ * Given a device and set of desired memory properties, filter to only those memory types that
+ * are supported by the device and have the desired properties.
+ *
+ * @param physical_device Device to check memory types for.
+ * @param memory_flags Required memory properties.
+ * @return
+ */
+std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
+	VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags);
+
+/**
  * Filter a list of physical devices to only those that support presentation on a given surface.
  *
  * No-op if surface is null.
