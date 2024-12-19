@@ -51,7 +51,8 @@ constexpr auto cast_fn()
 
 constexpr auto value_of_fn()
 {
-	return []<typename T>(T && obj) { return std::forward<T>(obj).value_of(); };
+	// NOLINTNEXTLINE(*-trailing-return)
+	return []<typename T>(T && obj) -> decltype(auto) { return std::forward<T>(obj).value_of(); };
 }
 
 using SDLWindowPtr = std::shared_ptr<SDL_Window>;
@@ -95,6 +96,12 @@ VulkanCommandBuffersPtr make_command_buffers_ptr(
 
 using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
 VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore);
+
+using VulkanBufferPtr = std::shared_ptr<std::remove_pointer_t<VkBuffer>>;
+VulkanBufferPtr make_buffer_ptr(VulkanDevicePtr device, VkBuffer buffer);
+
+using VulkanDeviceMemoryPtr = std::shared_ptr<std::remove_pointer_t<VkDeviceMemory>>;
+VulkanDeviceMemoryPtr make_device_memory_ptr(VulkanDevicePtr device, VkDeviceMemory memory);
 
 using VulkanImageIdx = strong::type<
 	uint32_t,

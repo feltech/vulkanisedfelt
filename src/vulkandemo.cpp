@@ -60,7 +60,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		setup::enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
-		surface.get());
+		surface);
 
 	auto [device, queues] = setup::create_device_and_queues(
 		physical_device,

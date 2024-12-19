@@ -607,17 +607,16 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 	std::vector<VkPhysicalDevice> const & physical_devices,
 	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits const required_queue_capabilities,
-	VkSurfaceKHR surface)
+	types::VulkanSurfacePtr const & surface)
 {
-	for (VkPhysicalDevice physical_device :
-		 filter_physical_devices_for_surface_support(physical_devices, surface))
+	for (VkPhysicalDevice physical_device : physical_devices)
 	{
 		auto const & filtered_device_extensions =
 			filter_available_device_extensions(logger, physical_device, required_device_extensions);
 		if (filtered_device_extensions.size() < required_device_extensions.size())
 			continue;
 		auto const & filtered_queue_families =
-			filter_available_queue_families(physical_device, required_queue_capabilities);
+			filter_available_queue_families(physical_device, required_queue_capabilities, surface);
 		if (filtered_queue_families.empty())
 			continue;
 
@@ -691,7 +690,9 @@ std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_ext
 }
 
 std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
-	VkPhysicalDevice const & physical_device, VkQueueFlagBits const desired_queue_capabilities)
+	VkPhysicalDevice const & physical_device,
+	VkQueueFlagBits const desired_queue_capabilities,
+	types::VulkanSurfacePtr const & desired_surface)
 {
 	std::vector<VkQueueFamilyProperties> const queue_family_properties = [&]
 	{
@@ -705,10 +706,25 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 
 	return std::views::iota(0U, queue_family_properties.size()) |
 		std::views::filter(
-			   [&](auto const idx)
+			   [&](auto const queue_family_idx)
 			   {
-				   return (queue_family_properties[idx].queueFlags & desired_queue_capabilities) ==
-					   desired_queue_capabilities;
+				   return (queue_family_properties[queue_family_idx].queueFlags &
+						   desired_queue_capabilities) == desired_queue_capabilities;
+			   }) |
+		std::views::filter(
+			   [&](auto const queue_family_idx)
+			   {
+				   if (!desired_surface)
+					   return true;
+				   VkBool32 surface_supported = VK_FALSE;
+				   VK_CHECK(
+					   vkGetPhysicalDeviceSurfaceSupportKHR(
+						   physical_device,
+						   queue_family_idx,
+						   desired_surface.get(),
+						   &surface_supported),
+					   "Failed to check surface support");
+				   return surface_supported == VK_TRUE;
 			   }) |
 		ranges::to<std::vector<types::VulkanQueueFamilyIdx>>();
 }
@@ -726,26 +742,6 @@ std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
 			   [&](uint32_t const idx)
 			   { return (memory_types[idx].propertyFlags & memory_flags) == memory_flags; }) |
 		ranges::to<std::vector<types::VulkanMemoryTypeIdx>>();
-}
-
-std::vector<VkPhysicalDevice> filter_physical_devices_for_surface_support(
-	std::span<VkPhysicalDevice const> const physical_devices, VkSurfaceKHR surface)
-{
-	if (surface == nullptr)
-		return {cbegin(physical_devices), cend(physical_devices)};
-
-	return physical_devices |
-		std::views::filter(
-			   [&](VkPhysicalDevice const & physical_device)
-			   {
-				   VkBool32 surface_supported = VK_FALSE;
-				   VK_CHECK(
-					   vkGetPhysicalDeviceSurfaceSupportKHR(
-						   physical_device, 0, surface, &surface_supported),
-					   "Failed to check surface support");
-				   return surface_supported == VK_TRUE;
-			   }) |
-		ranges::to<std::vector>();
 }
 
 std::vector<VkPhysicalDevice> enumerate_physical_devices(
@@ -1283,7 +1279,7 @@ TEST_CASE("Enumerate devices")
 	WARN(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
 
 	std::vector<types::VulkanQueueFamilyIdx> const available_queue_families =
-		filter_available_queue_families(physical_devices.front(), VK_QUEUE_GRAPHICS_BIT);
+		filter_available_queue_families(physical_devices.front(), VK_QUEUE_GRAPHICS_BIT, surface);
 
 	CHECK(!available_queue_families.empty());
 
@@ -1301,11 +1297,6 @@ TEST_CASE("Enumerate devices")
 			 types::DesiredDeviceExtensionNameView{"some_unsupported_extension"}});
 
 	CHECK(available_device_extensions.size() == 1);
-
-	std::vector<VkPhysicalDevice> const physical_devices_with_surface_support =
-		filter_physical_devices_for_surface_support(physical_devices, surface.get());
-
-	CHECK(!physical_devices_with_surface_support.empty());
 }
 
 TEST_CASE("Select device with capability")
@@ -1348,7 +1339,7 @@ TEST_CASE("Create logical device with queues")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
-		surface.get());
+		surface);
 
 	constexpr types::VulkanQueueCount expected_queue_count{2};
 
@@ -1377,7 +1368,7 @@ TEST_CASE("Create swapchain")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
-		surface.get());
+		surface);
 
 	auto [device, queues] = create_device_and_queues(
 		physical_device,
@@ -1423,7 +1414,7 @@ TEST_CASE("Create render pass")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
-		surface.get());
+		surface);
 
 	auto [device, queues] = create_device_and_queues(
 		physical_device,
@@ -1459,7 +1450,7 @@ TEST_CASE("Create frame buffers")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VkQueueFlagBits{},
-		surface.get());
+		surface);
 
 	auto [device, queues] = create_device_and_queues(
 		physical_device,
@@ -1498,7 +1489,7 @@ TEST_CASE("Create command buffers")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
-		surface.get());
+		surface);
 
 	auto [device, queues] = create_device_and_queues(
 		physical_device,
@@ -1532,7 +1523,7 @@ TEST_CASE("Create semaphores")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
-		surface.get());
+		surface);
 
 	auto [device, queues] = create_device_and_queues(
 		physical_device,
