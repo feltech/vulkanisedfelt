@@ -17,6 +17,7 @@ find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Microsoft.GSL REQUIRED)
 find_package(strong_type REQUIRED)
+find_package(range-v3 REQUIRED)
 find_package(Vulkan REQUIRED)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
@@ -60,6 +61,7 @@ target_link_libraries(
     Vulkan::Vulkan
     rollbear::strong_type
     rollbear::lift
+    range-v3::range-v3
 )
 
 target_compile_definitions(
