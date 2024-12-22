@@ -11,7 +11,6 @@
 #include <cassert>
 #include <cstdint>
 #include <format>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -208,24 +207,20 @@ std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 		.layers = 1	 // Non-stereoscopic
 	};
 
-	std::vector<types::VulkanFramebufferPtr> frame_buffers;
-	frame_buffers.reserve(image_views.size());
-	std::ranges::transform(
-		image_views,
-		back_inserter(frame_buffers),
-		[&](types::VulkanImageViewPtr const & image_view)
-		{
-			VkImageView image_view_handle = image_view.get();
-			frame_buffer_create_info.pAttachments = &image_view_handle;
-			VkFramebuffer out = nullptr;
-			VK_CHECK(
-				vkCreateFramebuffer(device.get(), &frame_buffer_create_info, nullptr, &out),
-				"Failed to create framebuffer");
-			frame_buffer_create_info.pAttachments = nullptr;  // reset.
-			return types::make_framebuffer_ptr(device, out);
-		});
-
-	return frame_buffers;
+	return image_views |
+		std::views::transform(
+			   [&](types::VulkanImageViewPtr const & image_view)
+			   {
+				   VkImageView image_view_handle = image_view.get();
+				   frame_buffer_create_info.pAttachments = &image_view_handle;
+				   VkFramebuffer out = nullptr;
+				   VK_CHECK(
+					   vkCreateFramebuffer(device.get(), &frame_buffer_create_info, nullptr, &out),
+					   "Failed to create framebuffer");
+				   frame_buffer_create_info.pAttachments = nullptr;	 // reset.
+				   return types::make_framebuffer_ptr(device, out);
+			   }) |
+		ranges::to<std::vector>();
 }
 
 types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
@@ -346,23 +341,20 @@ create_colour_aspect_single_mip_single_layer_swapchain_image_views(
 			 VK_COMPONENT_SWIZZLE_IDENTITY},
 		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
 
-	std::vector<types::VulkanImageViewPtr> out;
-
 	// Create an image view for each swapchain image.
-	std::ranges::transform(
-		swapchain_images,
-		std::back_inserter(out),
-		[&](VkImage image)
-		{
-			image_view_create_info.image = image;
-			VkImageView image_view = nullptr;
-			VK_CHECK(
-				vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
-				"Failed to create image view");
-			return types::make_image_view_ptr(device, image_view);
-		});
-
-	return out;
+	return swapchain_images |
+		std::views::transform(
+			   [&](VkImage image)
+			   {
+				   image_view_create_info.image = image;
+				   VkImageView image_view = nullptr;
+				   VK_CHECK(
+					   vkCreateImageView(
+						   device.get(), &image_view_create_info, nullptr, &image_view),
+					   "Failed to create image view");
+				   return types::make_image_view_ptr(device, image_view);
+			   }) |
+		ranges::to<std::vector>;
 }
 
 types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
@@ -477,16 +469,9 @@ create_device_and_queues(
 		queue_family_and_counts,
 	std::span<types::AvailableDeviceExtensionNameView const> const device_extension_names)
 {
-	std::vector<char const *> const device_extension_cstr_names = [&]
-	{
-		std::vector<char const *> out;
-		std::ranges::copy(
-			device_extension_names |
-				std::views::transform([](auto const & extension_name)
-									  { return extension_name.value_of().data(); }),
-			std::back_inserter(out));
-		return out;
-	}();
+	std::vector<char const *> const device_extension_cstr_names = device_extension_names |
+		hof::views::value_of() | std::views::transform(&std::string_view::data) |
+		ranges::to<std::vector>;
 
 	// Queue priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
 	// create a single array sized to the largest queue count. Array must exist until after
@@ -530,6 +515,28 @@ create_device_and_queues(
 	}();
 
 	// Construct a map of queue family to vector of queues.
+
+	// Range-based solution, way too verbose, retained for posterity...
+	// types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues =
+	// 	queue_family_and_counts |
+	// 	std::views::transform(
+	// 		[&](auto const & queue_family_and_count)
+	// 		{
+	// 			auto const & [queue_family_idx, queue_count] = queue_family_and_count;
+	// 			return std::pair{
+	// 				queue_family_idx,
+	// 				std::views::iota(0U, static_cast<uint32_t>(queue_count)) |
+	// 					std::views::transform(
+	// 						[&](uint32_t const queue_idx)
+	// 						{
+	// 							VkQueue queue = nullptr;
+	// 							vkGetDeviceQueue(device, queue_family_idx, queue_idx, &queue);
+	// 							return queue;
+	// 						}) |
+	// 					ranges::to<std::vector>};
+	// 		}) |
+	// 	ranges::to<std::map>;
+
 	types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 	for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 	{
@@ -568,10 +575,12 @@ std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
 		return out;
 	}();
 
-	std::vector<VkSurfaceFormatKHR> filtered_surface_formats;
-	for (auto const & available_surface_format : available_surface_formats)
-		if (std::ranges::contains(desired_formats, available_surface_format.format))
-			filtered_surface_formats.push_back(available_surface_format);
+	std::vector<VkSurfaceFormatKHR> const filtered_surface_formats =
+		available_surface_formats |
+		std::views::filter(
+			[&](auto const & available_surface_format)
+			{ return std::ranges::contains(desired_formats, available_surface_format.format); }) |
+		ranges::to<std::vector>();
 
 	// Log surface formats at debug level.
 	if (logger->should_log(spdlog::level::debug))
@@ -662,8 +671,8 @@ std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_ext
 
 	std::vector<types::AvailableDeviceExtensionNameView> const extensions_to_enable =
 		ranges::views::set_intersection(
-			available_device_extension_names | ranges::views::transform(hof::mem_fn::value_of()),
-			desired_device_extension_names | ranges::views::transform(hof::mem_fn::value_of())) |
+			available_device_extension_names | hof::views::value_of(),
+			desired_device_extension_names | hof::views::value_of()) |
 		ranges::to<std::vector<types::AvailableDeviceExtensionNameView>>();
 
 	if (logger->should_log(spdlog::level::debug))
@@ -932,8 +941,7 @@ types::VulkanInstancePtr create_vulkan_instance(
 
 	// Merge additional extensions with SDL-provided extensions.
 	std::ranges::copy(
-		extensions_to_enable | std::views::transform(hof::mem_fn::value_of()),
-		back_inserter(extensions_to_enable_cstr));
+		extensions_to_enable | hof::views::value_of(), back_inserter(extensions_to_enable_cstr));
 
 	logger->debug("Enabling instance extensions: {}", fmt::join(extensions_to_enable_cstr, ", "));
 
@@ -949,10 +957,8 @@ types::VulkanInstancePtr create_vulkan_instance(
 
 	// Instance creation info.
 
-	std::vector<char const *> layers_to_enable_cstr;
-	std::ranges::copy(
-		layers_to_enable | std::views::transform(hof::mem_fn::value_of()),
-		back_inserter(layers_to_enable_cstr));
+	std::vector<char const *> const layers_to_enable_cstr =
+		layers_to_enable | hof::views::value_of() | ranges::to<std::vector>();
 
 	logger->debug("Enabling layers: {}", fmt::join(layers_to_enable_cstr, ", "));
 
@@ -1000,9 +1006,9 @@ std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 
 	// Get intersection of desired layers and available layers, converted to C strings.
 	return ranges::views::set_intersection(
-			   desired_layer_names | ranges::views::transform(hof::mem_fn::value_of()),
-			   available_layer_names | ranges::views::transform(hof::mem_fn::value_of())) |
-		ranges::views::transform(std::mem_fn(&std::string_view::data)) |
+			   desired_layer_names | hof::views::value_of(),
+			   available_layer_names | hof::views::value_of()) |
+		ranges::views::transform(&std::string_view::data) |
 		ranges::to<std::vector<types::AvailableInstanceLayerNameCstr>>;
 }
 
@@ -1073,40 +1079,17 @@ std::vector<types::AvailableInstanceExtensionNameCstr> filter_available_instance
 	}();
 
 	// Extract extension names.
-	std::set<types::AvailableInstanceExtensionNameView> const available_extension_names{
-		[&]
-		{
-			std::set<types::AvailableInstanceExtensionNameView> out;
-			std::ranges::transform(
-				available_extensions,
-				std::inserter(out, end(out)),
-				[](VkExtensionProperties const & extension_desc) {
-					return types::AvailableInstanceExtensionNameView{extension_desc.extensionName};
-				});
-			return out;
-		}()};
+	std::set const available_extension_names = available_extensions |
+		std::views::transform(&VkExtensionProperties::extensionName) |
+		ranges::to<std::set<types::AvailableInstanceExtensionNameView>>;
 
 	// Intersection of available extensions and desired extensions to return.
-	std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable{
-		[&]
-		{
-			std::vector<types::AvailableInstanceExtensionNameView> extension_names;
-			extension_names.reserve(desired_extension_names.size());
-			std::ranges::set_intersection(
-				desired_extension_names |
-					std::views::transform(hof::cast<types::AvailableInstanceExtensionNameView>()),
-				available_extension_names,
-				std::back_inserter(extension_names));
-			std::vector<types::AvailableInstanceExtensionNameCstr> out;
-			out.reserve(extension_names.size());
-			std::ranges::transform(
-				extension_names,
-				std::back_inserter(out),
-				[](types::AvailableInstanceExtensionNameView const & name)
-				{ return types::AvailableInstanceExtensionNameCstr{name.value_of().data()}; });
-			;
-			return out;
-		}()};
+	std::vector const extensions_to_enable =
+		ranges::views::set_intersection(
+			desired_extension_names | hof::views::value_of(),
+			available_extension_names | hof::views::value_of()) |
+		std::views::transform(&std::string_view::data) |
+		ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>;
 
 	log_instance_extensions_info(
 		logger, desired_extension_names, available_extension_names, available_extensions);

@@ -3,6 +3,8 @@
 #pragma once
 #include <utility>
 
+#include <range/v3/view/transform.hpp>
+
 /**
  * Small higher order functions useful for ranges transformations.
  */
@@ -47,4 +49,13 @@ constexpr auto second()
 	return []<typename T>(T && obj) -> decltype(auto) { return std::forward<T>(obj).second; };
 }
 }  // namespace attr
+namespace views
+{
+
+template<typename... Args>
+constexpr auto value_of(Args&&... args)
+{
+	return ranges::views::transform(std::forward<Args>(args)..., mem_fn::value_of());
+}
+}  // namespace views
 }  // namespace vulkandemo::hof
