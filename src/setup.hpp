@@ -137,7 +137,8 @@ std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
  * @param physical_devices
  * @param required_device_extensions
  * @param required_queue_capabilities
- * @param surface
+ * @param required_memory_type
+ * @param required_surface_support
  * @return
  */
 std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device(
@@ -145,7 +146,8 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 	std::vector<VkPhysicalDevice> const & physical_devices,
 	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits required_queue_capabilities,
-	types::VulkanSurfacePtr const & surface = nullptr);
+	VkMemoryPropertyFlags required_memory_type = 0,
+	types::VulkanSurfacePtr const & required_surface_support = nullptr);
 
 /**
  * Given a device and set of desired device extensions, filter to only those extensions that

@@ -188,6 +188,7 @@ TEST_CASE("Acquire swapchain image")
 		setup::enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
+		0,
 		surface);
 
 	auto [device, queues] = setup::create_device_and_queues(
@@ -251,6 +252,7 @@ TEST_CASE("Populate render pass")
 		setup::enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
+		0,
 		surface);
 
 	auto [device, queues] = setup::create_device_and_queues(
@@ -323,6 +325,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 		setup::enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
+		0,
 		surface);
 
 	auto [device, queues] = setup::create_device_and_queues(

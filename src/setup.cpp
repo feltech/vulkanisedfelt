@@ -607,7 +607,8 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 	std::vector<VkPhysicalDevice> const & physical_devices,
 	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits const required_queue_capabilities,
-	types::VulkanSurfacePtr const & surface)
+	VkMemoryPropertyFlags required_memory_type,
+	types::VulkanSurfacePtr const & required_surface_support)
 {
 	for (VkPhysicalDevice physical_device : physical_devices)
 	{
@@ -615,9 +616,13 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 			filter_available_device_extensions(logger, physical_device, required_device_extensions);
 		if (filtered_device_extensions.size() < required_device_extensions.size())
 			continue;
-		auto const & filtered_queue_families =
-			filter_available_queue_families(physical_device, required_queue_capabilities, surface);
+		auto const & filtered_queue_families = filter_available_queue_families(
+			physical_device, required_queue_capabilities, required_surface_support);
 		if (filtered_queue_families.empty())
+			continue;
+		auto const & filtered_memory_types =
+			filter_available_memory_types(logger, physical_device, required_memory_type);
+		if (filtered_memory_types.empty())
 			continue;
 
 		return {physical_device, filtered_queue_families.front()};
@@ -1327,7 +1332,8 @@ TEST_CASE("Select device with capability")
 		logger,
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
-		VK_QUEUE_GRAPHICS_BIT);
+		VK_QUEUE_GRAPHICS_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
 	CHECK(device);
 	CHECK(queue_family_idx >= types::VulkanQueueFamilyIdx{0});
@@ -1352,6 +1358,7 @@ TEST_CASE("Create logical device with queues")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
+		0,
 		surface);
 
 	constexpr types::VulkanQueueCount expected_queue_count{2};
@@ -1381,6 +1388,7 @@ TEST_CASE("Create swapchain")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
+		0,
 		surface);
 
 	auto [device, queues] = create_device_and_queues(
@@ -1427,6 +1435,7 @@ TEST_CASE("Create render pass")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VK_QUEUE_GRAPHICS_BIT,
+		0,
 		surface);
 
 	auto [device, queues] = create_device_and_queues(
@@ -1463,6 +1472,7 @@ TEST_CASE("Create frame buffers")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		VkQueueFlagBits{},
+		0,
 		surface);
 
 	auto [device, queues] = create_device_and_queues(
@@ -1502,6 +1512,7 @@ TEST_CASE("Create command buffers")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
+		0,
 		surface);
 
 	auto [device, queues] = create_device_and_queues(
@@ -1536,6 +1547,7 @@ TEST_CASE("Create semaphores")
 		enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
+		0,
 		surface);
 
 	auto [device, queues] = create_device_and_queues(
