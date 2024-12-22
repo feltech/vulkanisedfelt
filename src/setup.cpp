@@ -1012,38 +1012,38 @@ void log_layer_info(
 	std::set<types::AvailableInstanceLayerNameView> const & available_layer_names,
 	std::span<VkLayerProperties const> const available_layer_descs)
 {
-	if (logger->should_log(spdlog::level::debug))
-	{
-		// Log requested layers.
-		if (!desired_layer_names.empty())
-		{
-			logger->debug("Requested layers:");
-			for (auto const & layer_name : desired_layer_names)
-			{
-				if (available_layer_names.contains(
-						static_cast<types::AvailableInstanceLayerNameView>(layer_name)))
-					logger->debug("\t{} (available)", layer_name);
-				else
-					logger->debug("\t{} (unavailable)", layer_name);
-			}
-		}
+	if (!logger->should_log(spdlog::level::debug))
+		return;
 
-		// Log available layers.
-		if (!available_layer_descs.empty() && logger->should_log(spdlog::level::trace))
+	// Log requested layers.
+	if (!desired_layer_names.empty())
+	{
+		logger->debug("Requested layers:");
+		for (auto const & layer_name : desired_layer_names)
 		{
-			logger->trace("Available layers:");
-			for (auto const & [layerName, specVersion, implementationVersion, description] :
-				 available_layer_descs)
-			{
-				logger->trace(
-					"\t{} (spec version: {}.{}.{}, implementation version: {})",
-					layerName,
-					VK_VERSION_MAJOR(specVersion),
-					VK_VERSION_MINOR(specVersion),
-					VK_VERSION_PATCH(specVersion),
-					implementationVersion);
-				logger->trace("\t\t{}", description);
-			}
+			if (available_layer_names.contains(
+					static_cast<types::AvailableInstanceLayerNameView>(layer_name)))
+				logger->debug("\t{} (available)", layer_name);
+			else
+				logger->debug("\t{} (unavailable)", layer_name);
+		}
+	}
+
+	// Log available layers.
+	if (!available_layer_descs.empty() && logger->should_log(spdlog::level::trace))
+	{
+		logger->trace("Available layers:");
+		for (auto const & [layerName, specVersion, implementationVersion, description] :
+			 available_layer_descs)
+		{
+			logger->trace(
+				"\t{} (spec version: {}.{}.{}, implementation version: {})",
+				layerName,
+				VK_VERSION_MAJOR(specVersion),
+				VK_VERSION_MINOR(specVersion),
+				VK_VERSION_PATCH(specVersion),
+				implementationVersion);
+			logger->trace("\t\t{}", description);
 		}
 	}
 }
