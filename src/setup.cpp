@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <functional>
@@ -50,6 +49,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
+#include "hof.hpp"
 #include "macros.hpp"
 #include "types.hpp"
 
@@ -492,10 +492,7 @@ create_device_and_queues(
 	// create a single array sized to the largest queue count. Array must exist until after
 	// vkCreateDevice.
 	std::vector const queue_priorities(
-		std::ranges::max(
-			queue_family_and_counts |
-			std::views::transform([](auto const & family_and_count)
-								  { return static_cast<std::size_t>(family_and_count.second); })),
+		std::ranges::max(queue_family_and_counts | std::views::transform(hof::attr::second())),
 		1.0F);
 
 	std::vector<VkDeviceQueueCreateInfo> const queue_create_infos =
@@ -665,8 +662,8 @@ std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_ext
 
 	std::vector<types::AvailableDeviceExtensionNameView> const extensions_to_enable =
 		ranges::views::set_intersection(
-			available_device_extension_names | ranges::views::transform(types::value_of_fn()),
-			desired_device_extension_names | ranges::views::transform(types::value_of_fn())) |
+			available_device_extension_names | ranges::views::transform(hof::mem_fn::value_of()),
+			desired_device_extension_names | ranges::views::transform(hof::mem_fn::value_of())) |
 		ranges::to<std::vector<types::AvailableDeviceExtensionNameView>>();
 
 	if (logger->should_log(spdlog::level::debug))
@@ -935,7 +932,7 @@ types::VulkanInstancePtr create_vulkan_instance(
 
 	// Merge additional extensions with SDL-provided extensions.
 	std::ranges::copy(
-		extensions_to_enable | std::views::transform(types::value_of_fn()),
+		extensions_to_enable | std::views::transform(hof::mem_fn::value_of()),
 		back_inserter(extensions_to_enable_cstr));
 
 	logger->debug("Enabling instance extensions: {}", fmt::join(extensions_to_enable_cstr, ", "));
@@ -954,7 +951,7 @@ types::VulkanInstancePtr create_vulkan_instance(
 
 	std::vector<char const *> layers_to_enable_cstr;
 	std::ranges::copy(
-		layers_to_enable | std::views::transform(types::value_of_fn()),
+		layers_to_enable | std::views::transform(hof::mem_fn::value_of()),
 		back_inserter(layers_to_enable_cstr));
 
 	logger->debug("Enabling layers: {}", fmt::join(layers_to_enable_cstr, ", "));
@@ -1003,8 +1000,8 @@ std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 
 	// Get intersection of desired layers and available layers, converted to C strings.
 	return ranges::views::set_intersection(
-			   desired_layer_names | ranges::views::transform(types::value_of_fn()),
-			   available_layer_names | ranges::views::transform(types::value_of_fn())) |
+			   desired_layer_names | ranges::views::transform(hof::mem_fn::value_of()),
+			   available_layer_names | ranges::views::transform(hof::mem_fn::value_of())) |
 		ranges::views::transform(std::mem_fn(&std::string_view::data)) |
 		ranges::to<std::vector<types::AvailableInstanceLayerNameCstr>>;
 }
@@ -1097,8 +1094,7 @@ std::vector<types::AvailableInstanceExtensionNameCstr> filter_available_instance
 			extension_names.reserve(desired_extension_names.size());
 			std::ranges::set_intersection(
 				desired_extension_names |
-					std::views::transform(
-						types::cast_fn<types::AvailableInstanceExtensionNameView>()),
+					std::views::transform(hof::cast<types::AvailableInstanceExtensionNameView>()),
 				available_extension_names,
 				std::back_inserter(extension_names));
 			std::vector<types::AvailableInstanceExtensionNameCstr> out;

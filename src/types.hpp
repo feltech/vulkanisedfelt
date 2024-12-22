@@ -34,27 +34,6 @@
 
 namespace vulkandemo::types
 {
-/**
- * Returns a lambda that performs a static_cast to the given type.
- *
- * Useful in ranges transformations.
- *
- * @tparam T The type to cast to.
- *
- * @return A lambda that takes any object and returns it cast to T.
- */
-template <typename T>
-constexpr auto cast_fn()
-{
-	return [](auto && obj) { return static_cast<T>(std::forward<decltype(obj)>(obj)); };
-};
-
-constexpr auto value_of_fn()
-{
-	// NOLINTNEXTLINE(*-trailing-return)
-	return []<typename T>(T && obj) -> decltype(auto) { return std::forward<T>(obj).value_of(); };
-}
-
 using SDLWindowPtr = std::shared_ptr<SDL_Window>;
 SDLWindowPtr make_window_ptr(SDL_Window * window);
 
