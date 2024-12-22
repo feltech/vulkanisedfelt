@@ -10,7 +10,6 @@
 
 #include <vulkan/vulkan_core.h>
 
-#include "Logger.hpp"
 #include "types.hpp"
 
 namespace vulkandemo::draw
