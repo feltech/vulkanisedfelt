@@ -178,12 +178,13 @@ std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_ext
  * Given a device and set of desired memory properties, filter to only those memory types that
  * are supported by the device and have the desired properties.
  *
+ * @param logger
  * @param physical_device Device to check memory types for.
  * @param memory_flags Required memory properties.
  * @return
  */
-std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
-	VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags);
+[[nodiscard]] std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
+	LoggerPtr const & logger, VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags);
 
 
 /**

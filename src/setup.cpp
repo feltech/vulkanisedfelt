@@ -730,12 +730,25 @@ std::vector<types::VulkanQueueFamilyIdx> filter_available_queue_families(
 }
 
 std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
-	VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags)
+	LoggerPtr const & logger, VkPhysicalDevice physical_device, VkMemoryPropertyFlags memory_flags)
 {
 	VkPhysicalDeviceMemoryProperties memory_properties;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 	std::span const memory_types =
 		std::span{memory_properties.memoryTypes}.subspan(0, memory_properties.memoryTypeCount);
+
+	if (logger->should_log(spdlog::level::debug))
+	{
+		VkPhysicalDeviceProperties device_properties;
+		vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+		logger->debug(
+			"Requested memory type {} for device {}:",
+			string_VkMemoryPropertyFlags(memory_flags),
+			device_properties.deviceName);
+		for (auto const & [idx, memory_type] : std::views::enumerate(memory_types))
+			logger->debug(
+				"\tType {}: {}", idx, string_VkMemoryPropertyFlags(memory_type.propertyFlags));
+	}
 
 	return std::views::iota(0U, memory_types.size()) |
 		std::views::filter(
@@ -1285,7 +1298,7 @@ TEST_CASE("Enumerate devices")
 
 	std::vector<types::VulkanMemoryTypeIdx> const available_memory_types =
 		filter_available_memory_types(
-			physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+			logger, physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
 	CHECK(!available_memory_types.empty());
 
