@@ -36,6 +36,8 @@
 
 #include <gsl/pointers>
 
+#include <frozen/unordered_map.h>
+
 #include <doctest/doctest.h>
 
 #include <SDL.h>
@@ -477,8 +479,7 @@ create_device_and_queues(
 	// create a single array sized to the largest queue count. Array must exist until after
 	// vkCreateDevice.
 	std::vector const queue_priorities(
-		std::ranges::max(queue_family_and_counts | std::views::transform(hof::attr::second())),
-		1.0F);
+		std::ranges::max(queue_family_and_counts | std::views::values), 1.0F);
 
 	std::vector<VkDeviceQueueCreateInfo> const queue_create_infos =
 		queue_family_and_counts |
@@ -846,6 +847,27 @@ types::VulkanDebugMessengerPtr create_debug_messenger(
 
 namespace
 {
+constexpr auto kMessageTypeToString =
+	frozen::make_unordered_map<VkDebugUtilsMessageTypeFlagBitsEXT, char const *>(
+		{{VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT, "GENERAL"},
+		 {VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT, "VALIDATION"},
+		 {VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT, "PERFORMANCE"},
+		 {VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT, "DEVICE_ADDRESS"}});
+
+/**
+ * Callback function for Vulkan debug messenger.
+ *
+ * This function is called by Vulkan when a debug message is generated. It filters
+ * messages based on the provided severity and type, constructs a detailed message
+ * string, and logs it using the specified logger at the appropriate severity level.
+ *
+ * @param message_severity The severity of the message (info, warning, error).
+ * @param message_types The type(s) of the message (general, validation, performance).
+ * @param callback_data Detailed data about the message, including message ID and objects involved.
+ * @param user_data User-defined data passed to the callback. Expected to be a pointer to LoggerPtr.
+ *
+ * @return VkBool32 indicating whether the callback should be removed (VK_FALSE) or kept (VK_TRUE).
+ */
 VkBool32 vulkan_debug_messenger_callback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT const message_severity,
 	VkDebugUtilsMessageTypeFlagsEXT const message_types,
@@ -872,15 +894,10 @@ VkBool32 vulkan_debug_messenger_callback(
 		"Vulkan [{}] [{}] Queues[{}] CmdBufs[{}] Objects[{}]: {}",
 		[message_types]
 		{
-			std::vector<std::string> type_strings;
-			if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
-				type_strings.emplace_back("GENERAL");
-			if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
-				type_strings.emplace_back("VALIDATION");
-			if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
-				type_strings.emplace_back("PERFORMANCE");
-			if (message_types & VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT)
-				type_strings.emplace_back("DEVICE_ADDRESS");
+			auto type_strings = kMessageTypeToString |
+				std::views::filter([&](auto const & type_and_name)
+								   { return message_types & type_and_name.first; }) |
+				std::views::values;
 			return fmt::format("{}", fmt::join(type_strings, "|"));
 		}(),
 		callback_data->pMessageIdName,

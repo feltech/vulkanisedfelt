@@ -17,7 +17,9 @@ class vulkandemoRecipe(ConanFile):
         "fmt/10.2.1",
         "ms-gsl/4.1.0",
         "strong_type/v14",
-        "range-v3/0.12.0"
+        "range-v3/0.12.0",
+        "frozen/1.2.0",
+        "etl/20.39.4"
     ]
 
     settings = "build_type", "os"

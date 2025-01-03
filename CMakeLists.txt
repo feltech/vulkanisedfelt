@@ -18,6 +18,8 @@ find_package(fmt REQUIRED)
 find_package(Microsoft.GSL REQUIRED)
 find_package(strong_type REQUIRED)
 find_package(range-v3 REQUIRED)
+find_package(frozen REQUIRED)
+find_package(etl REQUIRED)
 find_package(Vulkan REQUIRED)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
@@ -62,6 +64,8 @@ target_link_libraries(
     rollbear::strong_type
     rollbear::lift
     range-v3::range-v3
+    frozen::frozen
+    etl::etl
 )
 
 target_compile_definitions(
