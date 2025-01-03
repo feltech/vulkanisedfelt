@@ -73,7 +73,10 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 
 	std::vector<VkSurfaceFormatKHR> const available_formats =
 		setup::filter_available_surface_formats(
-			logger, physical_device, surface, {{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}});
+			logger,
+			physical_device,
+			surface,
+			{{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}});
 
 	auto [swapchain, image_views] = setup::create_exclusive_double_buffer_swapchain_and_image_views(
 		logger, physical_device, device, surface, available_formats.at(0));
@@ -109,8 +112,15 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 			{
 				VK_CHECK(vkDeviceWaitIdle(device.get()), "Failed to wait for device to be idle");
 
-				// Recreate swapchain and dependent resources
 				drawable_size = setup::window_drawable_size(window);
+				logger->debug(
+					"New drawable size ({}, {})", drawable_size.width, drawable_size.height);
+
+				clear_colour[0] = 1.0F - clear_colour[0];
+				clear_colour[2] = 1.0F - clear_colour[2];
+				logger->debug("Changing clear colour to ({})", fmt::join(clear_colour, ","));
+
+				// Recreate swapchain and dependent resources
 				std::tie(swapchain, image_views) =
 					setup::create_exclusive_double_buffer_swapchain_and_image_views(
 						logger,
@@ -122,13 +132,6 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 
 				frame_buffers = setup::create_per_image_frame_buffers(
 					device, render_pass, image_views, drawable_size);
-
-				clear_colour[0] = 1.0F - clear_colour[0];
-				clear_colour[2] = 1.0F - clear_colour[2];
-
-				logger->debug(
-					"New drawable size ({}, {})", drawable_size.width, drawable_size.height);
-				logger->debug("Changing clear colour to ({})", fmt::join(clear_colour, ","));
 			}
 		}
 
