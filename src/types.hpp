@@ -2,10 +2,12 @@
 // Copyright 2024 David Feltell
 #pragma once
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -92,7 +94,7 @@ using VulkanImageIdx = strong::type<
 
 using VulkanMemoryTypeIdx = strong::type<
 	uint32_t,
-	struct TagForVulkanImageIdx,
+	TagForVulkanImageIdx,
 	strong::regular,
 	strong::implicitly_convertible_to<uint32_t>,
 	strong::equality,
@@ -186,4 +188,18 @@ using DesiredInstanceLayerNameView = strong::type<
 	strong::partially_ordered,
 	strong::formattable,
 	strong::convertible_to<AvailableInstanceLayerNameView>>;
+
+template <class Container>
+concept ContiguousContainer =
+	std::is_trivially_copyable_v<
+		std::remove_cv_t<std::remove_reference_t<typename Container::value_type>>> &&
+	std::ranges::range<Container> && requires(Container container)
+{
+	{
+		container.data()
+	} -> std::convertible_to<typename Container::pointer>;
+	{
+		container.size()
+	} -> std::convertible_to<std::size_t>;
+};
 }  // namespace vulkandemo::types

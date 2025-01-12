@@ -448,4 +448,46 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 		VK_CHECK(vkQueueWaitIdle(queue), "Failed to wait for queue to be idle");
 	}
 }
+
+TEST_CASE("Create basic vertex buffer")
+{
+	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create basic vertex buffer");
+	types::SDLWindowPtr const window = setup::create_window("", 1, 1);
+	types::VulkanInstancePtr const instance = setup::create_vulkan_instance(
+		logger,
+		window,
+		{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
+		{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
+	types::VulkanDebugMessengerPtr const messenger =
+		setup::create_debug_messenger(logger, instance);
+	types::VulkanSurfacePtr const surface = setup::create_surface(window, instance);
+
+	auto [physical_device, queue_family_idx] = setup::select_physical_device(
+		logger,
+		setup::enumerate_physical_devices(logger, instance),
+		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+		{},
+		VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		surface);
+	auto [device, queues] = setup::create_device_and_queues(
+		physical_device,
+		{{std::pair{queue_family_idx, types::VulkanQueueCount{1}}}},
+		{{types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}}});
+
+	std::vector<types::VulkanMemoryTypeIdx> const available_memory_types =
+		setup::filter_available_memory_types(
+			logger, physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	struct Vtx
+	{
+		std::array<float, 3> pos;
+		std::array<float, 3> norm;
+	};
+
+	std::vector const vertices{
+		Vtx{.pos = {0, 0, 0}, .norm = {1, 1, 1}}, Vtx{.pos = {2, 2, 2}, .norm = {3, 3, 3}}};
+
+	auto const [buffer, memory] = vulkandemo::draw::create_exclusive_vertex_buffer_and_memory(
+		device, available_memory_types.at(0), vertices);
+}
 }  // namespace vulkandemo::draw

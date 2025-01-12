@@ -2,18 +2,15 @@
 // Copyright 2024 David Feltell
 #pragma once
 #include <optional>
-#include <tuple>
-#include <utility>
-#include <vector>
-
-#include <SDL_vulkan.h>
 
 #include <vulkan/vulkan_core.h>
 
+#include "draw/detail.hpp"
 #include "types.hpp"
 
 namespace vulkandemo::draw
 {
+using detail::create_exclusive_vertex_buffer_and_memory;
 
 /**
  * Enqueue image presentation.

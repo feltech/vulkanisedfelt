@@ -172,4 +172,26 @@ VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaph
 				vkDestroySemaphore(device.get(), ptr, nullptr);
 		}};
 }
+
+VulkanBufferPtr make_buffer_ptr(VulkanDevicePtr device, VkBuffer buffer)
+{
+	return VulkanBufferPtr{
+		buffer,
+		[device = std::move(device)](VkBuffer ptr)
+		{
+			if (ptr != nullptr)
+				vkDestroyBuffer(device.get(), ptr, nullptr);
+		}};
+}
+
+VulkanDeviceMemoryPtr make_device_memory_ptr(VulkanDevicePtr device, VkDeviceMemory memory)
+{
+	return VulkanDeviceMemoryPtr{
+		memory,
+		[device = std::move(device)](VkDeviceMemory ptr)
+		{
+			if (ptr != nullptr)
+				vkFreeMemory(device.get(), ptr, nullptr);
+		}};
+}
 }  // namespace vulkandemo::types
