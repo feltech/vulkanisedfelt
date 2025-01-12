@@ -130,7 +130,8 @@ using VulkanQueueCount = strong::type<
 	strong::equality,
 	strong::equality_with<uint32_t, std::size_t>,
 	strong::strongly_ordered,
-	strong::bicrementable>;
+	strong::bicrementable,
+	strong::formattable>;
 
 using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
 	std::map<VulkanQueueFamilyIdx, std::vector<VkQueue>>;
