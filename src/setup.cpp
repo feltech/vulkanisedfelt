@@ -407,8 +407,14 @@ types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
 	logger->debug("\tChoosing present mode {}", string_VkPresentModeKHR(present_mode));
 
 	// Choose double-buffer of images, or as close as we can get.
-	uint32_t const swapchain_image_count = std::min(
-		std::max(2U, surface_capabilities.minImageCount), surface_capabilities.maxImageCount);
+	uint32_t const swapchain_image_count = [&]
+	{
+		uint32_t count = std::max(2U, surface_capabilities.minImageCount);
+		// maxImageCount==0 means unlimited.
+		if (surface_capabilities.maxImageCount > 0)
+			count = std::min(surface_capabilities.maxImageCount, count);
+		return count;
+	}();
 
 	logger->debug("\tChoosing swapchain image count {}", swapchain_image_count);
 
