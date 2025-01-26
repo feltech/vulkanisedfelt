@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <iterator>
@@ -623,6 +624,9 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 	VkMemoryPropertyFlags required_memory_type,
 	types::VulkanSurfacePtr const & required_surface_support)
 {
+	using Score = std::size_t;
+	std::vector<std::tuple<Score, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates;
+
 	for (VkPhysicalDevice physical_device : physical_devices)
 	{
 		if (logger->should_log(spdlog::level::debug))
@@ -645,10 +649,39 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 		if (filtered_memory_types.empty())
 			continue;
 
-		return {physical_device, filtered_queue_families.front()};
+		VkPhysicalDeviceProperties device_properties;
+		vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+
+		auto const score = static_cast<Score const>(
+			device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
+
+		candidates.emplace_back(score, physical_device, filtered_queue_families.front());
 	}
 
-	throw std::runtime_error("Failed to find device with desired capabilities");
+	if (candidates.empty())
+		throw std::runtime_error("Failed to find device with desired capabilities");
+
+	// Sort by score.
+	std::ranges::sort(
+		candidates,
+		[](auto const & lhs, auto const & rhs)
+		{ return std::get<Score>(lhs) < std::get<Score>(rhs); });
+
+	// Select last device, i.e. highest score.
+	auto const selected_device_and_queue_family = std::apply(
+		[]([[maybe_unused]] auto const score, auto const... tail) { return std::tuple{tail...}; },
+		candidates.back());
+
+	if (logger->should_log(spdlog::level::info))
+	{
+		VkPhysicalDeviceProperties device_properties;
+		vkGetPhysicalDeviceProperties(
+			std::get<VkPhysicalDevice>(selected_device_and_queue_family), &device_properties);
+		// Log name of device.
+		logger->debug("Selected device {}", device_properties.deviceName);
+	}
+
+	return selected_device_and_queue_family;
 }
 
 std::vector<types::AvailableDeviceExtensionNameView> filter_available_device_extensions(
