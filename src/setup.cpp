@@ -625,6 +625,13 @@ std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device
 {
 	for (VkPhysicalDevice physical_device : physical_devices)
 	{
+		if (logger->should_log(spdlog::level::debug))
+		{
+			VkPhysicalDeviceProperties device_properties;
+			vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+			// Log name of device.
+			logger->debug("Considering device {}", device_properties.deviceName);
+		}
 		auto const & filtered_device_extensions =
 			filter_available_device_extensions(logger, physical_device, required_device_extensions);
 		if (filtered_device_extensions.size() < required_device_extensions.size())
