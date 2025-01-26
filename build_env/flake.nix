@@ -78,6 +78,7 @@
             env = {
               # Vulkan loads driver libraries at runtime.
               LD_LIBRARY_PATH = "/run/opengl-driver/lib";
+#              ICECC_DEBUG = "debug";
             };
           };
       });

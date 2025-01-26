@@ -17,6 +17,9 @@
 
 namespace vulkandemo::setup
 {
+
+types::VulkanPipelineLayoutPtr create_minimal_pipeline_layout(types::VulkanDevicePtr const& device);
+
 /**
  * Create a semaphore.
  *

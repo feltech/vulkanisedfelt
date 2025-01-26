@@ -84,6 +84,9 @@ VulkanBufferPtr make_buffer_ptr(VulkanDevicePtr device, VkBuffer buffer);
 using VulkanDeviceMemoryPtr = std::shared_ptr<std::remove_pointer_t<VkDeviceMemory>>;
 VulkanDeviceMemoryPtr make_device_memory_ptr(VulkanDevicePtr device, VkDeviceMemory memory);
 
+using VulkanPipelineLayoutPtr = std::shared_ptr<std::remove_pointer_t<VkPipelineLayout>>;
+VulkanPipelineLayoutPtr make_pipeline_layout_ptr(VulkanDevicePtr device, VkPipelineLayout pipeline_layout);
+
 using VulkanImageIdx = strong::type<
 	uint32_t,
 	struct TagForVulkanImageIdx,

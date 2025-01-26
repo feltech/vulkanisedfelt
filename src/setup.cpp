@@ -144,6 +144,25 @@ void log_layer_info(
 
 // Main functionality.
 
+types::VulkanPipelineLayoutPtr create_minimal_pipeline_layout(types::VulkanDevicePtr const & device)
+{
+	constexpr VkPipelineLayoutCreateInfo pipeline_layout_create_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.pNext = nullptr,
+		.flags = 0,
+		.setLayoutCount = 0,
+		.pSetLayouts = nullptr,
+		.pPushConstantRanges = nullptr,
+		.pushConstantRangeCount = 0,
+	};
+
+	VkPipelineLayout out = nullptr;
+	VK_CHECK(
+		vkCreatePipelineLayout(device.get(), &pipeline_layout_create_info, nullptr, &out),
+		"Failed to create pipeline layout");
+	return types::make_pipeline_layout_ptr(device, out);
+}
+
 types::VulkanSemaphorePtr create_semaphore(types::VulkanDevicePtr const & device)
 {
 	constexpr VkSemaphoreCreateInfo semaphore_create_info{

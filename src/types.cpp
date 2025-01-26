@@ -194,4 +194,16 @@ VulkanDeviceMemoryPtr make_device_memory_ptr(VulkanDevicePtr device, VkDeviceMem
 				vkFreeMemory(device.get(), ptr, nullptr);
 		}};
 }
+
+VulkanPipelineLayoutPtr make_pipeline_layout_ptr(
+	VulkanDevicePtr device, VkPipelineLayout pipeline_layout)
+{
+	return VulkanPipelineLayoutPtr{
+		pipeline_layout,
+		[device = std::move(device)](VkPipelineLayout ptr)
+		{
+			if (ptr != nullptr)
+				vkDestroyPipelineLayout(device.get(), ptr, nullptr);
+		}};
+}
 }  // namespace vulkandemo::types
