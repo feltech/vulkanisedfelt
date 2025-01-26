@@ -24,6 +24,8 @@
               cmake
               conan
               ninja
+              ccache
+              icecream # Distributed build
               vulkan-loader
               vulkan-headers
               vulkan-validation-layers
