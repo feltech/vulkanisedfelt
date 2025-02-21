@@ -58,7 +58,7 @@ create_exclusive_vertex_buffer_and_memory(
 		return out;
 	}();
 
-	auto [device_memory] = [&]
+	auto device_memory = [&]
 	{
 		VkMemoryAllocateInfo const memory_allocate_info{
 			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -71,7 +71,7 @@ create_exclusive_vertex_buffer_and_memory(
 			vkAllocateMemory(device.get(), &memory_allocate_info, nullptr, &out),
 			"Failed to allocate memory");
 
-		return std::make_tuple(types::make_device_memory_ptr(device, out));
+		return types::make_device_memory_ptr(device, out);
 	}();
 
 	std::byte * const mapped_memory = [&]

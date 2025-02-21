@@ -152,8 +152,8 @@ types::VulkanPipelineLayoutPtr create_minimal_pipeline_layout(types::VulkanDevic
 		.flags = 0,
 		.setLayoutCount = 0,
 		.pSetLayouts = nullptr,
-		.pPushConstantRanges = nullptr,
 		.pushConstantRangeCount = 0,
+		.pPushConstantRanges = nullptr,
 	};
 
 	VkPipelineLayout out = nullptr;

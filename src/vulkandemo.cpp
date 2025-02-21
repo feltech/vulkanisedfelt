@@ -141,6 +141,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		if (!image_idx.has_value())
 		{
 			logger->debug("Swapchain out of date");
+			// Race condition - window resized before event processed.
 			continue;
 		}
 
