@@ -21,6 +21,7 @@ find_package(range-v3 REQUIRED)
 find_package(frozen REQUIRED)
 find_package(etl REQUIRED)
 find_package(Vulkan REQUIRED)
+find_package(di REQUIRED)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
 
@@ -66,6 +67,7 @@ target_link_libraries(
     range-v3::range-v3
     frozen::frozen
     etl::etl
+    di::di
 )
 
 target_compile_definitions(

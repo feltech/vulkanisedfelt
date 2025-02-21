@@ -25,6 +25,8 @@
 #include <utility>
 #include <vector>
 
+#include <boost/di.hpp>
+
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/set_algorithm.hpp>
 #include <range/v3/view/transform.hpp>
@@ -1278,20 +1280,166 @@ TEST_CASE("Create a window")
 	CHECK(SDL_GetWindowTitle(window.get()) == std::string_view{expected_name});
 }
 
+#define FW(a) std::forward<decltype(a)>(a)
+
+template <class Action>
+struct IO
+{
+	Action action;
+
+	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
+	{
+		return action();
+	}
+
+	auto bind(auto && lifter) const &
+	{
+		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+	auto bind(auto && lifter) &&
+	{
+		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+
+	auto fmap(auto && transformer) const &
+	{
+		auto next = [prev = action, transformer = FW(transformer)] { return transformer(prev()); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+
+	auto fmap(auto && transformer) &&
+	{
+		auto next = [prev = std::move(action), transformer = FW(transformer)]
+		{ return transformer(prev()); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+};
+
+auto bindN(auto && lifter, auto && io, auto &&... ios)	// NOLINT
+{
+	if constexpr (sizeof...(ios) == 0)
+	{
+		return FW(io).bind(FW(lifter));
+	}
+	else
+	{
+		return FW(io).bind(
+			[lifter = FW(lifter), ... ios = FW(ios)](auto && arg)
+			{
+				return bindN(
+					[lifter = FW(lifter), arg = FW(arg), ... ios = FW(ios)](auto &&... args)
+					{ return lifter(FW(arg), FW(args)...); },
+					FW(ios)...);
+			});
+	}
+}
+auto fmapN(auto && transformer, auto && io, auto &&... ios)	 // NOLINT
+{
+	if constexpr (sizeof...(ios) == 0)
+	{
+		return FW(io).fmap(FW(transformer));
+	}
+	else
+	{
+		return FW(io).fmap(
+			[transformer = FW(transformer), ... ios = FW(ios)](auto && arg)
+			{
+				return fmapN(
+					[transformer = FW(transformer), arg = FW(arg), ... ios = FW(ios)](
+						auto &&... args) { return transformer(FW(arg), FW(args)...); },
+					FW(ios)...);
+			});
+	}
+}
+
 TEST_CASE("Create a Vulkan instance")
 {
-	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create a Vulkan instance");
-	types::VulkanInstancePtr instance = create_vulkan_instance(
-		logger,
-		create_window("", 0, 0),
-		filter_available_layers(
+	// namespace di = boost::di;
+
+	// NOLINTBEGIN(*-avoid-c-arrays)
+	// auto const injector = di::make_injector(
+	// 	di::bind<vulkandemo::LoggerPtr::element_type>.to(
+	// 		vulkandemo::create_logger("Create a Vulkan instance")).in(di::singleton),
+	// 	di::bind<vulkandemo::types::SDLWindowPtr::element_type>.to(create_window("", 0, 0)),
+	// 	di::bind<types::AvailableInstanceLayerNameCstr[]>.to(
+	// 		[](auto const & injector)
+	// 		{
+	// 			return filter_available_layers(
+	// 				injector.template create<vulkandemo::LoggerPtr>(),
+	// 				{types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+	// 				 types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}});
+	// 		}).in(di::singleton),
+	// 	di::bind<types::AvailableInstanceExtensionNameCstr[]>.to(
+	// 		[](auto const & injector)
+	// 		{
+	// 			return filter_available_instance_extensions(
+	// 				injector.template create<vulkandemo::LoggerPtr>(),
+	// 				{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+	// 				 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}});
+	// 		}).in(di::singleton),
+	// 	di::bind<vulkandemo::types::VulkanInstancePtr>().to(
+	// 		[](auto const & injector) -> types::VulkanInstancePtr // NOLINT(*-trailing-return)
+	// 		{ return create_vulkan_instance(injector.template create<vulkandemo::LoggerPtr>(),
+	// 			injector.template create<vulkandemo::types::SDLWindowPtr>(),
+	// 			injector.template create<std::vector<types::AvailableInstanceLayerNameCstr>
+	// const&>(), 			injector.template
+	// create<std::vector<types::AvailableInstanceExtensionNameCstr> const&>());
+	// }).in(di::scopes::instance{})); NOLINTEND(*-avoid-c-arrays)
+
+	// auto const & instance = di::create<vulkandemo::types::VulkanInstancePtr>(injector);
+
+	auto pipeline =
+		IO{[] { return create_logger("Create a Vulkan instance 2"); }}
+			.bind(
+				[](auto logger)
+				{
+					return bindN(
+						[logger](auto &&... args)
+						{
+							return IO{[logger, ... args = FW(args)]
+									  { return create_vulkan_instance(logger, FW(args)...); }};
+						},
+
+						IO{[] { return create_window("", 0, 0); }},
+						IO{[logger]
+						   {
+							   return filter_available_layers(
+								   logger,
+								   {types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+									types::DesiredInstanceLayerNameView{
+										"VK_LAYER_KHRONOS_validation"}});
+						   }},
+						IO{[logger]
+						   {
+							   return filter_available_instance_extensions(
+								   logger,
+								   {types::DesiredInstanceExtensionNameView{
+										VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+									types::DesiredInstanceExtensionNameView{
+										"some_unavailable_extension"}});
+						   }});
+				})
+			.fmap([](types::VulkanInstancePtr instance) { CHECK(instance); });
+
+	pipeline();
+
+	types::VulkanInstancePtr instance = [](vulkandemo::LoggerPtr const & logger)
+	{
+		return create_vulkan_instance(
 			logger,
-			{types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-			 types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}),
-		filter_available_instance_extensions(
-			logger,
-			{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-			 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}}));
+			create_window("", 0, 0),
+			filter_available_layers(
+				logger,
+				{types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+				 types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}),
+			filter_available_instance_extensions(
+				logger,
+				{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+				 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}}));
+	}(vulkandemo::create_logger("Create a Vulkan instance"));
+
 	CHECK(instance);
 }
 
@@ -1300,30 +1448,37 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 	vulkandemo::LoggerPtr const logger =
 		vulkandemo::create_logger("Create a Vulkan debug utils messenger");
 
-	auto instance_extensions = filter_available_instance_extensions(
-		logger, {types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}});
+	types::VulkanDebugMessengerPtr messenger =
+		[](vulkandemo::LoggerPtr const & logger,
+		   std::vector<types::AvailableInstanceExtensionNameCstr> const & instance_extensions)
+	{
+		REQUIRE(!instance_extensions.empty());
 
-	REQUIRE(!instance_extensions.empty());
-
-	types::VulkanInstancePtr instance =
-		create_vulkan_instance(logger, create_window("", 0, 0), {}, instance_extensions);
-	types::VulkanDebugMessengerPtr messenger = create_debug_messenger(logger, std::move(instance));
+		return create_debug_messenger(
+			logger,
+			create_vulkan_instance(logger, create_window("", 0, 0), {}, instance_extensions));
+	}(vulkandemo::create_logger("Create a Vulkan debug utils messenger 2"),
+	  filter_available_instance_extensions(
+		  logger, {types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}));
 
 	CHECK(messenger);
 }
 
 TEST_CASE("Create a Vulkan surface")
 {
-	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create a Vulkan surface");
-	types::SDLWindowPtr const window = create_window("", 0, 0);
-	types::VulkanInstancePtr const instance = create_vulkan_instance(
-		logger,
-		window,
-		{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
-		{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
-	types::VulkanDebugMessengerPtr const messenger = create_debug_messenger(logger, instance);
-
-	types::VulkanSurfacePtr surface = create_surface(window, instance);
+	types::VulkanSurfacePtr surface =
+		[](vulkandemo::LoggerPtr const & logger, types::SDLWindowPtr const & window)
+	{
+		return [=](types::VulkanInstancePtr const & instance)
+		{
+			return create_surface(window, instance);
+			//
+		}(create_vulkan_instance(
+			logger,
+			window,
+			{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
+			{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}));
+	}(vulkandemo::create_logger("Create a Vulkan surface"), create_window("", 0, 0));
 
 	CHECK(surface);
 
@@ -1334,49 +1489,69 @@ TEST_CASE("Create a Vulkan surface")
 	// 	std::filesystem::copy_options::update_existing);
 }
 
+// NOLINTBEGIN(readability-function-cognitive-complexity)
 TEST_CASE("Enumerate devices")
 {
-	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Enumerate devices");
-	types::SDLWindowPtr const window = create_window("", 0, 0);
-	types::VulkanInstancePtr const instance = create_vulkan_instance(
-		logger,
-		window,
-		{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
-		{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
-	types::VulkanDebugMessengerPtr const messenger = create_debug_messenger(logger, instance);
-	types::VulkanSurfacePtr const surface = create_surface(window, instance);
-
-	std::vector<VkPhysicalDevice> const physical_devices =
-		enumerate_physical_devices(logger, instance);
-
-	REQUIRE(!physical_devices.empty());
-
-	VkPhysicalDeviceProperties first_device_properties;
-	vkGetPhysicalDeviceProperties(physical_devices.front(), &first_device_properties);
-	// Should be sorted in order of GPU-first.
-
-	WARN(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
-
-	std::vector<types::VulkanQueueFamilyIdx> const available_queue_families =
-		filter_available_queue_families(physical_devices.front(), VK_QUEUE_GRAPHICS_BIT, surface);
-
-	CHECK(!available_queue_families.empty());
-
-	std::vector<types::VulkanMemoryTypeIdx> const available_memory_types =
-		filter_available_memory_types(
-			logger, physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-	CHECK(!available_memory_types.empty());
-
-	std::vector<types::AvailableDeviceExtensionNameView> const available_device_extensions =
-		filter_available_device_extensions(
-			logger,
-			physical_devices.front(),
-			{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
-			 types::DesiredDeviceExtensionNameView{"some_unsupported_extension"}});
-
-	CHECK(available_device_extensions.size() == 1);
+	// std::vector<types::AvailableDeviceExtensionNameView> const
+	// available_device_extensions;
+	CHECK(
+		[](vulkandemo::LoggerPtr const & logger, types::SDLWindowPtr const & window)
+		{
+			return [=](types::VulkanInstancePtr const & instance)
+			{
+				return [=](types::VulkanSurfacePtr const & surface,
+						   std::vector<VkPhysicalDevice> const & physical_devices)
+				{
+					return
+						[=](VkPhysicalDeviceProperties first_device_properties,
+							std::vector<types::VulkanQueueFamilyIdx> const &
+								available_queue_families,
+							std::vector<types::VulkanMemoryTypeIdx> const & available_memory_types,
+							std::vector<types::AvailableDeviceExtensionNameView> const &
+								available_device_extensions)
+					{
+						REQUIRE(!physical_devices.empty());
+						WARN(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
+						CHECK(!available_queue_families.empty());
+						CHECK(!available_memory_types.empty());
+						CHECK(available_device_extensions.size() == 1);
+						return true;
+					}(
+						//
+						[=]
+						{
+							VkPhysicalDeviceProperties first_device_properties;
+							vkGetPhysicalDeviceProperties(
+								physical_devices.front(), &first_device_properties);
+							return first_device_properties;
+						}(),
+						filter_available_queue_families(
+							physical_devices.front(), VK_QUEUE_GRAPHICS_BIT, surface),
+						filter_available_memory_types(
+							logger, physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT),
+						filter_available_device_extensions(
+							logger,
+							physical_devices.front(),
+							{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+							 types::DesiredDeviceExtensionNameView{"some_unsupported_extension"}}));
+				}(
+					//
+					create_surface(window, instance),
+					enumerate_physical_devices(logger, instance));
+			}(
+				//
+				create_vulkan_instance(
+					logger,
+					window,
+					{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
+					{{types::AvailableInstanceExtensionNameCstr{
+						VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}));
+		}(
+			//
+			vulkandemo::create_logger("Enumerate devices"),
+			create_window("", 0, 0)));
 }
+// NOLINTEND(readability-function-cognitive-complexity)
 
 TEST_CASE("Select device with capability")
 {
