@@ -9,9 +9,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -22,8 +24,11 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
+
+#include <rfl.hpp>
 
 #include <boost/di.hpp>
 
@@ -1282,59 +1287,105 @@ TEST_CASE("Create a window")
 
 #define FW(a) std::forward<decltype(a)>(a)
 
-template <class Action>
-struct IO
+namespace monad
 {
-	Action action;
+// NOLINTBEGIN(*-overloaded-operator,*-trailing-return,*-identifier-length)
 
-	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
-	{
-		return action();
-	}
+namespace
+{
+template <typename F, size_t... Is>
+constexpr auto indices_impl(F f, std::index_sequence<Is...>)
+{
+	return f(std::integral_constant<size_t, Is>()...);
+}
 
-	auto bind(auto && lifter) const &
-	{
-		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
-		return IO<decltype(next)>{std::move(next)};
-	}
-	auto bind(auto && lifter) &&
-	{
-		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
-		return IO<decltype(next)>{std::move(next)};
-	}
+template <size_t N, typename F>
+constexpr auto indices(F f)
+{
+	return indices_impl(f, std::make_index_sequence<N>());
+}
 
-	auto fmap(auto && transformer) const &
-	{
-		auto next = [prev = action, transformer = FW(transformer)] { return transformer(prev()); };
-		return IO<decltype(next)>{std::move(next)};
-	}
+/// Given f and some args t0, t1, ..., tn, calls f(tn, t0, t1, ..., tn-1)
+template <typename F, typename... Ts>
+constexpr auto rotate_right(F && f, Ts... ts)
+{
+	auto tuple = std::forward_as_tuple(ts...);
+	return indices<sizeof...(Ts) - 1>(
+		[&](auto... Is)
+		{ return f(FW(std::get<sizeof...(Ts) - 1>(tuple)), FW(std::get<Is>(tuple))...); });
+}
 
-	auto fmap(auto && transformer) &&
-	{
-		auto next = [prev = std::move(action), transformer = FW(transformer)]
-		{ return transformer(prev()); };
-		return IO<decltype(next)>{std::move(next)};
-	}
+template <class>
+constexpr bool always_false = false;
+
+template <class T>
+struct FnTraits
+{
+	static_assert(always_false<T>, "Not a function");
 };
 
-auto bindN(auto && lifter, auto && io, auto &&... ios)	// NOLINT
+template <typename R, typename... Args>
+struct FnTraits<std::function<R(Args...)>>
 {
-	if constexpr (sizeof...(ios) == 0)
-	{
-		return FW(io).bind(FW(lifter));
-	}
-	else
-	{
-		return FW(io).bind(
-			[lifter = FW(lifter), ... ios = FW(ios)](auto && arg)
-			{
-				return bindN(
-					[lifter = FW(lifter), arg = FW(arg), ... ios = FW(ios)](auto &&... args)
-					{ return lifter(FW(arg), FW(args)...); },
-					FW(ios)...);
-			});
-	}
+	static constexpr bool is_function = true;
+	static constexpr std::size_t arity = sizeof...(Args);
+
+	template <std::size_t idx>
+	using arg = std::tuple_element_t<idx, std::tuple<Args...>>;
+};
+
+template <class Func>
+using fn_traits = FnTraits<decltype(std::function{std::declval<std::decay_t<Func>>()})>;
+
+template <class T>
+constexpr bool has_n_args(std::size_t const n)
+{
+	return fn_traits<T>::arity == n;
 }
+
+template <class T, std::size_t n>
+using arg_at = typename fn_traits<T>::arg<n>;
+
+template <typename T, template <typename...> typename U>
+concept SpecialisationOf = requires(T * x)
+{
+	[]<typename... As>(U<As...> *) {}(x);
+};
+}  // namespace
+
+template <typename F, typename A, typename B>
+concept Transformer = requires(F lambda)
+{
+	{
+		lambda(std::declval<A>())
+	} -> std::same_as<B>;
+};
+
+auto bindN(auto &&... ms_and_lifter)
+{
+	return rotate_right(
+		[](auto && lifter, auto && m, auto &&... ms)
+		{
+			if constexpr (sizeof...(ms) == 0)
+			{
+				return FW(m).bind(FW(lifter));
+			}
+			else
+			{
+				return FW(m).bind(
+					[lifter = FW(lifter),
+					 ... ms = FW(ms)](auto && arg)	// NOLINT(*-identifier-length)
+					{
+						return bindN(
+							FW(ms)...,
+							[lifter = FW(lifter), arg = FW(arg), ... ms = FW(ms)](auto &&... args)
+							{ return lifter(FW(arg), FW(args)...); });
+					});
+			}
+		},
+		FW(ms_and_lifter)...);
+}
+
 auto fmapN(auto && transformer, auto && io, auto &&... ios)	 // NOLINT
 {
 	if constexpr (sizeof...(ios) == 0)
@@ -1353,6 +1404,117 @@ auto fmapN(auto && transformer, auto && io, auto &&... ios)	 // NOLINT
 			});
 	}
 }
+
+namespace io
+{
+
+template <typename F>
+concept Action = requires(F lambda)
+{
+	std::is_function_v<F>;
+	has_n_args<F>(0);
+};
+
+template <typename F, typename A>
+concept Lifter = requires(F lambda)
+{
+	std::is_function_v<F>;
+	has_n_args<F>(1);
+};
+
+template <Action Act>
+struct IO
+{
+	Act action;
+	using A = decltype(action());
+
+	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
+	{
+		return action();
+	}
+
+	auto bind(Lifter<A> auto && lifter) const &
+	{
+		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+
+	auto bind(Lifter<A> auto && lifter) &&
+	{
+		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+};
+
+}  // namespace io
+
+namespace stateio
+{
+template <typename F>
+concept Action = requires(F lambda)
+{
+	std::is_function_v<F>;
+	has_n_args<F>(1);
+};
+
+template <typename F>
+concept Lifter = requires(F lambda)
+{
+	std::is_function_v<F>;
+	has_n_args<F>(1);
+};
+
+template <Action Act>
+struct StateIO
+{
+	Act action;
+
+	decltype(auto) operator()(auto && state) const
+	{
+		return action(FW(state));
+	}
+
+	auto bind(Lifter auto && lifter) const &
+	{
+		auto next = [prev = action, lifter = FW(lifter)](
+						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
+		{
+			return prev(FW(state)).bind(
+				[lifter = FW(lifter)](auto && value_and_state)
+				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
+		};
+		return StateIO<decltype(next)>(std::move(next));
+	}
+	auto bind(Lifter auto && lifter) &&
+	{
+		auto next = [prev = std::move(action), lifter = FW(lifter)](
+						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
+		{
+			return prev(FW(state)).bind(
+				[lifter = FW(lifter)](auto && value_and_state)
+				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
+		};
+		return StateIO<decltype(next)>(std::move(next));
+	}
+};
+
+
+auto liftM(SpecialisationOf<io::IO> auto && iom)
+{
+	return StateIO{[iom = FW(iom)](auto && state)
+				   {
+					   return FW(iom).bind(
+						   [state = FW(state)](auto && value)
+						   {
+							   return io::IO{[value = FW(value), state = FW(state)]
+											 { return std::pair{FW(value), FW(state)}; }};
+						   });
+				   }};
+}
+
+}  // namespace stateio
+// NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
+}  // namespace monad
 
 TEST_CASE("Create a Vulkan instance")
 {
@@ -1390,40 +1552,160 @@ TEST_CASE("Create a Vulkan instance")
 
 	// auto const & instance = di::create<vulkandemo::types::VulkanInstancePtr>(injector);
 
-	auto pipeline =
-		IO{[] { return create_logger("Create a Vulkan instance 2"); }}
-			.bind(
-				[](auto logger)
-				{
-					return bindN(
-						[logger](auto &&... args)
+	using monad::io::IO;
+
+	static constexpr auto create_vulkan_instance_io =
+		[](auto && logger, auto && window, auto && available_layers, auto && available_extensions)
+	{
+		return IO{[logger = FW(logger),
+				   window = FW(window),
+				   available_layers = FW(available_layers),
+				   available_extensions = FW(available_extensions)]
+				  {
+					  return create_vulkan_instance(
+						  FW(logger), FW(window), FW(available_layers), FW(available_extensions));
+				  }};
+	};
+
+	static constexpr auto filter_available_layers_io = [](auto logger)
+	{
+		return IO{[=]
+				  {
+					  return filter_available_layers(
+						  logger,
+						  {types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+						   types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}});
+				  }};
+	};
+
+	static constexpr auto filter_available_instance_extensions_io = [](auto logger)
+	{
+		return IO{
+			[=]
+			{
+				return filter_available_instance_extensions(
+					logger,
+					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+					 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}});
+			}};
+	};
+
+	static constexpr auto create_window_io = []
+	{ return IO{[=] { return create_window("", 0, 0); }}; };
+
+	static constexpr auto create_logger_io = [](auto suffix)
+	{ return IO{[=] { return create_logger(std::string{"Create a Vulkan instance"} + suffix); }}; };
+
+	static constexpr auto assert_instance_io_lifter = [](types::VulkanInstancePtr const & instance)
+	{ return IO{[=] { CHECK(instance); }}; };
+
+	auto pipeline_1 = monad::bindN(
+						  create_logger_io("(io)"),
+						  create_window_io(),
+						  [](auto logger, auto window)
+						  {
+							  return monad::bindN(
+								  filter_available_layers_io(logger),
+								  filter_available_instance_extensions_io(logger),
+								  [=](auto available_layers, auto available_extensions)
+								  {
+									  return create_vulkan_instance_io(
+										  logger, window, available_layers, available_extensions);
+								  });
+						  })
+						  .bind(assert_instance_io_lifter);
+
+	pipeline_1();
+
+	using monad::stateio::StateIO;
+
+	static constexpr auto create_logger_state = [](auto && suffix)
+	{
+		return StateIO{
+			[suffix = FW(suffix)](auto && state)
+			{
+				return create_logger_io(FW(suffix))
+					.bind(
+						[state = FW(state)](auto && logger_)
 						{
-							return IO{[logger, ... args = FW(args)]
-									  { return create_vulkan_instance(logger, FW(args)...); }};
-						},
+							struct Container : std::decay_t<decltype(state)>
+							{
+								std::decay_t<decltype(logger_)> logger;
+							};
+							return IO{
+								[logger_ = FW(logger_), state = FW(state)]
+								{ return std::pair{logger_, Container{FW(state), FW(logger_)}}; }};
+						});
+			}};
+	};
 
-						IO{[] { return create_window("", 0, 0); }},
-						IO{[logger]
-						   {
-							   return filter_available_layers(
-								   logger,
-								   {types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-									types::DesiredInstanceLayerNameView{
-										"VK_LAYER_KHRONOS_validation"}});
-						   }},
-						IO{[logger]
-						   {
-							   return filter_available_instance_extensions(
-								   logger,
-								   {types::DesiredInstanceExtensionNameView{
-										VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-									types::DesiredInstanceExtensionNameView{
-										"some_unavailable_extension"}});
-						   }});
-				})
-			.fmap([](types::VulkanInstancePtr instance) { CHECK(instance); });
+	static constexpr auto create_window_state = []
+	{
+		return StateIO{
+			[](auto && state)
+			{
+				return create_window_io().bind(
+					[state = FW(state)](auto && window_)
+					{
+						struct Container : std::decay_t<decltype(state)>
+						{
+							std::decay_t<decltype(window_)> window;
+						};
 
-	pipeline();
+						return IO{[window = FW(window_), state = FW(state)]
+								  { return std::pair{window, Container{FW(state), FW(window)}}; }};
+					});
+			}};
+	};
+
+	static constexpr auto create_vulkan_instance_state =
+		[](auto && available_layers, auto && available_extensions)
+	{
+		return StateIO{
+			[available_layers = FW(available_layers),
+			 available_extensions = FW(available_extensions)](auto && state)
+			{
+				return create_vulkan_instance_io(
+						   state.logger, state.window, available_layers, available_extensions)
+					.bind(
+						[state = FW(state)](auto && instance_)
+						{
+							struct Container : std::decay_t<decltype(state)>
+							{
+								std::decay_t<decltype(instance_)> instance;
+							};
+
+							return IO{[instance = FW(instance_), state = FW(state)]
+									  {
+										  return std::pair{
+											  instance, Container{FW(state), FW(instance)}};
+									  }};
+						});
+			}};
+	};
+
+	auto pipeline_2 = monad::bindN(
+		create_logger_state("(state)"),
+		create_window_state(),
+		[](auto logger, [[maybe_unused]] auto window)
+		{
+			return monad::bindN(
+				monad::stateio::liftM(filter_available_layers_io(logger)),
+				monad::stateio::liftM(filter_available_instance_extensions_io(logger)),
+				[=](auto available_layers, auto available_extensions)
+				{ return create_vulkan_instance_state(available_layers, available_extensions); });
+		});
+
+	struct
+	{
+	} initial_state;
+
+	auto const [instance2, state]  = pipeline_2(initial_state)();
+
+	static_assert(std::is_same_v<decltype(instance2), const types::VulkanInstancePtr>);
+	CHECK(state.instance);
+	CHECK(state.logger);
+	CHECK(state.window);
 
 	types::VulkanInstancePtr instance = [](vulkandemo::LoggerPtr const & logger)
 	{

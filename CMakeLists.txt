@@ -22,6 +22,7 @@ find_package(frozen REQUIRED)
 find_package(etl REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(di REQUIRED)
+find_package(reflect-cpp REQUIRED)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
 
@@ -68,6 +69,7 @@ target_link_libraries(
     frozen::frozen
     etl::etl
     di::di
+    reflect-cpp::reflect-cpp
 )
 
 target_compile_definitions(

@@ -20,7 +20,8 @@ class vulkandemoRecipe(ConanFile):
         "range-v3/0.12.0",
         "frozen/1.2.0",
         "etl/20.39.4",
-        "di/1.3.0"
+        "di/1.3.0",
+        "reflect-cpp/0.11.1"
     ]
 
     settings = "build_type", "os"
