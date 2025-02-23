@@ -102,6 +102,15 @@ endif ()
 if (${PROJECT_NAME}_ENABLE_TESTS)
     enable_testing()
 
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # Enable some options to help in the debugger.
+        target_compile_options(
+            ${_exe_target}
+            PRIVATE
+            -ggdb3 -fno-omit-frame-pointer -fno-inline -fconcepts-diagnostics-depth=2
+        )
+    endif ()
+
     add_test(
         NAME ${_exe_target}
         COMMAND
