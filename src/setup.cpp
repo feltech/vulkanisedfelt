@@ -8,12 +8,11 @@
 #include "setup.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -27,8 +26,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <rfl.hpp>
 
 #include <boost/di.hpp>
 
@@ -60,6 +57,7 @@
 #include "Logger.hpp"
 #include "hof.hpp"
 #include "macros.hpp"
+#include "monad.hpp"
 #include "types.hpp"
 
 using namespace std::literals;
@@ -1266,255 +1264,34 @@ types::SDLWindowPtr create_window(char const * title, int const width, int const
 
 TEST_CASE("Create a window")
 {
-	constexpr int expected_width = 800;
-	constexpr int expected_height = 600;
-	constexpr auto expected_name = "Hello Vulkan";
+	static constexpr int kExpectedWidth = 800;
+	static constexpr int kExpectedHeight = 600;
+	static constexpr auto kExpectedName = "Hello Vulkan";
 
 	// Create a window.
-	types::SDLWindowPtr window = create_window(expected_name, expected_width, expected_height);
-	// Check that the window was created.
-	CHECK(window);
-	// Check that the window has the given width and height.
-	// Get the window's width and height.
-	int width = 0;
-	int height = 0;
-	SDL_GetWindowSize(window.get(), &width, &height);
-	CHECK(width == expected_width);
-	CHECK(height == expected_height);
-	// Check the window has the expected name.
-	CHECK(SDL_GetWindowTitle(window.get()) == std::string_view{expected_name});
+	auto const program =
+		io::create_window(kExpectedName, kExpectedWidth, kExpectedHeight)
+			.bind(
+				[](auto && window)
+				{
+					CHECK(window);
+
+					return io::IO{[window = FW(window)]
+								  {
+									  int width = 0;
+									  int height = 0;
+									  SDL_GetWindowSize(window.get(), &width, &height);
+									  CHECK(width == kExpectedWidth);
+									  CHECK(height == kExpectedHeight);
+									  CHECK(
+										  SDL_GetWindowTitle(window.get()) ==
+										  std::string_view{kExpectedName});
+									  return true;
+								  }};
+				});
+
+	CHECK(program());
 }
-
-#define FW(a) std::forward<decltype(a)>(a)
-
-namespace monad
-{
-// NOLINTBEGIN(*-overloaded-operator,*-trailing-return,*-identifier-length)
-
-namespace
-{
-template <typename F, size_t... Is>
-constexpr auto indices_impl(F f, std::index_sequence<Is...>)
-{
-	return f(std::integral_constant<size_t, Is>()...);
-}
-
-template <size_t N, typename F>
-constexpr auto indices(F f)
-{
-	return indices_impl(f, std::make_index_sequence<N>());
-}
-
-/// Given f and some args t0, t1, ..., tn, calls f(tn, t0, t1, ..., tn-1)
-template <typename F, typename... Ts>
-constexpr auto rotate_right(F && f, Ts... ts)
-{
-	auto tuple = std::forward_as_tuple(ts...);
-	return indices<sizeof...(Ts) - 1>(
-		[&](auto... Is)
-		{ return f(FW(std::get<sizeof...(Ts) - 1>(tuple)), FW(std::get<Is>(tuple))...); });
-}
-
-template <class>
-constexpr bool always_false = false;
-
-template <class T>
-struct FnTraits
-{
-	static_assert(always_false<T>, "Not a function");
-};
-
-template <typename R, typename... Args>
-struct FnTraits<std::function<R(Args...)>>
-{
-	static constexpr bool is_function = true;
-	static constexpr std::size_t arity = sizeof...(Args);
-
-	template <std::size_t idx>
-	using arg = std::tuple_element_t<idx, std::tuple<Args...>>;
-};
-
-template <class Func>
-using fn_traits = FnTraits<decltype(std::function{std::declval<std::decay_t<Func>>()})>;
-
-template <class T>
-constexpr bool has_n_args(std::size_t const n)
-{
-	return fn_traits<T>::arity == n;
-}
-
-template <class T, std::size_t n>
-using arg_at = typename fn_traits<T>::arg<n>;
-
-template <typename T, template <typename...> typename U>
-concept SpecialisationOf = requires(T * x)
-{
-	[]<typename... As>(U<As...> *) {}(x);
-};
-}  // namespace
-
-template <typename F, typename A, typename B>
-concept Transformer = requires(F lambda)
-{
-	{
-		lambda(std::declval<A>())
-	} -> std::same_as<B>;
-};
-
-auto bindN(auto &&... ms_and_lifter)
-{
-	return rotate_right(
-		[](auto && lifter, auto && m, auto &&... ms)
-		{
-			if constexpr (sizeof...(ms) == 0)
-			{
-				return FW(m).bind(FW(lifter));
-			}
-			else
-			{
-				return FW(m).bind(
-					[lifter = FW(lifter),
-					 ... ms = FW(ms)](auto && arg)	// NOLINT(*-identifier-length)
-					{
-						return bindN(
-							FW(ms)...,
-							[lifter = FW(lifter), arg = FW(arg), ... ms = FW(ms)](auto &&... args)
-							{ return lifter(FW(arg), FW(args)...); });
-					});
-			}
-		},
-		FW(ms_and_lifter)...);
-}
-
-auto fmapN(auto && transformer, auto && io, auto &&... ios)	 // NOLINT
-{
-	if constexpr (sizeof...(ios) == 0)
-	{
-		return FW(io).fmap(FW(transformer));
-	}
-	else
-	{
-		return FW(io).fmap(
-			[transformer = FW(transformer), ... ios = FW(ios)](auto && arg)
-			{
-				return fmapN(
-					[transformer = FW(transformer), arg = FW(arg), ... ios = FW(ios)](
-						auto &&... args) { return transformer(FW(arg), FW(args)...); },
-					FW(ios)...);
-			});
-	}
-}
-
-namespace io
-{
-
-template <typename F>
-concept Action = requires(F lambda)
-{
-	std::is_function_v<F>;
-	has_n_args<F>(0);
-};
-
-template <typename F, typename A>
-concept Lifter = requires(F lambda)
-{
-	std::is_function_v<F>;
-	has_n_args<F>(1);
-};
-
-template <Action Act>
-struct IO
-{
-	Act action;
-	using A = decltype(action());
-
-	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
-	{
-		return action();
-	}
-
-	auto bind(Lifter<A> auto && lifter) const &
-	{
-		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
-		return IO<decltype(next)>{std::move(next)};
-	}
-
-	auto bind(Lifter<A> auto && lifter) &&
-	{
-		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
-		return IO<decltype(next)>{std::move(next)};
-	}
-};
-
-}  // namespace io
-
-namespace stateio
-{
-template <typename F>
-concept Action = requires(F lambda)
-{
-	std::is_function_v<F>;
-	has_n_args<F>(1);
-};
-
-template <typename F>
-concept Lifter = requires(F lambda)
-{
-	std::is_function_v<F>;
-	has_n_args<F>(1);
-};
-
-template <Action Act>
-struct StateIO
-{
-	Act action;
-
-	decltype(auto) operator()(auto && state) const
-	{
-		return action(FW(state));
-	}
-
-	auto bind(Lifter auto && lifter) const &
-	{
-		auto next = [prev = action, lifter = FW(lifter)](
-						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			return prev(FW(state)).bind(
-				[lifter = FW(lifter)](auto && value_and_state)
-				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
-		};
-		return StateIO<decltype(next)>(std::move(next));
-	}
-	auto bind(Lifter auto && lifter) &&
-	{
-		auto next = [prev = std::move(action), lifter = FW(lifter)](
-						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			return prev(FW(state)).bind(
-				[lifter = FW(lifter)](auto && value_and_state)
-				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
-		};
-		return StateIO<decltype(next)>(std::move(next));
-	}
-};
-
-
-auto liftM(SpecialisationOf<io::IO> auto && iom)
-{
-	return StateIO{[iom = FW(iom)](auto && state)
-				   {
-					   return FW(iom).bind(
-						   [state = FW(state)](auto && value)
-						   {
-							   return io::IO{[value = FW(value), state = FW(state)]
-											 { return std::pair{FW(value), FW(state)}; }};
-						   });
-				   }};
-}
-
-}  // namespace stateio
-// NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
-}  // namespace monad
 
 TEST_CASE("Create a Vulkan instance")
 {
@@ -1551,218 +1328,130 @@ TEST_CASE("Create a Vulkan instance")
 	// }).in(di::scopes::instance{})); NOLINTEND(*-avoid-c-arrays)
 
 	// auto const & instance = di::create<vulkandemo::types::VulkanInstancePtr>(injector);
-
-	using monad::io::IO;
-
-	static constexpr auto create_vulkan_instance_io =
-		[](auto && logger, auto && window, auto && available_layers, auto && available_extensions)
-	{
-		return IO{[logger = FW(logger),
-				   window = FW(window),
-				   available_layers = FW(available_layers),
-				   available_extensions = FW(available_extensions)]
-				  {
-					  return create_vulkan_instance(
-						  FW(logger), FW(window), FW(available_layers), FW(available_extensions));
-				  }};
-	};
-
-	static constexpr auto filter_available_layers_io = [](auto logger)
-	{
-		return IO{[=]
-				  {
-					  return filter_available_layers(
-						  logger,
-						  {types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-						   types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}});
-				  }};
-	};
-
-	static constexpr auto filter_available_instance_extensions_io = [](auto logger)
-	{
-		return IO{
-			[=]
+	auto const logger = create_logger("Create a Vulkan instance (io)");
+	auto const program =
+		monad::bind(
+			io::create_window("", 0, 0),
+			io::filter_available_layers(
+				logger,
+				std::set{
+					types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+					types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}),
+			io::filter_available_instance_extensions(
+				logger,
+				std::set{
+					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+					types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}}),
+			[logger](auto && window, auto && available_layers, auto && available_extensions)
 			{
-				return filter_available_instance_extensions(
-					logger,
-					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-					 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}});
-			}};
-	};
-
-	static constexpr auto create_window_io = []
-	{ return IO{[=] { return create_window("", 0, 0); }}; };
-
-	static constexpr auto create_logger_io = [](auto suffix)
-	{ return IO{[=] { return create_logger(std::string{"Create a Vulkan instance"} + suffix); }}; };
-
-	static constexpr auto assert_instance_io_lifter = [](types::VulkanInstancePtr const & instance)
-	{ return IO{[=] { CHECK(instance); }}; };
-
-	auto pipeline_1 = monad::bindN(
-						  create_logger_io("(io)"),
-						  create_window_io(),
-						  [](auto logger, auto window)
-						  {
-							  return monad::bindN(
-								  filter_available_layers_io(logger),
-								  filter_available_instance_extensions_io(logger),
-								  [=](auto available_layers, auto available_extensions)
+				return io::create_vulkan_instance(
+					logger, FW(window), FW(available_layers), FW(available_extensions));
+			})
+			.bind(
+				[](auto && instance)
+				{
+					return io::IO{[instance = FW(instance)]
 								  {
-									  return create_vulkan_instance_io(
-										  logger, window, available_layers, available_extensions);
-								  });
-						  })
-						  .bind(assert_instance_io_lifter);
+									  CHECK(instance);
+									  return true;
+								  }};
+				});
 
-	pipeline_1();
-
-	using monad::stateio::StateIO;
-
-	static constexpr auto create_logger_state = [](auto && suffix)
-	{
-		return StateIO{
-			[suffix = FW(suffix)](auto && state)
-			{
-				return create_logger_io(FW(suffix))
-					.bind(
-						[state = FW(state)](auto && logger_)
-						{
-							struct Container : std::decay_t<decltype(state)>
-							{
-								std::decay_t<decltype(logger_)> logger;
-							};
-							return IO{
-								[logger_ = FW(logger_), state = FW(state)]
-								{ return std::pair{logger_, Container{FW(state), FW(logger_)}}; }};
-						});
-			}};
-	};
-
-	static constexpr auto create_window_state = []
-	{
-		return StateIO{
-			[](auto && state)
-			{
-				return create_window_io().bind(
-					[state = FW(state)](auto && window_)
-					{
-						struct Container : std::decay_t<decltype(state)>
-						{
-							std::decay_t<decltype(window_)> window;
-						};
-
-						return IO{[window = FW(window_), state = FW(state)]
-								  { return std::pair{window, Container{FW(state), FW(window)}}; }};
-					});
-			}};
-	};
-
-	static constexpr auto create_vulkan_instance_state =
-		[](auto && available_layers, auto && available_extensions)
-	{
-		return StateIO{
-			[available_layers = FW(available_layers),
-			 available_extensions = FW(available_extensions)](auto && state)
-			{
-				return create_vulkan_instance_io(
-						   state.logger, state.window, available_layers, available_extensions)
-					.bind(
-						[state = FW(state)](auto && instance_)
-						{
-							struct Container : std::decay_t<decltype(state)>
-							{
-								std::decay_t<decltype(instance_)> instance;
-							};
-
-							return IO{[instance = FW(instance_), state = FW(state)]
-									  {
-										  return std::pair{
-											  instance, Container{FW(state), FW(instance)}};
-									  }};
-						});
-			}};
-	};
-
-	auto pipeline_2 = monad::bindN(
-		create_logger_state("(state)"),
-		create_window_state(),
-		[](auto logger, [[maybe_unused]] auto window)
-		{
-			return monad::bindN(
-				monad::stateio::liftM(filter_available_layers_io(logger)),
-				monad::stateio::liftM(filter_available_instance_extensions_io(logger)),
-				[=](auto available_layers, auto available_extensions)
-				{ return create_vulkan_instance_state(available_layers, available_extensions); });
-		});
-
-	struct
-	{
-	} initial_state;
-
-	auto const [instance2, state]  = pipeline_2(initial_state)();
-
-	static_assert(std::is_same_v<decltype(instance2), const types::VulkanInstancePtr>);
-	CHECK(state.instance);
-	CHECK(state.logger);
-	CHECK(state.window);
-
-	types::VulkanInstancePtr instance = [](vulkandemo::LoggerPtr const & logger)
-	{
-		return create_vulkan_instance(
-			logger,
-			create_window("", 0, 0),
-			filter_available_layers(
-				logger,
-				{types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-				 types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}),
-			filter_available_instance_extensions(
-				logger,
-				{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-				 types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}}));
-	}(vulkandemo::create_logger("Create a Vulkan instance"));
-
-	CHECK(instance);
+	CHECK(program());
 }
 
 TEST_CASE("Create a Vulkan debug utils messenger")
 {
-	vulkandemo::LoggerPtr const logger =
-		vulkandemo::create_logger("Create a Vulkan debug utils messenger");
+	LoggerPtr const logger = create_logger("Create a Vulkan debug utils messenger");
 
-	types::VulkanDebugMessengerPtr messenger =
-		[](vulkandemo::LoggerPtr const & logger,
-		   std::vector<types::AvailableInstanceExtensionNameCstr> const & instance_extensions)
-	{
-		REQUIRE(!instance_extensions.empty());
+	auto const program = monad::bind(
+							 io::create_window("", 0, 0),
+							 io::filter_available_instance_extensions(
+								 logger,
+								 std::set{types::DesiredInstanceExtensionNameView{
+									 VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}),
+							 [logger](auto && window, auto && available_extensions)
+							 {
+								 return io::create_vulkan_instance(
+									 logger,
+									 FW(window),
+									 std::array<types::AvailableInstanceLayerNameCstr const, 0>{},
+									 FW(available_extensions));
+							 })
+							 .bind([logger](auto && instance)
+								   { return io::create_debug_messenger(logger, FW(instance)); })
+							 .bind(
+								 [](auto && messenger)
+								 {
+									 return io::IO{[messenger = FW(messenger)]
+												   {
+													   CHECK(messenger);
+													   return true;
+												   }};
+								 });
 
-		return create_debug_messenger(
-			logger,
-			create_vulkan_instance(logger, create_window("", 0, 0), {}, instance_extensions));
-	}(vulkandemo::create_logger("Create a Vulkan debug utils messenger 2"),
-	  filter_available_instance_extensions(
-		  logger, {types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}));
-
-	CHECK(messenger);
+	CHECK(program());
 }
+
+namespace
+{
+auto bind_to_default_instance(auto && io_factory)
+{
+	return monad::bind(
+			   stateio::create_window("", 0, 0),
+			   stateio::StateIO{[](auto && state)
+								{
+									return io::filter_available_layers(
+											   state.logger,
+											   std::set{types::DesiredInstanceLayerNameView{
+												   "VK_LAYER_KHRONOS_validation"}})
+										.pair_with(FW(state));
+								}},
+			   stateio::StateIO{[](auto && state)
+								{
+									return io::filter_available_instance_extensions(
+											   state.logger,
+											   std::set{types::DesiredInstanceExtensionNameView{
+												   VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})
+										.pair_with(FW(state));
+								}},
+			   []([[maybe_unused]] auto && window,
+				  auto && available_layers,
+				  auto && available_extensions)
+			   {
+				   return stateio::create_vulkan_instance(
+					   FW(available_layers), FW(available_extensions));
+			   })
+		.bind([](auto && instance) { return stateio::create_debug_messenger(FW(instance)); })
+		.bind([io_factory = FW(io_factory)]([[maybe_unused]] auto && messenger)
+			  { return stateio::StateIO{io_factory}; });
+};
+}  // namespace
 
 TEST_CASE("Create a Vulkan surface")
 {
-	types::VulkanSurfacePtr surface =
-		[](vulkandemo::LoggerPtr const & logger, types::SDLWindowPtr const & window)
-	{
-		return [=](types::VulkanInstancePtr const & instance)
-		{
-			return create_surface(window, instance);
-			//
-		}(create_vulkan_instance(
-			logger,
-			window,
-			{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
-			{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}));
-	}(vulkandemo::create_logger("Create a Vulkan surface"), create_window("", 0, 0));
+	auto const program =
+		bind_to_default_instance(
+			[](auto && state)
+			{ return io::create_surface(state.window, state.instance).pair_with(FW(state)); })
+			.bind(
+				[](auto && surface)
+				{
+					return monad::stateio::lift(
+						io::IO{[surface = FW(surface)]
+							   {
+								   CHECK(surface);
+								   return true;
+							   }});
+				});
 
-	CHECK(surface);
+	struct
+	{
+		LoggerPtr logger = create_logger("Create a Vulkan surface");
+	} initial_state;
+
+	auto const [result, state] = program(initial_state)();
+	CHECK(result);
 
 	// To trace unknown memory addresses spat out by ASan/LSan
 	// std::filesystem::copy_file(
@@ -1774,124 +1463,165 @@ TEST_CASE("Create a Vulkan surface")
 // NOLINTBEGIN(readability-function-cognitive-complexity)
 TEST_CASE("Enumerate devices")
 {
-	// std::vector<types::AvailableDeviceExtensionNameView> const
-	// available_device_extensions;
-	CHECK(
-		[](vulkandemo::LoggerPtr const & logger, types::SDLWindowPtr const & window)
+	auto const program = bind_to_default_instance(
+		[](auto && state)
 		{
-			return [=](types::VulkanInstancePtr const & instance)
-			{
-				return [=](types::VulkanSurfacePtr const & surface,
-						   std::vector<VkPhysicalDevice> const & physical_devices)
-				{
-					return
-						[=](VkPhysicalDeviceProperties first_device_properties,
-							std::vector<types::VulkanQueueFamilyIdx> const &
-								available_queue_families,
-							std::vector<types::VulkanMemoryTypeIdx> const & available_memory_types,
-							std::vector<types::AvailableDeviceExtensionNameView> const &
-								available_device_extensions)
-					{
-						REQUIRE(!physical_devices.empty());
-						WARN(first_device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
-						CHECK(!available_queue_families.empty());
-						CHECK(!available_memory_types.empty());
-						CHECK(available_device_extensions.size() == 1);
-						return true;
-					}(
-						//
-						[=]
-						{
-							VkPhysicalDeviceProperties first_device_properties;
-							vkGetPhysicalDeviceProperties(
-								physical_devices.front(), &first_device_properties);
-							return first_device_properties;
-						}(),
-						filter_available_queue_families(
-							physical_devices.front(), VK_QUEUE_GRAPHICS_BIT, surface),
-						filter_available_memory_types(
-							logger, physical_devices.front(), VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT),
-						filter_available_device_extensions(
-							logger,
-							physical_devices.front(),
-							{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME},
-							 types::DesiredDeviceExtensionNameView{"some_unsupported_extension"}}));
-				}(
-					//
-					create_surface(window, instance),
-					enumerate_physical_devices(logger, instance));
-			}(
-				//
-				create_vulkan_instance(
-					logger,
-					window,
-					{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
-					{{types::AvailableInstanceExtensionNameCstr{
-						VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}));
-		}(
-			//
-			vulkandemo::create_logger("Enumerate devices"),
-			create_window("", 0, 0)));
+			return monad::bind(
+					   io::enumerate_physical_devices(state.logger, state.instance),
+					   io::create_surface(state.window, state.instance),
+					   [state](auto const physical_devices, auto const surface)
+					   {
+						   REQUIRE(!physical_devices.empty());
+
+						   return monad::bind(
+							   io::filter_available_device_extensions(
+								   state.logger,
+								   physical_devices.front(),
+								   std::set{types::DesiredDeviceExtensionNameView{
+									   VK_KHR_SWAPCHAIN_EXTENSION_NAME}}),
+							   io::filter_available_memory_types(
+								   state.logger,
+								   physical_devices.front(),
+								   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT),
+							   io::filter_available_queue_families(
+								   physical_devices.front(), VK_QUEUE_GRAPHICS_BIT, surface),
+							   [](auto && available_device_extensions,
+								  auto && available_memory_types,
+								  auto && available_queue_families)
+							   {
+								   return io::IO{
+									   [available_device_extensions =
+											FW(available_device_extensions),
+										available_memory_types = FW(available_memory_types),
+										available_queue_families = FW(available_queue_families)]
+									   {
+										   CHECK(!available_memory_types.empty());
+										   CHECK(available_device_extensions.size() == 1);
+										   CHECK(!available_queue_families.empty());
+										   return true;
+									   }};
+							   });
+					   })
+				.pair_with(FW(state));
+		});
+
+	struct
+	{
+		vulkandemo::LoggerPtr logger = vulkandemo::create_logger("Enumerate devices");
+	} initial_state;
+
+	auto const [result, state] = program(initial_state)();
+	CHECK(result);
 }
 // NOLINTEND(readability-function-cognitive-complexity)
 
 TEST_CASE("Select device with capability")
 {
-	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Select device with capability");
-	types::SDLWindowPtr const window = create_window("", 0, 0);
-	types::VulkanInstancePtr const instance = create_vulkan_instance(
-		logger,
-		window,
-		{{types::AvailableInstanceLayerNameCstr{"VK_LAYER_KHRONOS_validation"}}},
-		{{types::AvailableInstanceExtensionNameCstr{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
-	types::VulkanDebugMessengerPtr const messenger = create_debug_messenger(logger, instance);
+	auto const program = bind_to_default_instance(
+		[](auto && state)
+		{
+			return io::enumerate_physical_devices(state.logger, state.instance)
+				.bind(
+					[state](auto && physical_devices)
+					{
+						return io::select_physical_device(
+							state.logger,
+							FW(physical_devices),
+							std::set{types::DesiredDeviceExtensionNameView{
+								VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+							VK_QUEUE_GRAPHICS_BIT,
+							VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+					})
+				.bind(
+					[](auto && device_and_queue_family)
+					{
+						return io::IO{
+							[device_and_queue_family = FW(device_and_queue_family)]
+							{
+								auto const & [device, queue_family_idx] = device_and_queue_family;
+								CHECK(device);
+								CHECK(queue_family_idx >= types::VulkanQueueFamilyIdx{0});
+								// Get device type.
+								VkPhysicalDeviceProperties device_properties;
+								vkGetPhysicalDeviceProperties(device, &device_properties);
+								// Should be sorted in order of GPU-first.
+								WARN(device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
+								return true;
+							}};
+					})
+				.pair_with(FW(state));
+		});
 
-	auto [device, queue_family_idx] = select_physical_device(
-		logger,
-		enumerate_physical_devices(logger, instance),
-		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
-		VK_QUEUE_GRAPHICS_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	struct
+	{
+		LoggerPtr logger = create_logger("Select device with capability");
+	} initial_state;
 
-	CHECK(device);
-	CHECK(queue_family_idx >= types::VulkanQueueFamilyIdx{0});
-
-	// Get device type.
-	VkPhysicalDeviceProperties device_properties;
-	vkGetPhysicalDeviceProperties(device, &device_properties);
-	// Should be sorted in order of GPU-first.
-	WARN(device_properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU);
+	auto const [result, state] = program(initial_state)();
+	CHECK(result);
 }
 
 TEST_CASE("Create logical device with queues")
 {
-	vulkandemo::LoggerPtr const logger =
-		vulkandemo::create_logger("Create logical device with queues");
-	types::SDLWindowPtr const window = create_window("", 0, 0);
-	types::VulkanInstancePtr const instance = create_vulkan_instance(logger, window, {}, {});
-	types::VulkanSurfacePtr const surface = create_surface(window, instance);
+	static constexpr types::VulkanQueueCount expected_queue_count{2};
 
-	auto const [physical_device, queue_family_idx] = select_physical_device(
-		logger,
-		enumerate_physical_devices(logger, instance),
-		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
-		VK_QUEUE_GRAPHICS_BIT,
-		0,
-		surface);
+	auto const program = bind_to_default_instance(
+		[](auto && state)
+		{
+			return io::enumerate_physical_devices(state.logger, state.instance)
+				.bind(
+					[state](auto && physical_devices)
+					{
+						return io::select_physical_device(
+							state.logger,
+							FW(physical_devices),
+							std::set{types::DesiredDeviceExtensionNameView{
+								VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+							VK_QUEUE_GRAPHICS_BIT,
+							VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+					})
+				.bind(
+					[](auto && physical_device_and_queue_family)
+					{
+						auto [physical_device, queue_family_idx] =
+							FW(physical_device_and_queue_family);
 
-	constexpr types::VulkanQueueCount expected_queue_count{2};
+						return io::create_device_and_queues(
+								   std::move(physical_device),
+								   std::array{std::pair{queue_family_idx, expected_queue_count}},
+								   std::array{types::AvailableDeviceExtensionNameView{
+									   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
+							.bind(
+								[queue_family_idx](auto && device_and_queues)
+								{
+									return io::IO{[queue_family_idx,
+												   device_and_queues = FW(device_and_queues)]
+												  {
+													  auto const & [device, queues] =
+														  device_and_queues;
+													  CHECK(device);
+													  // Check that the device has the expected
+													  // number of queues.
+													  CHECK(queues.size() == 1);
+													  CHECK(
+														  queues.at(queue_family_idx).size() ==
+														  expected_queue_count);
+													  CHECK(queues.at(queue_family_idx)[0]);
+													  CHECK(queues.at(queue_family_idx)[1]);
+													  return true;
+												  }};
+								});
+					})
+				.pair_with(FW(state));
+		});
 
-	auto [device, queues] = create_device_and_queues(
-		physical_device,
-		{{std::pair{queue_family_idx, expected_queue_count}}},
-		{{types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}}});
+	struct
+	{
+		LoggerPtr logger = create_logger("Create logical device with queues");
+	} initial_state;
 
-	CHECK(device);
-	// Check that the device has the expected number of queues.
-	CHECK(queues.size() == 1);
-	CHECK(queues.at(queue_family_idx).size() == expected_queue_count);
-	CHECK(queues.at(queue_family_idx)[0]);
-	CHECK(queues.at(queue_family_idx)[1]);
+	auto const [result, state] = program(initial_state)();
+	CHECK(result);
 }
 
 TEST_CASE("Create swapchain")
