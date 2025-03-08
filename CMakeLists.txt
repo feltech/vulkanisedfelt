@@ -108,6 +108,7 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
             ${_exe_target}
             PRIVATE
             -ggdb3 -fno-omit-frame-pointer -fno-inline -fconcepts-diagnostics-depth=2
+            -fdiagnostics-show-template-tree
         )
     endif ()
 
