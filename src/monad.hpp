@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-#define FW(a) std::forward<decltype(a)>(a)
+#include "macros.hpp"
 
 namespace vulkandemo::monad
 {
@@ -41,8 +41,11 @@ concept SpecialisationOf = requires(T * x)
 	[]<typename... As>(U<As...> *) {}(x);
 };
 
-template <class>
-constexpr bool always_false = false;
+template <typename T, typename... As>
+concept CallableWithResultsOf = requires(T f, As... a)
+{
+	f(a()...);
+};
 
 template <class T>
 struct FnTraitsImpl
@@ -65,6 +68,11 @@ struct FnTraitsImpl<std::function<R(Args...)>>
 template <class Func>
 using FnTraits = FnTraitsImpl<decltype(std::function{std::declval<std::decay_t<Func>>()})>;
 
+template <class T>
+concept IsMonad = requires(T t)
+{
+	{ t.bind([u=t](auto){ return u; }) };
+};
 }  // namespace detail
 
 template <typename F>
@@ -125,6 +133,24 @@ auto collect(auto &&... args)
 	return Collect{std::tuple{FW(args)...}};
 }
 
+decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, detail::IsMonad auto && rhs)
+{
+	return Collect{std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)})};
+}
+
+decltype(auto) operator>>(
+	detail::SpecialisationOf<Collect> auto && lhs, detail::SpecialisationOf<Collect> auto && rhs)
+{
+	return Collect{std::tuple_cat(FW(lhs).args, FW(rhs).args)};
+}
+
+template<typename F, class C>
+concept CallableWithArgsFromCollection = requires (F f, C c)
+{
+    { std::apply(bind, std::tuple_cat(c.args, std::tuple{f})) };
+
+};
+
 decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, auto && rhs)
 {
 	return std::apply(
@@ -138,30 +164,33 @@ namespace io
 template <typename F>
 concept Action = !std::is_void_v<F>;
 
+template <Action Act>
+struct IO;
+
 template <typename F, typename R>
-concept Lifter = requires(F func)
+concept Lifter = requires(F func, R io)
 {
-	func(std::declval<R>());
+	{func(io())} -> detail::SpecialisationOf<IO>;
 };
 
 template <Action Act>
 struct IO
 {
 	Act action;
-	using A = decltype(action());
+	using Ret = decltype(action());
 
 	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
 	{
 		return action();
 	}
 
-	auto bind(Lifter<A> auto && lifter) const &
+	auto bind(Lifter<IO> auto && lifter) const &
 	{
 		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto bind(Lifter<A> auto && lifter) &&
+	auto bind(Lifter<IO> auto && lifter) &&
 	{
 		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
 		return IO<decltype(next)>{std::move(next)};
@@ -180,6 +209,20 @@ struct IO
 		return IO<decltype(next)>{std::move(next)};
 	}
 
+	template <typename... As>
+	requires detail::CallableWithResultsOf<Ret, As...> auto apply(IO<As> &&... ios) const &
+	{
+		auto next = [prev = action, ... ios = FW(ios)] { return prev()(ios()...); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+
+	template <typename... As>
+	requires detail::CallableWithResultsOf<Ret, As...> auto apply(IO<As> &&... ios) &&
+	{
+		auto next = [prev = std::move(action), ... ios = FW(ios)] { return prev()(ios()...); };
+		return IO<decltype(next)>{std::move(next)};
+	}
+
 	auto pair_with(auto && second)
 	{
 		return fmap([second = FW(second)](auto && value)
@@ -187,9 +230,19 @@ struct IO
 	}
 };
 
-decltype(auto) operator>>(auto && lhs, auto && rhs)
+decltype(auto) operator>>(detail::SpecialisationOf<IO> auto && lhs, auto && rhs)
 {
 	return FW(lhs).bind(FW(rhs));
+}
+decltype(auto) operator>>(
+	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<Collect> auto && rhs)
+{
+	return Collect{std::tuple_cat(std::tuple{FW(lhs)}, FW(rhs).args)};
+}
+decltype(auto) operator>>(
+	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<IO> auto && rhs)
+{
+	return collect(lhs, rhs);
 }
 }  // namespace io
 
@@ -203,20 +256,30 @@ struct Empty
 template <typename F>
 concept Action = !std::is_void_v<F>;
 
-template <typename F>
-concept Lifter = !std::is_void_v<F>;
+template <Action Act>
+struct StateIO;
+
+template <typename F, typename I>
+concept Lifter = requires(F f, I io)
+{
+	requires detail::SpecialisationOf<I, StateIO>;
+    // TODO(DF): Figure out how to constrain a lifter, given that we cannot know ahead of time what
+    //  the state type will be.
+
+};
 
 template <Action Act>
 struct StateIO
 {
 	Act action;
+	// using Ret = typename detail::FnTraits<Act>::return_value;
 
 	decltype(auto) operator()(auto && state) const
 	{
 		return action(FW(state));
 	}
 
-	auto bind(Lifter auto && lifter) const &
+	auto bind(Lifter<StateIO> auto && lifter) const &
 	{
 		auto next = [prev = action, lifter = FW(lifter)](
 						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
@@ -227,7 +290,7 @@ struct StateIO
 		};
 		return StateIO<decltype(next)>(std::move(next));
 	}
-	auto bind(Lifter auto && lifter) &&
+	auto bind(Lifter<StateIO> auto && lifter) &&
 	{
 		auto next = [prev = std::move(action), lifter = FW(lifter)](
 						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)

@@ -1,18 +1,30 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <concepts>
+#include <cstdint>
+#include <range/v3/view/transform.hpp>
+#include <ranges>
 #include <set>
+#include <span>
+#include <spdlog/common.h>
+#include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <range/v3/to_container.hpp>
+#include <range/v3/view/set_algorithm.hpp>
+#include <spdlog/spdlog.h>
+#include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
 #include "Logger.hpp"
+#include "hof.hpp"
+#include "macros.hpp"
 #include "monad.hpp"
 #include "types.hpp"
-
-#include <span>
 
 namespace vulkandemo::setup
 {
@@ -275,6 +287,70 @@ VkExtent2D window_drawable_size(types::SDLWindowPtr const & window);
  */
 types::SDLWindowPtr create_window(char const * title, int width, int height);
 
+void log_layer_info(
+	LoggerPtr const & logger,
+	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
+	std::set<types::AvailableInstanceLayerNameView> const & available_layer_names,
+	std::span<VkLayerProperties const> available_layer_descs);
+
+constexpr auto make_instance_layer_filter(
+	AUTO(LoggerPtr) logger, AUTO(std::set<types::DesiredInstanceLayerNameView>) desired_layer_names)
+{
+	return [logger = FW(logger),
+			desired_layer_names = FW(desired_layer_names)](auto && available_layer_descs)
+	{
+		auto const available_layer_names = available_layer_descs |
+			std::views::transform(&VkLayerProperties::layerName) |
+			ranges::to<std::set<types::AvailableInstanceLayerNameView>>;
+
+		log_layer_info(logger, desired_layer_names, available_layer_names, available_layer_descs);
+
+		// Get intersection of desired layers and available layers, converted to C strings.
+		return ranges::views::set_intersection(
+				   desired_layer_names | hof::views::value_of(),
+				   available_layer_names | hof::views::value_of()) |
+			ranges::views::transform(&std::string_view::data) |
+			ranges::to<std::vector<types::AvailableInstanceLayerNameCstr>>;
+	};
+}
+
+/**
+ * Log desired instance extensions vs. available.
+ *
+ * @param logger
+ * @param desired_extension_names
+ * @param available_extension_names
+ * @param available_extension_properties
+ */
+void log_instance_extensions_info(
+	LoggerPtr const & logger,
+	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
+	std::set<types::AvailableInstanceExtensionNameView> const & available_extension_names,
+	std::span<VkExtensionProperties const> available_extension_properties);
+
+constexpr auto make_instance_extension_filter(
+	AUTO(LoggerPtr) logger,
+	AUTO(std::set<types::DesiredInstanceExtensionNameView>) desired_extension_names)
+{
+	return [logger = FW(logger), desired_extension_names = FW(desired_extension_names)](
+			   AUTO(std::vector<VkExtensionProperties>) available_extensions)
+	{
+		std::set const available_extension_names = available_extensions |
+			std::views::transform(&VkExtensionProperties::extensionName) |
+			ranges::to<std::set<types::AvailableInstanceExtensionNameView>>;
+
+		log_instance_extensions_info(
+			logger, desired_extension_names, available_extension_names, FW(available_extensions));
+
+		// Intersection of available extensions and desired extensions to return.
+		return ranges::views::set_intersection(
+				   desired_extension_names | hof::views::value_of(),
+				   available_extension_names | hof::views::value_of()) |
+			std::views::transform(&std::string_view::data) |
+			ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>;
+	};
+}
+
 namespace io
 {
 using monad::io::IO;
@@ -454,7 +530,6 @@ constexpr auto enumerate_physical_devices(auto && logger, auto && instance)
 
 constexpr auto create_surface(auto && window, auto && instance)
 {
-	// kleisli
 	return IO{[window = FW(window), instance = FW(instance)]
 			  { return setup::create_surface(window, instance); }};
 }
@@ -476,28 +551,79 @@ constexpr auto create_vulkan_instance(
 					  logger, window, layers_to_enable, extensions_to_enable);
 			  }};
 }
-// kleisli
-constexpr auto filter_available_layers(auto && logger, auto && desired_layer_names)
+
+constexpr auto query_available_instance_layers()
 {
-	// kleisli
-	return IO{[logger = FW(logger), desired_layer_names = FW(desired_layer_names)]
-			  { return setup::filter_available_layers(logger, desired_layer_names); }};
+	return IO{[]
+			  {
+				  std::vector<VkLayerProperties> out;
+				  uint32_t available_layers_count = 0;
+				  VK_CHECK(
+					  vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
+					  "Failed to enumerate instance layers");
+				  out.resize(available_layers_count);
+				  VK_CHECK(
+					  vkEnumerateInstanceLayerProperties(&available_layers_count, out.data()),
+					  "Failed to enumerate instance layers");
+
+				  return out;
+			  }};
+}
+
+constexpr auto filter_available_instance_layers(
+	AUTO(LoggerPtr) logger, AUTO(std::set<types::DesiredInstanceLayerNameView>) desired_layer_names)
+{
+	return query_available_instance_layers().fmap(
+		make_instance_layer_filter(FW(logger), FW(desired_layer_names)));
+}
+
+template <class T, typename R>
+concept IOTo = requires(T io)
+{
+	{
+		io()
+	} -> std::convertible_to<R>;
+};
+
+template <typename F, typename A>
+concept MappingFrom = requires(F func, A value)
+{
+	{func(value)};
+};
+
+constexpr auto query_available_instance_extensions()
+{
+	return IO{[]
+			  {
+				  std::vector<VkExtensionProperties> out;
+				  uint32_t available_extensions_count = 0;
+				  VK_CHECK(
+					  vkEnumerateInstanceExtensionProperties(
+						  nullptr, &available_extensions_count, nullptr),
+					  "Failed to enumerate instance extensions");
+				  out.resize(available_extensions_count);
+				  VK_CHECK(
+					  vkEnumerateInstanceExtensionProperties(
+						  nullptr, &available_extensions_count, out.data()),
+					  "Failed to enumerate instance extensions");
+
+				  return out;
+			  }};
 }
 
 constexpr auto filter_available_instance_extensions(auto && logger, auto && desired_extension_names)
 {
-	// kleisli
 	return IO{
 		[logger = FW(logger), desired_extension_names = FW(desired_extension_names)]
 		{ return setup::filter_available_instance_extensions(logger, desired_extension_names); }};
 }
+
 constexpr auto window_drawable_size()
 {
-	// kleisli
 	return [](auto && window)
 	{ return IO{[window = FW(window)] { return setup::window_drawable_size(window); }}; };
 }
-// kleisli
+
 constexpr auto create_window(char const * title, int width, int height)
 {
 	return IO{[title, width, height] { return setup::create_window(title, width, height); }};

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vk_enum_string_helper.h>
 
 #include "../macros.hpp"
 #include "../types.hpp"

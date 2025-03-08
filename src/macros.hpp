@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
-#include <vulkan/vk_enum_string_helper.h> // NOLINT(*-include-cleaner)
 
 #define VK_CHECK(func, msg)                                                                \
 	do { /* NOLINT(cppcoreguidelines-avoid-do-while)  */                                   \
@@ -10,3 +9,7 @@
 			throw std::runtime_error{std::format("{}: {}", msg, string_VkResult(result))}; \
 		}                                                                                  \
 	} while (false)
+
+#define FW(a) std::forward<decltype(a)>(a)
+
+#define AUTO(T) std::convertible_to<T> auto &&
