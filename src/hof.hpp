@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <ranges>
 #include <utility>
 
 #include <range/v3/view/transform.hpp>
@@ -25,6 +26,16 @@ constexpr auto cast()
 	return []<typename U>(U && obj) -> decltype(auto)
 	{ return static_cast<T>(std::forward<U>(obj)); };
 };
+
+constexpr auto make_concat()
+{
+	return [](std::ranges::range auto first, std::ranges::range auto && second)
+	{
+		first.insert(
+			end(first), make_move_iterator(begin(second)), make_move_iterator(end(second)));
+		return first;
+	};
+}
 
 namespace mem_fn
 {
@@ -52,10 +63,20 @@ constexpr auto second()
 namespace views
 {
 
-template<typename... Args>
-constexpr auto value_of(Args&&... args)
+template <typename... Args>
+constexpr auto value_of(Args &&... args)
 {
 	return ranges::views::transform(std::forward<Args>(args)..., mem_fn::value_of());
+}
+
+template <typename T, typename... Args>
+constexpr auto cast(Args &&... args)
+{
+	return ranges::views::transform(
+		std::forward<Args>(args)...,
+		// NOLINTNEXTLINE(*-trailing-return)
+		[]<typename U>(U && obj) -> decltype(auto)
+		{ return static_cast<T>(std::forward<U>(obj)); });
 }
 }  // namespace views
 }  // namespace vulkandemo::hof

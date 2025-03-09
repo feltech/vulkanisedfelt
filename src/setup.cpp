@@ -6,6 +6,7 @@
 // ReSharper disable CppLocalVariableMayBeConst
 
 #include "setup.hpp"
+#include "setup/io.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,8 +27,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <boost/di.hpp>
 
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/set_algorithm.hpp>
@@ -1237,7 +1236,7 @@ TEST_CASE("Create a window")
 	auto const program =
 		io::create_window(kExpectedName, kExpectedWidth, kExpectedHeight)
 			.bind(
-				[](auto && window)
+				[](AUTO(types::SDLWindowPtr) window)
 				{
 					CHECK(window);
 
@@ -1294,24 +1293,57 @@ TEST_CASE("Create a Vulkan instance")
 
 	// auto const & instance = di::create<vulkandemo::types::VulkanInstancePtr>(injector);
 	auto const logger = create_logger("Create a Vulkan instance (io)");
+
+	// auto v = monad::fmap(
+	// 			 io::query_available_instance_extensions(),
+	// 			 io::query_available_instance_extensions(),
+	// 			 [](auto val1, auto val2) { return val1; })
+	// 			 .fmap([](std::vector<VkExtensionProperties> val) { return val; });
+
 	auto const program =
-		monad::bind(
-			io::create_window("", 0, 0),
-			io::query_available_instance_layers().fmap(make_instance_layer_filter(
-				logger,
-				std::set{
-					types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-					types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}})),
-			io::query_available_instance_extensions().fmap(make_instance_extension_filter(
-				logger,
-				std::set{
-					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
-					types::DesiredInstanceExtensionNameView{"some_unavailable_extension"}})),
-			[logger](auto && window, auto && available_layers, auto && available_extensions)
-			{
-				return io::create_vulkan_instance(
-					logger, FW(window), FW(available_layers), FW(available_extensions));
-			})
+		// Create application window.
+		io::create_window("", 0, 0)
+			.bind(
+				[logger](AUTO(types::SDLWindowPtr) window)
+				{
+					return monad::bind(
+						// Fetch and filter layer names.
+						io::query_available_instance_layers().fmap(make_instance_layer_name_filter(
+							logger,
+							std::set{
+								types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+								types::DesiredInstanceLayerNameView{
+									"VK_LAYER_KHRONOS_validation"}})),
+
+						// Fetch and filter extension names.
+						monad::fmap(
+							// Get SDL window vulkan extensions.
+							io::query_sdl_instance_extension_names(window),
+							// Fetch and filter additional extension names.
+							io::query_available_instance_extensions().fmap(
+								make_instance_extension_name_filter(
+									logger,
+									std::set{
+										types::DesiredInstanceExtensionNameView{
+											VK_EXT_DEBUG_UTILS_EXTENSION_NAME},
+										types::DesiredInstanceExtensionNameView{
+											"some_unavailable_extension"}})),
+							// Concatenate SDL and optional extensions.
+							hof::make_concat()),
+
+						// Get title of window to use as app/engine name in vulkan.
+						io::window_title(window),
+
+						[logger](
+							AUTO(std::vector<types::AvailableInstanceLayerNameCstr>) desired_layers,
+							AUTO(std::vector<types::AvailableInstanceExtensionNameCstr>)
+								desired_extensions,
+							char const * app_name)
+						{
+							return io::create_instance(
+								logger, app_name, desired_layers, desired_extensions);
+						});
+				})
 			.bind(
 				[](auto && instance)
 				{
@@ -1322,38 +1354,39 @@ TEST_CASE("Create a Vulkan instance")
 								  }};
 				});
 
-	// CHECK(program());
+	CHECK(program());
 }
 
 TEST_CASE("Create a Vulkan debug utils messenger")
 {
 	LoggerPtr const logger = create_logger("Create a Vulkan debug utils messenger");
 
-	auto const program = monad::bind(
-							 io::create_window("", 0, 0),
-							 io::filter_available_instance_extensions(
-								 logger,
-								 std::set{types::DesiredInstanceExtensionNameView{
-									 VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}),
-							 [logger](auto && window, auto && available_extensions)
-							 {
-								 return io::create_vulkan_instance(
-									 logger,
-									 FW(window),
-									 std::array<types::AvailableInstanceLayerNameCstr const, 0>{},
-									 FW(available_extensions));
-							 })
-							 .bind([logger](auto && instance)
-								   { return io::create_debug_messenger(logger, FW(instance)); })
-							 .bind(
-								 [](auto && messenger)
-								 {
-									 return io::IO{[messenger = FW(messenger)]
-												   {
-													   CHECK(messenger);
-													   return true;
-												   }};
-								 });
+	auto const program =
+		monad::bind(
+			io::create_window("", 0, 0),
+			io::query_available_instance_extensions().fmap(make_instance_extension_name_filter(
+				logger,
+				std::set{
+					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})),
+			[logger](auto && window, auto && available_extensions)
+			{
+				return io::create_vulkan_instance(
+					logger,
+					FW(window),
+					std::array<types::AvailableInstanceLayerNameCstr const, 0>{},
+					FW(available_extensions));
+			})
+			.bind([logger](auto && instance)
+				  { return io::create_debug_messenger(logger, FW(instance)); })
+			.bind(
+				[](auto && messenger)
+				{
+					return io::IO{[messenger = FW(messenger)]
+								  {
+									  CHECK(messenger);
+									  return true;
+								  }};
+				});
 
 	CHECK(program());
 }
@@ -1366,18 +1399,20 @@ auto bind_to_default_instance(auto && io_from_state)
 			   stateio::create_window("", 0, 0),
 			   stateio::StateIO{[](auto && state)
 								{
-									return io::filter_available_instance_layers(
-											   state.logger,
-											   std::set{types::DesiredInstanceLayerNameView{
-												   "VK_LAYER_KHRONOS_validation"}})
+									return io::query_available_instance_layers()
+										.fmap(make_instance_layer_name_filter(
+											state.logger,
+											std::set{types::DesiredInstanceLayerNameView{
+												"VK_LAYER_KHRONOS_validation"}}))
 										.pair_with(FW(state));
 								}},
 			   stateio::StateIO{[](auto && state)
 								{
-									return io::filter_available_instance_extensions(
-											   state.logger,
-											   std::set{types::DesiredInstanceExtensionNameView{
-												   VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})
+									return io::query_available_instance_extensions()
+										.fmap(make_instance_extension_name_filter(
+											state.logger,
+											std::set{types::DesiredInstanceExtensionNameView{
+												VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}))
 										.pair_with(FW(state));
 								}},
 			   []([[maybe_unused]] auto && window,

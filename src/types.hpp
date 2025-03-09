@@ -85,7 +85,8 @@ using VulkanDeviceMemoryPtr = std::shared_ptr<std::remove_pointer_t<VkDeviceMemo
 VulkanDeviceMemoryPtr make_device_memory_ptr(VulkanDevicePtr device, VkDeviceMemory memory);
 
 using VulkanPipelineLayoutPtr = std::shared_ptr<std::remove_pointer_t<VkPipelineLayout>>;
-VulkanPipelineLayoutPtr make_pipeline_layout_ptr(VulkanDevicePtr device, VkPipelineLayout pipeline_layout);
+VulkanPipelineLayoutPtr make_pipeline_layout_ptr(
+	VulkanDevicePtr device, VkPipelineLayout pipeline_layout);
 
 using VulkanImageIdx = strong::type<
 	uint32_t,
@@ -156,8 +157,11 @@ using DesiredDeviceExtensionNameView = strong::type<
 	strong::formattable,
 	strong::convertible_to<AvailableDeviceExtensionNameView>>;
 
-using AvailableInstanceExtensionNameCstr = strong::
-	type<char const *, struct TagForAvailableInstanceExtensionNameCstr, strong::semiregular>;
+using AvailableInstanceExtensionNameCstr = strong::type<
+	char const *,
+	struct TagForAvailableInstanceExtensionNameCstr,
+	strong::implicitly_convertible_to<char const *>,
+	strong::semiregular>;
 
 using AvailableInstanceExtensionNameView = strong::type<
 	std::string_view,
@@ -205,4 +209,5 @@ concept ContiguousContainer =
 		container.size()
 	} -> std::convertible_to<std::size_t>;
 };
+
 }  // namespace vulkandemo::types

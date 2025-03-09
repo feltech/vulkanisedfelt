@@ -71,7 +71,21 @@ using FnTraits = FnTraitsImpl<decltype(std::function{std::declval<std::decay_t<F
 template <class T>
 concept IsMonad = requires(T t)
 {
-	{ t.bind([u=t](auto){ return u; }) };
+	{t.bind([u = t](auto) { return u; })};
+};
+
+template <class T, typename R>
+concept IOTo = requires(T io)
+{
+	{
+		io()
+	} -> std::convertible_to<R>;
+};
+
+template <typename F, typename A>
+concept MappingFrom = requires(F func, A value)
+{
+	{func(value)};
 };
 }  // namespace detail
 
@@ -103,37 +117,41 @@ auto bind(auto &&... ms_and_lifter)
 		FW(ms_and_lifter)...);
 }
 
-auto fmapN(auto && transformer, auto && io, auto &&... ios)	 // NOLINT
+auto fmap(auto &&... ms_and_transformer)
 {
-	if constexpr (sizeof...(ios) == 0)
-	{
-		return FW(io).fmap(FW(transformer));
-	}
-	else
-	{
-		return FW(io).fmap(
-			[transformer = FW(transformer), ... ios = FW(ios)](auto && arg)
+	return detail::rotate_right(
+		[](auto && transformer, auto && m, auto &&... ms)
+		{
+			if constexpr (sizeof...(ms) == 0)
 			{
-				return fmapN(
-					[transformer = FW(transformer), arg = FW(arg), ... ios = FW(ios)](
-						auto &&... args) { return transformer(FW(arg), FW(args)...); },
-					FW(ios)...);
-			});
-	}
+				return FW(m).fmap(FW(transformer));
+			}
+			else
+			{
+				return FW(m).bind(
+					[transformer = FW(transformer),
+					 ... ms = FW(ms)](auto && arg)	// NOLINT(*-identifier-length)
+					{
+						return fmap(
+							FW(ms)...,
+							[transformer = FW(transformer), arg = FW(arg), ... ms = FW(ms)](auto &&... args)
+							{ return transformer(FW(arg), FW(args)...); });
+					});
+			}
+		},
+		FW(ms_and_transformer)...);
 }
 
+namespace detail
+{
 template <typename... Args>
 struct Collect
 {
 	std::tuple<Args...> args;
 };
 
-auto collect(auto &&... args)
-{
-	return Collect{std::tuple{FW(args)...}};
-}
-
-decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, detail::IsMonad auto && rhs)
+decltype(auto) operator>>(
+	detail::SpecialisationOf<Collect> auto && lhs, detail::IsMonad auto && rhs)
 {
 	return Collect{std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)})};
 }
@@ -144,11 +162,10 @@ decltype(auto) operator>>(
 	return Collect{std::tuple_cat(FW(lhs).args, FW(rhs).args)};
 }
 
-template<typename F, class C>
-concept CallableWithArgsFromCollection = requires (F f, C c)
+template <typename F, class C>
+concept CallableWithArgsFromCollection = requires(F f, C c)
 {
-    { std::apply(bind, std::tuple_cat(c.args, std::tuple{f})) };
-
+	{std::apply(bind, std::tuple_cat(c.args, std::tuple{f}))};
 };
 
 decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, auto && rhs)
@@ -157,6 +174,7 @@ decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, auto &&
 		[](auto &&... args) { return bind(FW(args)...); },
 		std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)}));
 }
+}  // namespace detail
 
 namespace io
 {
@@ -170,7 +188,9 @@ struct IO;
 template <typename F, typename R>
 concept Lifter = requires(F func, R io)
 {
-	{func(io())} -> detail::SpecialisationOf<IO>;
+	{
+		func(io())
+	} -> detail::SpecialisationOf<IO>;
 };
 
 template <Action Act>
@@ -235,23 +255,19 @@ decltype(auto) operator>>(detail::SpecialisationOf<IO> auto && lhs, auto && rhs)
 	return FW(lhs).bind(FW(rhs));
 }
 decltype(auto) operator>>(
-	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<Collect> auto && rhs)
+	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<detail::Collect> auto && rhs)
 {
-	return Collect{std::tuple_cat(std::tuple{FW(lhs)}, FW(rhs).args)};
+	return detail::Collect{std::tuple_cat(std::tuple{FW(lhs)}, FW(rhs).args)};
 }
 decltype(auto) operator>>(
 	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<IO> auto && rhs)
 {
-	return collect(lhs, rhs);
+	return detail::Collect(std::tuple{FW(lhs), FW(rhs)});
 }
 }  // namespace io
 
 namespace stateio
 {
-
-struct Empty
-{
-};
 
 template <typename F>
 concept Action = !std::is_void_v<F>;
@@ -263,9 +279,8 @@ template <typename F, typename I>
 concept Lifter = requires(F f, I io)
 {
 	requires detail::SpecialisationOf<I, StateIO>;
-    // TODO(DF): Figure out how to constrain a lifter, given that we cannot know ahead of time what
-    //  the state type will be.
-
+	// TODO(DF): Figure out how to constrain a lifter, given that we cannot know ahead of time what
+	//  the state type will be.
 };
 
 template <Action Act>
@@ -317,5 +332,6 @@ auto lift(detail::SpecialisationOf<io::IO> auto && iom)
 }
 
 }  // namespace stateio
+
 // NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
 }  // namespace vulkandemo::monad
