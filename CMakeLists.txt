@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.28)
 project(vulkandemo CXX C)
 
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)  # Compiler options break clang-tidy
+
 ####################################################################################################
 # Options
 
@@ -36,6 +38,10 @@ add_executable(
     ${_exe_target}
     src/types.cpp
     src/setup.cpp
+    src/setup/filters.cpp
+    src/setup/io.cpp
+    src/setup/monad.cpp
+    src/setup/logging.cpp
     src/draw.cpp
     src/Logger.cpp
     src/vulkandemo.cpp
@@ -107,8 +113,14 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
         target_compile_options(
             ${_exe_target}
             PRIVATE
-            -ggdb3 -fno-omit-frame-pointer -fno-inline -fconcepts-diagnostics-depth=2
+            -ggdb3 -fno-omit-frame-pointer -fno-inline
+#            -fconcepts-diagnostics-depth=5  # Breaks clang-tidy
             -fdiagnostics-show-template-tree
+            # Fail on first error
+#            -Wfatal-errors  # Note: strips concept failures.
+            # Reduce "required from" lines.
+            -ftemplate-backtrace-limit=1
+            -Wno-deprecated-declarations # TODO(DF): reducing verbosity temporarily. Remove.
         )
     endif ()
 

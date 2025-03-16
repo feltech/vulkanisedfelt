@@ -198,16 +198,18 @@ using DesiredInstanceLayerNameView = strong::type<
 
 template <class Container>
 concept ContiguousContainer =
-	std::is_trivially_copyable_v<
-		std::remove_cv_t<std::remove_reference_t<typename Container::value_type>>> &&
+	std::is_trivially_copyable_v<typename std::decay_t<Container>::value_type> &&
 	std::ranges::range<Container> && requires(Container container)
 {
 	{
 		container.data()
-	} -> std::convertible_to<typename Container::pointer>;
+	} -> std::convertible_to<typename std::decay_t<Container>::const_pointer>;
 	{
 		container.size()
 	} -> std::convertible_to<std::size_t>;
 };
 
+template <class Container, class T>
+concept ContiguousContainerOf =
+	ContiguousContainer<Container> && std::convertible_to<T, typename std::decay_t<Container>::value_type>;
 }  // namespace vulkandemo::types

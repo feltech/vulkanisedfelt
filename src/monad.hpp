@@ -1,7 +1,9 @@
 #pragma once
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -31,14 +33,19 @@ template <typename F, typename... Ts>
 constexpr auto rotate_right(F && func, Ts &&... ts)
 {
 	return indices<sizeof...(Ts) - 1>(
-		[func = FW(func), tuple = std::forward_as_tuple(ts...)](auto... Is)
-		{ return func(FW(std::get<sizeof...(Ts) - 1>(tuple)), FW(std::get<Is>(tuple))...); });
+		[func = FW(func), tuple = std::forward_as_tuple(ts...)](auto... is)
+		{ return func(FW(std::get<sizeof...(Ts) - 1>(tuple)), FW(std::get<is>(tuple))...); });
 }
 
-template <typename T, template <typename...> typename U>
-concept SpecialisationOf = requires(T * x)
+template <template <typename...> class Template, typename... Args>
+void is_specialisation_of(Template<Args...> const & /*unused*/)
 {
-	[]<typename... As>(U<As...> *) {}(x);
+}
+
+template <class T, template <typename...> class Template>
+concept SpecialisationOf = requires(T t)
+{
+	is_specialisation_of<Template>(t);
 };
 
 template <typename T, typename... As>
@@ -50,19 +57,19 @@ concept CallableWithResultsOf = requires(T f, As... a)
 template <class T>
 struct FnTraitsImpl
 {
-	static constexpr bool is_function = false;
+	static constexpr bool kIsFunction = false;
 };
 
 template <typename R, typename... Args>
 struct FnTraitsImpl<std::function<R(Args...)>>
 {
-	static constexpr bool is_function = true;
-	static constexpr std::size_t arity = sizeof...(Args);
+	static constexpr bool kIsFunction = true;
+	static constexpr std::size_t kArity = sizeof...(Args);
 
 	template <std::size_t idx>
-	using arg = std::tuple_element_t<idx, std::tuple<Args...>>;
+	using Arg = std::tuple_element_t<idx, std::tuple<Args...>>;
 
-	using return_value = R;
+	using ReturnValue = R;
 };
 
 template <class Func>
@@ -71,7 +78,7 @@ using FnTraits = FnTraitsImpl<decltype(std::function{std::declval<std::decay_t<F
 template <class T>
 concept IsMonad = requires(T t)
 {
-	{t.bind([u = t](auto) { return u; })};
+	{t.fmap([](decltype(t())) { return 0; })};
 };
 
 template <class T, typename R>
@@ -87,6 +94,19 @@ concept MappingFrom = requires(F func, A value)
 {
 	{func(value)};
 };
+
+template <typename Container>
+struct Unspecialise;
+
+template <template <typename, typename...> class Container, typename OldType, typename... OtherArgs>
+struct Unspecialise<Container<OldType, OtherArgs...>>
+{
+	template <typename Element>
+	using Type = Container<Element, OtherArgs...>;
+};
+
+template <typename NewType, typename Container>
+using Respecialise = typename Unspecialise<Container>::template Type<NewType>;
 }  // namespace detail
 
 template <typename F>
@@ -108,9 +128,9 @@ auto bind(auto &&... ms_and_lifter)
 					 ... ms = FW(ms)](auto && arg)	// NOLINT(*-identifier-length)
 					{
 						return bind(
-							FW(ms)...,
-							[lifter = FW(lifter), arg = FW(arg), ... ms = FW(ms)](auto &&... args)
-							{ return lifter(FW(arg), FW(args)...); });
+							ms...,
+							[lifter, arg = FW(arg)](auto &&... args)
+							{ return lifter(arg, FW(args)...); });
 					});
 			}
 		},
@@ -133,9 +153,9 @@ auto fmap(auto &&... ms_and_transformer)
 					 ... ms = FW(ms)](auto && arg)	// NOLINT(*-identifier-length)
 					{
 						return fmap(
-							FW(ms)...,
-							[transformer = FW(transformer), arg = FW(arg), ... ms = FW(ms)](auto &&... args)
-							{ return transformer(FW(arg), FW(args)...); });
+							ms...,
+							[transformer, arg = FW(arg)](auto &&... args)
+							{ return transformer(arg, FW(args)...); });
 					});
 			}
 		},
@@ -178,12 +198,22 @@ decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, auto &&
 
 namespace io
 {
+using monad::bind;	// For ADL?.
+using monad::fmap;	// For ADL?.
 
 template <typename F>
 concept Action = !std::is_void_v<F>;
 
 template <Action Act>
 struct IO;
+
+template <class T, class R>
+concept IOFor = requires(T t)
+{
+	{
+		t()
+	} -> std::convertible_to<R>;
+};
 
 template <typename F, typename R>
 concept Lifter = requires(F func, R io)
@@ -192,6 +222,41 @@ concept Lifter = requires(F func, R io)
 		func(io())
 	} -> detail::SpecialisationOf<IO>;
 };
+
+template <typename F, typename I, typename R>
+concept LifterTo = requires(F func, I io)
+{
+	{
+		func(io())
+	} -> IOFor<R>;
+};
+
+template <typename F, typename E, typename R>
+concept LifterFromTo = requires(F func, E elem)
+{
+	{
+		func(elem)
+	} -> IOFor<R>;
+};
+
+template <typename T>
+concept RangeOfIOs = std::ranges::range<T> && detail::SpecialisationOf<typename T::value_type, IO>;
+
+auto sequence(RangeOfIOs auto && ios)
+{
+	return IO{[ios = FW(ios)]
+			  {
+				  using InputContainer = std::decay_t<decltype(ios)>;
+				  using OutputContainer = typename detail::Unspecialise<InputContainer>::Type;
+				  return std::views::transform(ios, [](auto && io) { return FW(io)(); }) |
+					  ranges::to<OutputContainer>;
+			  }};
+}
+
+static auto make_io(auto && action)
+{
+	return IO{FW(action)};
+}
 
 template <Action Act>
 struct IO
@@ -243,12 +308,76 @@ struct IO
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto pair_with(auto && second)
+	auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
 	{
-		return fmap([second = FW(second)](auto && value)
-					{ return std::pair{FW(value), FW(second)}; });
+		using InputContainer = Ret;
+		using ResultType = std::decay_t<decltype(element_lifter(
+			std::declval<typename InputContainer::value_type>()))>;
+		using OutputContainer = detail::Respecialise<ResultType, InputContainer>;
+
+		return bind(
+			[element_lifter = FW(element_lifter)](AUTO(Ret) range)
+			{
+				return std::ranges::fold_left(
+					FW(range),
+					make_io(
+						[sz = ranges::size(range)]
+						{
+							OutputContainer out;
+							if constexpr (requires { out.reserve(sz); })
+								out.reserve(sz);
+							return out;
+						}),
+					[element_lifter](auto && io, auto && elem)
+					{
+						return FW(io).bind(
+							[element_lifter, elem = FW(elem)](auto && acc_range)
+							{
+								return element_lifter(elem).fmap(
+									[acc_range = FW(acc_range)](auto && value) mutable
+									{
+										acc_range.insert(end(acc_range), FW(value));
+										return std::move(acc_range);
+									});
+							});
+					});
+
+				// auto && range_of_ios = std::views::transform(range, element_lifter) |
+				// 	ranges::to<detail::Unspecialise<Ret>::type>;
+				// return sequence(range_of_ios);
+			});
+	}
+
+	auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
+		const requires std::ranges::range<Ret>
+	{
+		// Note: due to IO being templated on a lambda, mapping elements to IO means a different
+		// type for each element. This means we cannot have a container of IOs. It also means
+		// recursive algorithms can hit the max template depth.
+
+		return bind(
+			[element_lifter = FW(element_lifter)](AUTO(Ret) range)
+			{
+				return make_io(
+					[element_lifter, range = FW(range)]
+					{
+						auto new_range = range;
+						std::ranges::remove_if(
+							new_range, [](auto && io) { return FW(io)(); }, element_lifter);
+						return new_range;
+					});
+			});
+	}
+	auto pair_with(auto && second) const
+	{
+		return fmap([second = FW(second)](auto && value) { return std::pair{FW(value), second}; });
 	}
 };
+
+auto zip(detail::SpecialisationOf<IO> auto &&... ms)
+{
+	return fmap(FW(ms)..., [](auto &&... args) { return std::tuple{args...}; });
+}
 
 decltype(auto) operator>>(detail::SpecialisationOf<IO> auto && lhs, auto && rhs)
 {
@@ -268,67 +397,88 @@ decltype(auto) operator>>(
 
 namespace stateio
 {
-
-template <typename F>
-concept Action = !std::is_void_v<F>;
-
-template <Action Act>
+template <typename Act>
 struct StateIO;
 
-template <typename F, typename I>
-concept Lifter = requires(F f, I io)
-{
-	requires detail::SpecialisationOf<I, StateIO>;
-	// TODO(DF): Figure out how to constrain a lifter, given that we cannot know ahead of time what
-	//  the state type will be.
-};
-
-template <Action Act>
+template <typename Act>
 struct StateIO
 {
 	Act action;
 	// using Ret = typename detail::FnTraits<Act>::return_value;
 
 	decltype(auto) operator()(auto && state) const
+		// Must return an IO monad that itself returns a pair.
+		requires detail::SpecialisationOf<decltype(action(state)), io::IO> && detail::
+			SpecialisationOf<decltype(action(state)()), std::pair>
 	{
 		return action(FW(state));
 	}
 
-	auto bind(Lifter<StateIO> auto && lifter) const &
+	auto bind(auto && lifter) const &
 	{
 		auto next = [prev = action, lifter = FW(lifter)](
 						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
 		{
+			static_assert(assert_valid_bind<decltype(prev), decltype(lifter), decltype(state)>());
+
 			return prev(FW(state)).bind(
 				[lifter = FW(lifter)](auto && value_and_state)
 				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
 		};
 		return StateIO<decltype(next)>(std::move(next));
 	}
-	auto bind(Lifter<StateIO> auto && lifter) &&
+	auto bind(auto && lifter) &&
 	{
 		auto next = [prev = std::move(action), lifter = FW(lifter)](
 						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
 		{
+			static_assert(assert_valid_bind<decltype(prev), decltype(lifter), decltype(state)>());
+
 			return prev(FW(state)).bind(
-				[lifter = FW(lifter)](auto && value_and_state)
-				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
+				[lifter](auto value_and_state)
+				{
+					return lifter(std::move(value_and_state.first))(
+						std::move(value_and_state.second));
+				});
 		};
 		return StateIO<decltype(next)>(std::move(next));
+	}
+
+	template <typename A, typename L, typename S>
+	static constexpr bool assert_valid_bind()
+	{
+		static_assert(
+			requires(A action, S state) {
+				{
+					action(state)
+				} -> detail::SpecialisationOf<io::IO>;
+			},
+			"StateIO action must return an IO");
+		static_assert(
+			requires(A action, S state) {
+				{
+					action(state)()
+				} -> detail::SpecialisationOf<std::pair>;
+			},
+			"StateIO's IO action must return a pair");
+		static_assert(
+			requires(A action, S state, L lifter) { {lifter(action(state)().first)}; },
+			"StateIO lifter function has incorrect arguments");
+		static_assert(
+			requires(A action, S state, L lifter) {
+				{
+					lifter(action(state)().first)
+				} -> detail::SpecialisationOf<StateIO>;
+			},
+			"StateIO lifter function must return a StateIO");
+
+		return true;
 	}
 };
 
 auto lift(detail::SpecialisationOf<io::IO> auto && iom)
 {
-	return StateIO{[iom = FW(iom)](auto && state)
-				   {
-					   return FW(iom).bind(
-						   [state = FW(state)](auto && value)
-						   {
-							   return io::IO{[value = FW(value), state = FW(state)]
-											 { return std::pair{FW(value), FW(state)}; }};
-						   });
-				   }};
+	return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
 }
 
 }  // namespace stateio

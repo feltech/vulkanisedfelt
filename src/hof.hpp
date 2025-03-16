@@ -6,6 +6,8 @@
 
 #include <range/v3/view/transform.hpp>
 
+#include "macros.hpp"
+
 /**
  * Small higher order functions useful for ranges transformations.
  */
@@ -29,7 +31,7 @@ constexpr auto cast()
 
 constexpr auto make_concat()
 {
-	return [](std::ranges::range auto first, std::ranges::range auto && second)
+	return [](std::ranges::range auto first, std::ranges::range auto second)
 	{
 		first.insert(
 			end(first), make_move_iterator(begin(second)), make_move_iterator(end(second)));

@@ -153,7 +153,7 @@ VulkanCommandBuffersPtr make_command_buffers_ptr(
 	VulkanDevicePtr device, VulkanCommandPoolPtr pool, std::vector<VkCommandBuffer> command_buffers)
 {
 	return VulkanCommandBuffersPtr{
-		new std::vector<VkCommandBuffer>{std::move(command_buffers)},
+		new std::vector{std::move(command_buffers)},
 		[device = std::move(device),
 		 pool = std::move(pool)](gsl::owner<std::vector<VkCommandBuffer> *> buffers)
 		{

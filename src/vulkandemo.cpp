@@ -26,6 +26,7 @@
 #include "draw.hpp"
 #include "macros.hpp"
 #include "setup.hpp"
+#include "setup/io.hpp"
 #include "types.hpp"
 
 namespace vulkandemo

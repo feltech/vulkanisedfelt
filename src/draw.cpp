@@ -32,6 +32,7 @@
 #include "Logger.hpp"
 #include "macros.hpp"
 #include "setup.hpp"
+#include "setup/io.hpp"
 #include "types.hpp"
 
 using namespace std::literals;
@@ -171,8 +172,7 @@ TEST_CASE("Acquire swapchain image")
 {
 	static int test_num = 0;
 	++test_num;
-	vulkandemo::LoggerPtr const logger =
-		vulkandemo::create_logger(std::format("Acquire swapchain image {}", test_num));
+	LoggerPtr const logger = create_logger(std::format("Acquire swapchain image {}", test_num));
 
 	types::SDLWindowPtr const window = setup::create_window("", 10, 10);
 	types::VulkanInstancePtr const instance = setup::create_vulkan_instance(
@@ -451,7 +451,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 
 TEST_CASE("Create basic vertex buffer")
 {
-	vulkandemo::LoggerPtr const logger = vulkandemo::create_logger("Create basic vertex buffer");
+	LoggerPtr const logger = vulkandemo::create_logger("Create basic vertex buffer");
 	types::SDLWindowPtr const window = setup::create_window("", 1, 1);
 	types::VulkanInstancePtr const instance = setup::create_vulkan_instance(
 		logger,
@@ -467,7 +467,7 @@ TEST_CASE("Create basic vertex buffer")
 		setup::enumerate_physical_devices(logger, instance),
 		{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
 		{},
-		VkMemoryPropertyFlagBits::VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		surface);
 	auto [device, queues] = setup::create_device_and_queues(
 		physical_device,
@@ -487,7 +487,7 @@ TEST_CASE("Create basic vertex buffer")
 	std::vector const vertices{
 		Vtx{.pos = {0, 0, 0}, .norm = {1, 1, 1}}, Vtx{.pos = {2, 2, 2}, .norm = {3, 3, 3}}};
 
-	auto const [buffer, memory] = vulkandemo::draw::create_exclusive_vertex_buffer_and_memory(
-		device, available_memory_types.at(0), vertices);
+	auto const [buffer, memory] =
+		create_exclusive_vertex_buffer_and_memory(device, available_memory_types.at(0), vertices);
 }
 }  // namespace vulkandemo::draw
