@@ -3,6 +3,7 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <ranges>
 #include <tuple>
 #include <type_traits>
@@ -54,7 +55,7 @@ concept CallableWithResultsOf = requires(T f, As... a)
 	f(a()...);
 };
 
-template <class T>
+template <class>
 struct FnTraitsImpl
 {
 	static constexpr bool kIsFunction = false;
@@ -98,15 +99,15 @@ concept MappingFrom = requires(F func, A value)
 template <typename Container>
 struct Unspecialise;
 
-template <template <typename, typename...> class Container, typename OldType, typename... OtherArgs>
-struct Unspecialise<Container<OldType, OtherArgs...>>
+template <template <typename...> class Container, typename... OldArgs>
+struct Unspecialise<Container<OldArgs...>>
 {
-	template <typename Element>
-	using Type = Container<Element, OtherArgs...>;
+	template <typename... Args>
+	using Specialise = Container<Args...>;
 };
 
-template <typename NewType, typename Container>
-using Respecialise = typename Unspecialise<Container>::template Type<NewType>;
+template <typename Container, typename NewType>
+using Respecialise = typename Unspecialise<Container>::template Specialise<NewType>;
 }  // namespace detail
 
 template <typename F>
@@ -170,14 +171,13 @@ struct Collect
 	std::tuple<Args...> args;
 };
 
-decltype(auto) operator>>(
-	detail::SpecialisationOf<Collect> auto && lhs, detail::IsMonad auto && rhs)
+decltype(auto) operator>>(SpecialisationOf<Collect> auto && lhs, IsMonad auto && rhs)
 {
 	return Collect{std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)})};
 }
 
 decltype(auto) operator>>(
-	detail::SpecialisationOf<Collect> auto && lhs, detail::SpecialisationOf<Collect> auto && rhs)
+	SpecialisationOf<Collect> auto && lhs, SpecialisationOf<Collect> auto && rhs)
 {
 	return Collect{std::tuple_cat(FW(lhs).args, FW(rhs).args)};
 }
@@ -188,7 +188,7 @@ concept CallableWithArgsFromCollection = requires(F f, C c)
 	{std::apply(bind, std::tuple_cat(c.args, std::tuple{f}))};
 };
 
-decltype(auto) operator>>(detail::SpecialisationOf<Collect> auto && lhs, auto && rhs)
+decltype(auto) operator>>(SpecialisationOf<Collect> auto && lhs, auto && rhs)
 {
 	return std::apply(
 		[](auto &&... args) { return bind(FW(args)...); },
@@ -239,25 +239,6 @@ concept LifterFromTo = requires(F func, E elem)
 	} -> IOFor<R>;
 };
 
-template <typename T>
-concept RangeOfIOs = std::ranges::range<T> && detail::SpecialisationOf<typename T::value_type, IO>;
-
-auto sequence(RangeOfIOs auto && ios)
-{
-	return IO{[ios = FW(ios)]
-			  {
-				  using InputContainer = std::decay_t<decltype(ios)>;
-				  using OutputContainer = typename detail::Unspecialise<InputContainer>::Type;
-				  return std::views::transform(ios, [](auto && io) { return FW(io)(); }) |
-					  ranges::to<OutputContainer>;
-			  }};
-}
-
-static auto make_io(auto && action)
-{
-	return IO{FW(action)};
-}
-
 template <Action Act>
 struct IO
 {
@@ -269,25 +250,25 @@ struct IO
 		return action();
 	}
 
-	auto bind(Lifter<IO> auto && lifter) const &
+	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) const &
 	{
 		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto bind(Lifter<IO> auto && lifter) &&
+	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) &&
 	{
 		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto fmap(Transformer auto && transformer) const &
+	[[nodiscard]] auto fmap(Transformer auto && transformer) const &
 	{
 		auto next = [prev = action, transformer = FW(transformer)] { return transformer(prev()); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto fmap(Transformer auto && transformer) &&
+	[[nodiscard]] auto fmap(Transformer auto && transformer) &&
 	{
 		auto next = [prev = std::move(action), transformer = FW(transformer)]
 		{ return transformer(prev()); };
@@ -295,60 +276,39 @@ struct IO
 	}
 
 	template <typename... As>
-	requires detail::CallableWithResultsOf<Ret, As...> auto apply(IO<As> &&... ios) const &
+	requires detail::CallableWithResultsOf<Ret, As...> [[nodiscard]] auto apply(
+		IO<As> &&... ios) const &
 	{
 		auto next = [prev = action, ... ios = FW(ios)] { return prev()(ios()...); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
 	template <typename... As>
-	requires detail::CallableWithResultsOf<Ret, As...> auto apply(IO<As> &&... ios) &&
+	requires detail::CallableWithResultsOf<Ret, As...> [[nodiscard]] auto apply(IO<As> &&... ios) &&
 	{
 		auto next = [prev = std::move(action), ... ios = FW(ios)] { return prev()(ios()...); };
 		return IO<decltype(next)>{std::move(next)};
 	}
 
-	auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
+	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
 	{
 		using InputContainer = Ret;
-		using ResultType = std::decay_t<decltype(element_lifter(
-			std::declval<typename InputContainer::value_type>()))>;
-		using OutputContainer = detail::Respecialise<ResultType, InputContainer>;
 
 		return bind(
-			[element_lifter = FW(element_lifter)](AUTO(Ret) range)
+			[element_lifter = FW(element_lifter)](AUTO(InputContainer) range)
 			{
-				return std::ranges::fold_left(
-					FW(range),
-					make_io(
-						[sz = ranges::size(range)]
-						{
-							OutputContainer out;
-							if constexpr (requires { out.reserve(sz); })
-								out.reserve(sz);
-							return out;
-						}),
-					[element_lifter](auto && io, auto && elem)
-					{
-						return FW(io).bind(
-							[element_lifter, elem = FW(elem)](auto && acc_range)
-							{
-								return element_lifter(elem).fmap(
-									[acc_range = FW(acc_range)](auto && value) mutable
-									{
-										acc_range.insert(end(acc_range), FW(value));
-										return std::move(acc_range);
-									});
-							});
-					});
-
-				// auto && range_of_ios = std::views::transform(range, element_lifter) |
-				// 	ranges::to<detail::Unspecialise<Ret>::type>;
-				// return sequence(range_of_ios);
+				auto next = [element_lifter, range = FW(range)]
+				{
+					return range |
+						std::views::transform([element_lifter](auto && elem)
+											  { return element_lifter(elem)(); }) |
+						ranges::to<detail::Unspecialise<InputContainer>::template Specialise>;
+				};
+				return IO<decltype(next)>{std::move(next)};
 			});
 	}
 
-	auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
+	[[nodiscard]] auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
 		const requires std::ranges::range<Ret>
 	{
 		// Note: due to IO being templated on a lambda, mapping elements to IO means a different
@@ -358,19 +318,45 @@ struct IO
 		return bind(
 			[element_lifter = FW(element_lifter)](AUTO(Ret) range)
 			{
-				return make_io(
-					[element_lifter, range = FW(range)]
-					{
-						auto new_range = range;
-						std::ranges::remove_if(
-							new_range, [](auto && io) { return FW(io)(); }, element_lifter);
-						return new_range;
-					});
+				auto next = [element_lifter, range = FW(range)]
+				{
+					auto new_range = range;
+					std::ranges::remove_if(
+						new_range, [](auto && io) { return FW(io)(); }, element_lifter);
+					return new_range;
+				};
+				return IO<decltype(next)>{std::move(next)};
 			});
 	}
-	auto pair_with(auto && second) const
+
+	// [[nodiscard]] auto compact() const requires std::ranges::range<Ret>
+	// {
+	// 	return filter([](typename Ret::value_type const & elem)
+	// 				  { return static_cast<bool>(elem); });
+	// }
+
+	[[nodiscard]] auto compact() const requires
+		std::ranges::range<Ret> && detail::SpecialisationOf<typename Ret::value_type, std::optional>
+	{
+		using InputContainer = Ret;
+		return fmap(
+			[](auto && range)
+			{
+				return range |
+					std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
+					std::views::transform([](auto && elem) { return *FW(elem); }) |
+					ranges::to<detail::Unspecialise<InputContainer>::template Specialise>;
+			});
+	}
+
+	[[nodiscard]] auto pair_with(auto && second) const
 	{
 		return fmap([second = FW(second)](auto && value) { return std::pair{FW(value), second}; });
+	}
+
+	[[nodiscard]] auto as_bool() const requires std::ranges::range<Ret>
+	{
+		return fmap([](auto && range) { return !std::ranges::empty(FW(range)); });
 	}
 };
 

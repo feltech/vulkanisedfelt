@@ -664,8 +664,9 @@ TEST_CASE("Enumerate devices")
 									 make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
 										 VK_QUEUE_GRAPHICS_BIT))
 								 .filter(
-									 monad::io::make_io_filter_by_queue_family_idx_surface_support(
-										 chosen_device, surface)),
+									 monad::io::
+										 make_query_is_queue_family_supported_by_physical_device_and_surface(
+											 chosen_device, surface)),
 							 [](auto && available_device_extensions,
 								auto && available_memory_types,
 								auto && available_queue_families)
@@ -695,7 +696,193 @@ TEST_CASE("Enumerate devices")
 }
 // NOLINTEND(readability-function-cognitive-complexity)
 
-TEST_CASE("Select device with capability")
+TEST_CASE("Select physical device")
+{
+	const struct
+	{
+		LoggerPtr logger = create_logger("Select physical device");
+	} initial_state;
+
+	auto const program = bind_to_default_instance(
+		[](auto && state)
+		{
+			using monad::io::query_available_device_extensions;
+			using monad::io::query_available_queue_family_properties;
+			using monad::io::query_physical_device_memory_properties;
+			using monad::io::make_query_is_queue_family_supported_by_physical_device_and_surface;
+			using monad::io::query_physical_device_properties;
+
+			return monad::io::create_surface(state.window, state.instance)
+				.bind(
+					[state](auto && surface)
+					{
+						return monad::io::enumerate_physical_devices(state.logger, state.instance)
+							.filter(
+								[state](auto && physical_device)
+								{
+									return query_physical_device_memory_properties(
+											   state.logger, physical_device)
+										.fmap(
+											make_memory_properties_filter_by_and_transform_to_memory_type_idx(
+												VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+										.as_bool();
+								})
+							.filter(
+								[state](auto && physical_device)
+								{
+									return query_available_device_extensions(physical_device)
+										.fmap(
+											make_extension_properties_filter_by_and_transform_to_device_extension_name(
+												state.logger,
+												physical_device,
+												std::set{types::DesiredDeviceExtensionNameView{
+													VK_KHR_SWAPCHAIN_EXTENSION_NAME}}))
+										.as_bool();
+								})
+							.filter(
+								[state](auto && physical_device)
+								{
+									return query_physical_device_memory_properties(
+											   state.logger, physical_device)
+										.fmap(
+											make_memory_properties_filter_by_and_transform_to_memory_type_idx(
+												VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+										.as_bool();
+								})
+							.traverse(
+								[surface = FW(surface)](auto physical_device)
+								{
+									return zip(query_physical_device_properties(physical_device),
+											   query_available_queue_family_properties(
+												   physical_device)
+												   .fmap(
+													   make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
+														   VK_QUEUE_GRAPHICS_BIT))
+												   .filter(
+													   make_query_is_queue_family_supported_by_physical_device_and_surface(
+														   physical_device, surface)))
+										.fmap(
+											[physical_device](auto && args)
+											{
+												auto && [physical_device_properties, filtered_queue_family_idxs] =
+													FW(args);
+
+												return maybe_score_physical_device_and_queue_family(
+													physical_device,
+													physical_device_properties,
+													filtered_queue_family_idxs);
+											});
+								})
+							.compact()
+							.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx)
+							.fmap(
+								[](auto && maybe_selected_physical_device_and_queue_family_idx)
+								{
+									REQUIRE(maybe_selected_physical_device_and_queue_family_idx
+												.has_value());
+									auto const & [selected_device, queue_family_idx] =
+										*maybe_selected_physical_device_and_queue_family_idx;
+									CHECK(selected_device != nullptr);
+									CHECK(queue_family_idx >= 0);
+									return true;
+								})
+							.pair_with(state);
+					});
+		});
+
+	auto [result, _] = program(initial_state)();
+	CHECK(result);
+}
+
+namespace
+{
+auto bind_to_default_instance_and_physical_device_and_queue_family(auto && lifter)
+{
+	return bind_to_default_instance(
+			   [](auto && state)
+			   {
+				   using monad::io::query_available_device_extensions;
+				   using monad::io::query_available_queue_family_properties;
+				   using monad::io::query_physical_device_memory_properties;
+				   using monad::io::
+					   make_query_is_queue_family_supported_by_physical_device_and_surface;
+				   using monad::io::query_physical_device_properties;
+
+				   return monad::io::create_surface(state.window, state.instance)
+					   .bind(
+						   [state](auto && surface)
+						   {
+							   return monad::io::enumerate_physical_devices(
+										  state.logger, state.instance)
+								   .filter(
+									   [state](auto && physical_device)
+									   {
+										   return query_physical_device_memory_properties(
+													  state.logger, physical_device)
+											   .fmap(
+												   make_memory_properties_filter_by_and_transform_to_memory_type_idx(
+													   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+											   .as_bool();
+									   })
+								   .filter(
+									   [state](auto && physical_device)
+									   {
+										   return query_available_device_extensions(physical_device)
+											   .fmap(
+												   make_extension_properties_filter_by_and_transform_to_device_extension_name(
+													   state.logger,
+													   physical_device,
+													   std::set{
+														   types::DesiredDeviceExtensionNameView{
+															   VK_KHR_SWAPCHAIN_EXTENSION_NAME}}))
+											   .as_bool();
+									   })
+								   .filter(
+									   [state](auto && physical_device)
+									   {
+										   return query_physical_device_memory_properties(
+													  state.logger, physical_device)
+											   .fmap(
+												   make_memory_properties_filter_by_and_transform_to_memory_type_idx(
+													   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
+											   .as_bool();
+									   })
+								   .traverse(
+									   [surface = FW(surface)](auto physical_device)
+									   {
+										   return zip(query_physical_device_properties(
+														  physical_device),
+													  query_available_queue_family_properties(
+														  physical_device)
+														  .fmap(
+															  make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
+																  VK_QUEUE_GRAPHICS_BIT))
+														  .filter(
+															  make_query_is_queue_family_supported_by_physical_device_and_surface(
+																  physical_device, surface)))
+											   .fmap(
+												   [physical_device](auto && args)
+												   {
+													   auto && [physical_device_properties, filtered_queue_family_idxs] =
+														   FW(args);
+
+													   return maybe_score_physical_device_and_queue_family(
+														   physical_device,
+														   physical_device_properties,
+														   filtered_queue_family_idxs);
+												   });
+									   })
+								   .compact()
+								   .fmap(
+									   maybe_select_best_scoring_physical_device_and_queue_family_idx)
+								   .pair_with(state);
+						   });
+			   })
+		.bind(FW(lifter));
+}
+}  // namespace
+
+TEST_CASE("Select device with capability [deprecated]")
 {
 	auto const program = bind_to_default_instance(
 		[](auto && state)
@@ -746,53 +933,41 @@ TEST_CASE("Create logical device with queues")
 {
 	static constexpr types::VulkanQueueCount kExpectedQueueCount{2};
 
-	auto const program = bind_to_default_instance(
-		[](auto && state)
+	auto const program = bind_to_default_instance_and_physical_device_and_queue_family(
+		[](auto && physical_device_and_queue_family)
 		{
-			return monad::io::enumerate_physical_devices(state.logger, state.instance)
-				.bind(
-					[state](auto && physical_devices)
-					{
-						return monad::io::select_physical_device(
-							state.logger,
-							FW(physical_devices),
-							std::set{types::DesiredDeviceExtensionNameView{
-								VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
-							VK_QUEUE_GRAPHICS_BIT,
-							VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-					})
-				.bind(
-					[](auto && physical_device_and_queue_family)
-					{
-						auto [physical_device, queue_family_idx] =
-							FW(physical_device_and_queue_family);
+			REQUIRE(physical_device_and_queue_family.has_value());
+			auto [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
 
-						return monad::io::create_device_and_queues(
-								   std::move(physical_device),
-								   std::array{std::pair{queue_family_idx, kExpectedQueueCount}},
-								   std::array{types::AvailableDeviceExtensionNameView{
-									   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
-							.bind(
-								[queue_family_idx](auto && device_and_queues)
-								{
-									return IO{[queue_family_idx,
-											   device_and_queues = FW(device_and_queues)]
-											  {
-												  auto const & [device, queues] = device_and_queues;
-												  CHECK(device);
-												  // Check that the device has the expected
-												  // number of queues.
-												  CHECK(queues.size() == 1);
-												  CHECK(
-													  queues.at(queue_family_idx).size() ==
-													  kExpectedQueueCount);
-												  CHECK(queues.at(queue_family_idx)[0]);
-												  CHECK(queues.at(queue_family_idx)[1]);
-												  return true;
-											  }};
-								});
-					})
-				.pair_with(FW(state));
+			return StateIO{
+				[physical_device, queue_family_idx](auto && state)
+				{
+					return monad::io::create_device_and_queues(
+							   std::move(physical_device),
+							   std::array{std::pair{queue_family_idx, kExpectedQueueCount}},
+							   std::array{types::AvailableDeviceExtensionNameView{
+								   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
+						.bind(
+							[queue_family_idx](auto && device_and_queues)
+							{
+								return IO{
+									[queue_family_idx, device_and_queues = FW(device_and_queues)]
+									{
+										auto const & [device, queues] = device_and_queues;
+										CHECK(device);
+										// Check that the device has the expected
+										// number of queues.
+										CHECK(queues.size() == 1);
+										CHECK(
+											queues.at(queue_family_idx).size() ==
+											kExpectedQueueCount);
+										CHECK(queues.at(queue_family_idx)[0]);
+										CHECK(queues.at(queue_family_idx)[1]);
+										return true;
+									}};
+							})
+						.pair_with(FW(state));
+				}};
 		});
 
 	const struct

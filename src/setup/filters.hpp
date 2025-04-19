@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2025 David Feltell
 #pragma once
+#include <cstddef>
+#include <optional>
 #include <set>
+#include <span>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <vulkan/vulkan_core.h>
@@ -12,6 +17,16 @@
 
 namespace vulkandemo::setup
 {
+
+std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+maybe_select_best_scoring_physical_device_and_queue_family_idx(
+	std::vector<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates);
+
+std::optional<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+maybe_score_physical_device_and_queue_family(
+	VkPhysicalDevice physical_device,
+	VkPhysicalDeviceProperties const & physical_device_properties,
+	std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs);
 
 // Filters available device extensions by desired names and transforms to those present on the
 // device
@@ -139,10 +154,28 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 /**
  * Returns a closure that filters/prioritizes VkSurfaceFormatKHRs by desired VkFormat order.
  */
-constexpr auto make_filter_surface_formats(std::span<VkFormat const> desired_formats)
+constexpr auto make_filter_surface_formats(AUTO(std::vector<VkFormat>) desired_formats)
 {
-	return [desired_formats](std::span<VkSurfaceFormatKHR const> available_surface_formats)
+	return [desired_formats =
+				FW(desired_formats)](std::span<VkSurfaceFormatKHR> available_surface_formats)
 	{ return filter_surface_formats(available_surface_formats, desired_formats); };
+}
+
+// Filters and logs available VkSurfaceFormatKHRs by desired VkFormat order.
+std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+	LoggerPtr const & logger,
+	std::span<VkSurfaceFormatKHR> available_surface_formats,
+	std::span<VkFormat> desired_formats);
+
+/**
+ * Returns a closure that filters and logs VkSurfaceFormatKHRs by desired VkFormat order.
+ */
+constexpr auto make_filter_surface_formats(
+	AUTO(LoggerPtr) logger, AUTO(std::vector<VkFormat>) desired_formats)
+{
+	return [logger = FW(logger), desired_formats = FW(desired_formats)](
+			   std::span<VkSurfaceFormatKHR> available_surface_formats)
+	{ return filter_surface_formats(logger, available_surface_formats, desired_formats); };
 }
 
 }  // namespace vulkandemo::setup

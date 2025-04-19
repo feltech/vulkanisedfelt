@@ -3,17 +3,22 @@
 #include "filters.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <ranges>
 #include <set>
 #include <span>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/set_algorithm.hpp>
-#include <ranges>
 #include <spdlog/common.h>
 #include <spdlog/logger.h>	// NOLINT(misc-include-cleaner)
+#include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
 #include "../Logger.hpp"
@@ -23,6 +28,34 @@
 
 namespace vulkandemo::setup
 {
+
+std::optional<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+maybe_score_physical_device_and_queue_family(
+	VkPhysicalDevice physical_device,
+	VkPhysicalDeviceProperties const & physical_device_properties,
+	std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs)
+{
+	if (filtered_queue_family_idxs.empty())
+		return std::nullopt;
+
+	std::size_t const score =
+		(physical_device_properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) ? 1 : 0;
+	return std::make_tuple(score, physical_device, filtered_queue_family_idxs.front());
+}
+
+std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+maybe_select_best_scoring_physical_device_and_queue_family_idx(
+	std::vector<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates)
+{
+	if (candidates.empty())
+		return std::nullopt;
+
+	std::ranges::sort(
+		candidates,
+		[](auto const & lhs, auto const & rhs) { return std::get<0>(lhs) < std::get<0>(rhs); });
+	auto const & [score, physical_device, queue_family_idx] = candidates.back();
+	return std::pair{physical_device, queue_family_idx};
+}
 
 std::vector<types::AvailableDeviceExtensionNameView>
 extension_properties_filter_by_and_transform_to_device_extension_name(
@@ -146,8 +179,7 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 }
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
-	std::span<VkSurfaceFormatKHR const> available_surface_formats,
-	std::span<VkFormat const> desired_formats)
+	std::span<VkSurfaceFormatKHR> available_surface_formats, std::span<VkFormat> desired_formats)
 {
 	return available_surface_formats |
 		std::views::filter(
@@ -156,6 +188,38 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 				   return std::ranges::contains(desired_formats, available_surface_format.format);
 			   }) |
 		ranges::to<std::vector>();
+}
+
+std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+	LoggerPtr const & logger,
+	std::span<VkSurfaceFormatKHR> available_surface_formats,
+	std::span<VkFormat> desired_formats)
+{
+	std::vector<VkSurfaceFormatKHR> filtered_surface_formats =
+		filter_surface_formats(available_surface_formats, desired_formats);
+
+	if (logger && logger->should_log(spdlog::level::debug))
+	{
+		for (VkFormat const desired_format : desired_formats)
+		{
+			if (std::ranges::contains(
+					filtered_surface_formats | std::views::transform(&VkSurfaceFormatKHR::format),
+					desired_format))
+				logger->debug(
+					"Requested surface format: {} (available)", string_VkFormat(desired_format));
+			else
+				logger->debug(
+					"Requested surface format: {} (unavailable)", string_VkFormat(desired_format));
+		}
+
+		for (auto const & [format, color_space] : available_surface_formats)
+			logger->debug(
+				"\tAvailable surface format: {} {}",
+				string_VkFormat(format),
+				string_VkColorSpaceKHR(color_space));
+	}
+
+	return filtered_surface_formats;
 }
 
 }  // namespace vulkandemo::setup

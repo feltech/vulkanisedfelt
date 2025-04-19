@@ -481,29 +481,6 @@ create_device_and_queues(
 		return out;
 	}();
 
-	// Construct a map of queue family to vector of queues.
-
-	// Range-based solution, way too verbose, retained for posterity...
-	// types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues =
-	// 	queue_family_and_counts |
-	// 	std::views::transform(
-	// 		[&](auto const & queue_family_and_count)
-	// 		{
-	// 			auto const & [queue_family_idx, queue_count] = queue_family_and_count;
-	// 			return std::pair{
-	// 				queue_family_idx,
-	// 				std::views::iota(0U, static_cast<uint32_t>(queue_count)) |
-	// 					std::views::transform(
-	// 						[&](uint32_t const queue_idx)
-	// 						{
-	// 							VkQueue queue = nullptr;
-	// 							vkGetDeviceQueue(device, queue_family_idx, queue_idx, &queue);
-	// 							return queue;
-	// 						}) |
-	// 					ranges::to<std::vector>};
-	// 		}) |
-	// 	ranges::to<std::map>;
-
 	types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 	for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 	{
@@ -562,6 +539,13 @@ std::vector<VkExtensionProperties> enumerate_physical_device_extension_propertie
 			physical_device, nullptr, &extension_count, out.data()),
 		"Failed to get device extensions");
 	return out;
+}
+
+VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device)
+{
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physical_device, &properties);
+    return properties;
 }
 
 types::VulkanSurfacePtr create_surface(

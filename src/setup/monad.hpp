@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <range/v3/range/conversion.hpp>
 #include <ranges>
+#include <set>
 #include <span>
 
 #include <type_traits>
@@ -20,6 +21,7 @@
 #include "../monad.hpp"
 #include "../setup.hpp"
 #include "../types.hpp"
+#include "filters.hpp"
 #include "io.hpp"
 
 namespace vulkandemo::setup::monad
@@ -114,7 +116,6 @@ constexpr auto create_exclusive_double_buffer_swapchain_and_image_views(
 constexpr auto create_device_and_queues(
 	auto && physical_device, auto && queue_family_and_counts, auto && device_extension_names)
 {
-	// kleisli
 	return IO{[queue_family_and_counts = FW(queue_family_and_counts),
 			   device_extension_names = FW(device_extension_names),
 			   physical_device = FW(physical_device)]
@@ -207,7 +208,7 @@ constexpr auto query_available_device_extensions(VkPhysicalDevice physical_devic
 			  }};
 }
 
-constexpr auto make_io_filter_by_queue_family_idx_surface_support(
+constexpr auto make_query_is_queue_family_supported_by_physical_device_and_surface(
 	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) desired_surface)
 {
 	return [physical_device, desired_surface = FW(desired_surface)](
@@ -226,6 +227,12 @@ constexpr auto make_io_filter_by_queue_family_idx_surface_support(
 					  return surface_supported == VK_TRUE;
 				  }};
 	};
+}
+
+constexpr auto query_physical_device_properties(VkPhysicalDevice physical_device)
+{
+    return IO{[physical_device]
+              { return setup::query_physical_device_properties(physical_device); }};
 }
 
 constexpr auto query_available_queue_family_properties(VkPhysicalDevice physical_device)

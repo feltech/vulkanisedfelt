@@ -209,4 +209,12 @@ VkExtent2D window_drawable_size(types::SDLWindowPtr const & window);
  */
 types::SDLWindowPtr create_window(char const * title, int width, int height);
 
+/**
+ * Get the properties of a physical device.
+ *
+ * @param physical_device
+ * @return
+ */
+VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device);
+
 }  // namespace vulkandemo::setup
