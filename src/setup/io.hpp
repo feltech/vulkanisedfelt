@@ -112,6 +112,7 @@ create_device_and_queues(
 	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
 		queue_family_and_counts,
 	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names);
+
 /**
  * Get a list of all physical devices.
  *
@@ -132,7 +133,32 @@ std::vector<VkExtensionProperties> enumerate_physical_device_extension_propertie
 	VkPhysicalDevice physical_device);
 
 /**
+ * Enumerate all surface formats for a physical device and surface.
+ *
+ * @param physical_device
+ * @param surface
+ * @return
+ */
+std::vector<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
+
+/**
+ * Log the requested and available surface formats at debug/trace levels.
+ *
+ * @param logger
+ * @param filtered_surface_formats
+ * @param available_surface_formats
+ * @param desired_formats
+ */
+void log_surface_format_selection(
+	LoggerPtr const & logger,
+	std::span<VkSurfaceFormatKHR const> filtered_surface_formats,
+	std::span<VkSurfaceFormatKHR const> available_surface_formats,
+	std::span<VkFormat const> desired_formats);
+
+/**
  * Create vulkan surface compatible with SDL window to render to.
+ *
  * @param window
  * @param instance
  * @return
@@ -182,4 +208,5 @@ VkExtent2D window_drawable_size(types::SDLWindowPtr const & window);
  * @return The window
  */
 types::SDLWindowPtr create_window(char const * title, int width, int height);
+
 }  // namespace vulkandemo::setup

@@ -448,7 +448,7 @@ TEST_CASE("Create a Vulkan instance")
 					return bind(
 						// Fetch and filter layer names.
 						monad::io::query_available_instance_layers().fmap(
-							make_layer_descriptions_filter_by_and_transform_to_instance_layer_name(
+							make_layer_description_filter_by_and_transform_to_instance_layer_name(
 								logger,
 								std::set{
 									types::DesiredInstanceLayerNameView{"some_unavailable_layer"},

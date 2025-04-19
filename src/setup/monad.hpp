@@ -450,6 +450,30 @@ constexpr auto create_window(char const * title, int width, int height)
 	return IO{[title, width, height] { return setup::create_window(title, width, height); }};
 }
 
+constexpr auto query_available_surface_formats(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
+{
+	return IO{
+		[physical_device, surface = FW(surface)]
+		{ return setup::enumerate_physical_device_surface_formats(physical_device, surface); }};
+}
+
+constexpr auto log_surface_format_selection(
+	LoggerPtr const & logger,
+	auto && filtered_surface_formats,
+	auto && available_surface_formats,
+	auto && desired_formats)
+{
+	return IO{[logger = FW(logger),
+			   filtered_surface_formats = FW(filtered_surface_formats),
+			   available_surface_formats = FW(available_surface_formats),
+			   desired_formats = FW(desired_formats)]
+			  {
+				  setup::log_surface_format_selection(
+					  logger, filtered_surface_formats, available_surface_formats, desired_formats);
+			  }};
+}
+
 }  // namespace io
 
 namespace stateio

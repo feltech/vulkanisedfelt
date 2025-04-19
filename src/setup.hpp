@@ -41,6 +41,8 @@ namespace vulkandemo::setup
  * @param desired_formats
  * @return
  */
+// [DEPRECATED] Use enumerate_physical_device_surface_formats (io.hpp) and filter_surface_formats
+// (filters.hpp) instead.
 [[deprecated]] std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,

@@ -383,6 +383,53 @@ create_exclusive_double_buffer_swapchain_and_image_views(
 
 	return {std::move(swapchain), std::move(image_views)};
 }
+
+std::vector<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
+{
+	uint32_t count = 0;
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface.get(), &count, nullptr),
+		"Failed to get surface format count");
+	std::vector<VkSurfaceFormatKHR> out(count);
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface.get(), &count, out.data()),
+		"Failed to get surface formats");
+	return out;
+}
+
+void log_surface_format_selection(
+	LoggerPtr const & logger,
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	std::span<VkSurfaceFormatKHR const> filtered_surface_formats,
+	std::span<VkSurfaceFormatKHR const> available_surface_formats,
+	std::span<VkFormat const> desired_formats)
+{
+	if (logger->should_log(spdlog::level::debug))
+	{
+		for (VkFormat const desired_format : desired_formats)
+		{
+			if (std::ranges::contains(
+					filtered_surface_formats | std::views::transform(&VkSurfaceFormatKHR::format),
+					desired_format))
+				logger->debug(
+					"Requested surface format: {} (available)", string_VkFormat(desired_format));
+			else
+				logger->debug(
+					"Requested surface format: {} (unavailable)", string_VkFormat(desired_format));
+		}
+
+		if (logger->should_log(spdlog::level::trace))
+		{
+			for (auto const & [format, color_space] : available_surface_formats)
+				logger->trace(
+					"\tAvailable surface format: {} {}",
+					string_VkFormat(format),
+					string_VkColorSpaceKHR(color_space));
+		}
+	}
+}
+
 std::tuple<types::VulkanDevicePtr, types::MapOfVulkanQueueFamilyIdxToVectorOfQueues>
 create_device_and_queues(
 	VkPhysicalDevice physical_device,
@@ -694,7 +741,7 @@ types::VulkanInstancePtr create_vulkan_instance(
 	// Instance creation info.
 
 	std::vector<char const *> const layers_to_enable_cstr =
-		layers_to_enable | hof::views::value_of() | ranges::to<std::vector>();
+		layers_to_enable | hof::views::value_of() | ranges::to<std::vector>;
 
 	logger->debug("Enabling layers: {}", fmt::join(layers_to_enable_cstr, ", "));
 
