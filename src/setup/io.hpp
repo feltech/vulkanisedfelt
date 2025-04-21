@@ -108,6 +108,30 @@ types::VulkanSwapchainPtr create_swapchain(
 	types::VulkanDevicePtr const & device, VkSwapchainCreateInfoKHR const & create_info);
 
 /**
+ * Query raw images associated with swapchain.
+ *
+ * @param device
+ * @param swapchain
+ * @return
+ */
+std::vector<VkImage> query_swapchain_images(
+    types::VulkanDevicePtr const& device,
+    types::VulkanSwapchainPtr const& swapchain);
+
+/**
+ * Create image views for swapchain images.
+ *
+ * @param device
+ * @param surface_format
+ * @param images
+ * @return
+ */
+std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
+    types::VulkanDevicePtr const& device,
+    VkSurfaceFormatKHR surface_format,
+    std::span<VkImage const> images);
+
+/**
  * Given a physical device, desired queue types, and desired extensions, get a logical
  * device and corresponding queues.
  *

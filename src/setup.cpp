@@ -993,57 +993,108 @@ TEST_CASE("Create swapchain")
 			REQUIRE(physical_device_and_queue_family.has_value());
 			auto [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
 
-			std::array const queue_family_and_counts{
-				std::pair{queue_family_idx, types::VulkanQueueCount{1}}};
+			return monad::stateio::create_surface()
+				.bind(
+					[physical_device](auto && surface)
+					{
+						return StateIO{
+							[physical_device, surface = FW(surface)](auto && state)
+							{
+								return monad::io::query_available_surface_formats(
+										   physical_device, surface)
+									.fmap(make_filter_surface_formats(
+										state.logger,
+										std::array{
+											VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}))
 
-			return bind(
-					   monad::stateio::create_device(
-						   physical_device,
-						   queue_family_and_counts,
-						   std::array{types::AvailableDeviceExtensionNameView{
-							   VK_KHR_SWAPCHAIN_EXTENSION_NAME}}),
-					   monad::stateio::create_surface(),
-					   [physical_device](auto && device, auto && surface)
-					   {
-						   return StateIO{
-							   [physical_device, device = FW(device), surface = FW(surface)](
-								   auto && state)
-							   {
-								   return fmap(
-											  monad::io::query_available_surface_formats(
-												  physical_device, surface)
-												  .fmap(make_filter_surface_formats(
-													  state.logger,
-													  std::array{
-														  VK_FORMAT_R8G8B8A8_UNORM,
-														  VK_FORMAT_B8G8R8A8_UNORM})),
-											  monad::io::query_surface_capabilities(
-												  physical_device, surface),
-											  monad::io::query_present_modes(
-												  physical_device, surface),
-											  [logger = state.logger, surface](
-												  auto && surface_formats,
-												  auto && surface_capabilities,
-												  auto && surface_present_modes)
-											  {
-												  REQUIRE(!surface_formats.empty());
-												  return exclusive_double_buffer_swapchain_create_info(
-													  logger,
-													  surface,
-													  FW(surface_formats).front(),
-													  FW(surface_capabilities),
-													  FW(surface_present_modes));
-											  })
-									   .pair_with(FW(state));
-							   }};
-					   })
-				.bind([](auto && create_info)
-					  { return monad::stateio::create_swapchain(create_info); });
+									.pair_with(FW(state));
+							}};
+					})
+				.bind(
+					[physical_device, queue_family_idx](auto && surface_formats)
+					{
+						REQUIRE(!surface_formats.empty());
+
+						auto const surface_format = surface_formats.front();
+
+						std::array const queue_family_and_counts{
+							std::pair{queue_family_idx, types::VulkanQueueCount{1}}};
+
+						return monad::stateio::create_device(
+								   physical_device,
+								   queue_family_and_counts,
+								   std::array{types::AvailableDeviceExtensionNameView{
+									   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
+							.bind(
+								[physical_device, surface_format](auto && device)
+								{
+									return StateIO{
+										[physical_device, device = FW(device), surface_format](
+											auto && state)
+										{
+											return fmap(
+													   monad::io::query_surface_capabilities(
+														   physical_device, state.surface),
+													   monad::io::query_present_modes(
+														   physical_device, state.surface),
+													   [logger = state.logger,
+														surface = state.surface,
+														surface_format](
+														   auto && surface_capabilities,
+														   auto && surface_present_modes)
+													   {
+														   return exclusive_double_buffer_swapchain_create_info(
+															   logger,
+															   surface,
+															   surface_format,
+															   FW(surface_capabilities),
+															   FW(surface_present_modes));
+													   })
+												.pair_with(FW(state));
+										}};
+								})
+							.bind([](auto && create_info)
+								  { return monad::stateio::create_swapchain(FW(create_info)); })
+							.bind(
+								[](auto && swapchain)
+								{
+									return StateIO{[swapchain = FW(swapchain)](auto && state)
+												   {
+													   return monad::io::query_swapchain_images(
+																  state.device, swapchain)
+														   .pair_with(FW(state));
+												   }};
+								})
+							.bind(
+								[surface_format](auto && images)
+								{
+									return monad::stateio::
+										create_colour_aspect_single_mip_single_layer_image_views(
+											surface_format, FW(images));
+								})
+							.bind(
+								[](auto && image_views)
+								{
+									return StateIO{
+										[image_views = FW(image_views)](auto && state)
+										{
+											return IO{[state, image_views]
+													  {
+														  CHECK(state.swapchain);
+														  CHECK(!image_views.empty());
+														  CHECK(image_views == state.image_views);
+														  WARN(image_views.size() == 2);
+														  return true;
+													  }}
+												.pair_with(FW(state));
+										}};
+								});
+					});
 		});
 
 	const struct
 	{
-		LoggerPtr logger = create_logger("Create logical device with queues");
+		LoggerPtr logger = create_logger("Create swapchain and image views");
 	} initial_state;
 
 	auto const [result, state] = program(initial_state)();

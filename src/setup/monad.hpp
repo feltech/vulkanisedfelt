@@ -147,8 +147,24 @@ constexpr auto query_queues_for_queue_family_and_counts(
 			  }};
 }
 
+// IO monad lifter for querying swapchain images
+constexpr auto query_swapchain_images(
+	AUTO(types::VulkanDevicePtr) device, AUTO(types::VulkanSwapchainPtr) swapchain)
+{
+	return IO{[device = FW(device), swapchain = FW(swapchain)]
+			  { return setup::query_swapchain_images(device, swapchain); }};
+}
 
-
+// IO monad lifter for creating image views
+constexpr auto create_colour_aspect_single_mip_single_layer_image_views(
+	AUTO(types::VulkanDevicePtr) device, VkSurfaceFormatKHR surface_format, auto && images)
+{
+	return IO{[device = FW(device), surface_format, images = FW(images)]
+			  {
+				  return setup::create_colour_aspect_single_mip_single_layer_image_views(
+					  device, surface_format, images);
+			  }};
+}
 
 constexpr auto filter_available_surface_formats(
 	auto && logger, auto && physical_device, auto && surface, auto && desired_formats)
@@ -162,7 +178,6 @@ constexpr auto filter_available_surface_formats(
 					  logger, physical_device, surface, desired_formats);
 			  }};
 }
-
 
 constexpr auto select_physical_device(
 	auto && logger,
@@ -516,14 +531,31 @@ constexpr auto create_window(char const * title, int width, int height)
 	return IO{[title, width, height] { return setup::create_window(title, width, height); }};
 }
 
-
 }  // namespace io
 
 namespace stateio
 {
-using vulkandemo::monad::stateio::StateIO;
 using vulkandemo::monad::bind;
+using vulkandemo::monad::stateio::StateIO;
 
+constexpr auto create_colour_aspect_single_mip_single_layer_image_views(
+	auto && surface_format, auto && images)
+{
+	return StateIO{[surface_format = FW(surface_format), images = FW(images)](auto && state)
+				   {
+					   return io::create_colour_aspect_single_mip_single_layer_image_views(
+								  state.device, surface_format, images)
+						   .fmap(
+							   [state = FW(state)](auto && image_views)
+							   {
+								   struct S : std::decay_t<decltype(state)>
+								   {
+									   std::vector<types::VulkanImageViewPtr> image_views;
+								   };
+								   return std::pair{FW(image_views), S{state, image_views}};
+							   });
+				   }};
+}
 constexpr auto create_swapchain(auto && create_info)
 {
 	return StateIO{[create_info = FW(create_info)](auto && state)
