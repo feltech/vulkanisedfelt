@@ -98,6 +98,16 @@ create_exclusive_double_buffer_swapchain_and_image_views(
 	types::VulkanSwapchainPtr const & previous_swapchain = nullptr);
 
 /**
+ * Create a Vulkan swapchain for a device and surface.
+ *
+ * @param device
+ * @param create_info
+ * @return
+ */
+types::VulkanSwapchainPtr create_swapchain(
+	types::VulkanDevicePtr const & device, VkSwapchainCreateInfoKHR const & create_info);
+
+/**
  * Given a physical device, desired queue types, and desired extensions, get a logical
  * device and corresponding queues.
  *
@@ -106,6 +116,7 @@ create_exclusive_double_buffer_swapchain_and_image_views(
  * @param device_extension_names
  * @return
  */
+[[deprecated("Use create_device and query_queues_for_queue_family_and_counts instead")]]
 std::tuple<types::VulkanDevicePtr, types::MapOfVulkanQueueFamilyIdxToVectorOfQueues>
 create_device_and_queues(
 	VkPhysicalDevice physical_device,
@@ -113,6 +124,31 @@ create_device_and_queues(
 		queue_family_and_counts,
 	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names);
 
+/**
+ * Create a Vulkan device.
+ *
+ * @param physical_device
+ * @param queue_family_and_counts
+ * @param device_extension_names
+ * @return
+ */
+types::VulkanDevicePtr create_device(
+	VkPhysicalDevice physical_device,
+	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
+		queue_family_and_counts,
+	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names);
+
+/**
+ * Get the queues for a device and queue family counts.
+ *
+ * @param device
+ * @param queue_family_and_counts
+ * @return
+ */
+types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_and_counts(
+	VkDevice device,
+	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
+		queue_family_and_counts);
 /**
  * Get a list of all physical devices.
  *
@@ -155,6 +191,26 @@ void log_surface_format_selection(
 	std::span<VkSurfaceFormatKHR const> filtered_surface_formats,
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats);
+
+/**
+ * Query surface capabilities for a physical device and surface.
+ *
+ * @param physical_device
+ * @param surface
+ * @return
+ */
+VkSurfaceCapabilitiesKHR query_surface_capabilities(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
+
+/**
+ * Query present modes for a physical device and surface.
+ *
+ * @param physical_device
+ * @param surface
+ * @return
+ */
+std::vector<VkPresentModeKHR> query_present_modes(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
 
 /**
  * Create vulkan surface compatible with SDL window to render to.
@@ -216,36 +272,5 @@ types::SDLWindowPtr create_window(char const * title, int width, int height);
  * @return
  */
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device);
-
-/**
- * Query surface capabilities for a physical device and surface.
- *
- * @param physical_device
- * @param surface
- * @return
- */
-VkSurfaceCapabilitiesKHR query_surface_capabilities(
-	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
-
-/**
- * Query present modes for a physical device and surface.
- *
- * @param physical_device
- * @param surface
- * @return
- */
-std::vector<VkPresentModeKHR> query_present_modes(
-	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
-
-/**
- * Create a Vulkan swapchain for a device and surface.
- *
- * @param device
- * @param create_info
- * @return
- */
-types::VulkanSwapchainPtr create_swapchain(
-	types::VulkanDevicePtr const & device,
-	VkSwapchainCreateInfoKHR const & create_info);
 
 }  // namespace vulkandemo::setup

@@ -180,7 +180,7 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 }
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
-	std::span<VkSurfaceFormatKHR> available_surface_formats, std::span<VkFormat> desired_formats)
+	std::span<VkSurfaceFormatKHR const> available_surface_formats, std::span<VkFormat const> desired_formats)
 {
 	return available_surface_formats |
 		std::views::filter(
@@ -193,8 +193,8 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 	LoggerPtr const & logger,
-	std::span<VkSurfaceFormatKHR> available_surface_formats,
-	std::span<VkFormat> desired_formats)
+	std::span<VkSurfaceFormatKHR const> available_surface_formats,
+	std::span<VkFormat const> desired_formats)
 {
 	std::vector<VkSurfaceFormatKHR> filtered_surface_formats =
 		filter_surface_formats(available_surface_formats, desired_formats);

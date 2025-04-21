@@ -937,35 +937,38 @@ TEST_CASE("Create logical device with queues")
 			REQUIRE(physical_device_and_queue_family.has_value());
 			auto [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
 
-			return StateIO{
-				[physical_device, queue_family_idx](auto && state)
-				{
-					return monad::io::create_device_and_queues(
-							   std::move(physical_device),
-							   std::array{std::pair{queue_family_idx, kExpectedQueueCount}},
-							   std::array{types::AvailableDeviceExtensionNameView{
-								   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
-						.bind(
-							[queue_family_idx](auto && device_and_queues)
+			std::array queue_family_and_counts{std::pair{queue_family_idx, kExpectedQueueCount}};
+
+			return monad::stateio::create_device(
+					   physical_device,
+					   queue_family_and_counts,
+					   std::array{types::AvailableDeviceExtensionNameView{
+						   VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
+				.bind(
+					[queue_family_idx, queue_family_and_counts]([[maybe_unused]] auto && device)
+					{
+						return StateIO{
+							[queue_family_idx, queue_family_and_counts](auto && state)
 							{
-								return IO{
-									[queue_family_idx, device_and_queues = FW(device_and_queues)]
-									{
-										auto const & [device, queues] = device_and_queues;
-										CHECK(device);
-										// Check that the device has the expected
-										// number of queues.
-										CHECK(queues.size() == 1);
-										CHECK(
-											queues.at(queue_family_idx).size() ==
-											kExpectedQueueCount);
-										CHECK(queues.at(queue_family_idx)[0]);
-										CHECK(queues.at(queue_family_idx)[1]);
-										return true;
-									}};
-							})
-						.pair_with(FW(state));
-				}};
+								return monad::io::query_queues_for_queue_family_and_counts(
+										   state.device, queue_family_and_counts)
+									.fmap(
+										[queue_family_idx, device = state.device](auto && queues)
+										{
+											CHECK(device);
+											// Check that the device has the expected
+											// number of queues.
+											CHECK(queues.size() == 1);
+											CHECK(
+												queues.at(queue_family_idx).size() ==
+												kExpectedQueueCount);
+											CHECK(queues.at(queue_family_idx)[0]);
+											CHECK(queues.at(queue_family_idx)[1]);
+											return true;
+										})
+									.pair_with(FW(state));
+							}};
+					});
 		});
 
 	const struct
@@ -990,16 +993,61 @@ TEST_CASE("Create swapchain")
 			REQUIRE(physical_device_and_queue_family.has_value());
 			auto [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
 
-			return monad::stateio::create_surface().bind(
-				[physical_device, queue_family_idx]([[maybe_unused]] auto && surface)
-				{
-					return StateIO{
-						[physical_device, queue_family_idx](auto && state)
-						{
-							// something
-						}};
-				});
+			std::array const queue_family_and_counts{
+				std::pair{queue_family_idx, types::VulkanQueueCount{1}}};
+
+			return bind(
+					   monad::stateio::create_device(
+						   physical_device,
+						   queue_family_and_counts,
+						   std::array{types::AvailableDeviceExtensionNameView{
+							   VK_KHR_SWAPCHAIN_EXTENSION_NAME}}),
+					   monad::stateio::create_surface(),
+					   [physical_device](auto && device, auto && surface)
+					   {
+						   return StateIO{
+							   [physical_device, device = FW(device), surface = FW(surface)](
+								   auto && state)
+							   {
+								   return fmap(
+											  monad::io::query_available_surface_formats(
+												  physical_device, surface)
+												  .fmap(make_filter_surface_formats(
+													  state.logger,
+													  std::array{
+														  VK_FORMAT_R8G8B8A8_UNORM,
+														  VK_FORMAT_B8G8R8A8_UNORM})),
+											  monad::io::query_surface_capabilities(
+												  physical_device, surface),
+											  monad::io::query_present_modes(
+												  physical_device, surface),
+											  [logger = state.logger, surface](
+												  auto && surface_formats,
+												  auto && surface_capabilities,
+												  auto && surface_present_modes)
+											  {
+												  REQUIRE(!surface_formats.empty());
+												  return exclusive_double_buffer_swapchain_create_info(
+													  logger,
+													  surface,
+													  FW(surface_formats).front(),
+													  FW(surface_capabilities),
+													  FW(surface_present_modes));
+											  })
+									   .pair_with(FW(state));
+							   }};
+					   })
+				.bind([](auto && create_info)
+					  { return monad::stateio::create_swapchain(create_info); });
 		});
+
+	const struct
+	{
+		LoggerPtr logger = create_logger("Create logical device with queues");
+	} initial_state;
+
+	auto const [result, state] = program(initial_state)();
+	CHECK(result);
 
 	auto [physical_device, queue_family_idx] = select_physical_device(
 		logger,

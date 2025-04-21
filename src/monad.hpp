@@ -408,11 +408,12 @@ struct StateIO
 			static_assert(assert_valid_bind<decltype(prev), decltype(lifter), decltype(state)>());
 
 			return prev(FW(state)).bind(
-				[lifter = FW(lifter)](auto && value_and_state)
+				[lifter](auto && value_and_state)
 				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
 		};
 		return StateIO<decltype(next)>(std::move(next));
 	}
+
 	auto bind(auto && lifter) &&
 	{
 		auto next = [prev = std::move(action), lifter = FW(lifter)](

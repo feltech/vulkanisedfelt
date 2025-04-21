@@ -154,37 +154,37 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 /**
  * Returns a closure that filters/prioritizes VkSurfaceFormatKHRs by desired VkFormat order.
  */
-constexpr auto make_filter_surface_formats(AUTO(std::vector<VkFormat>) desired_formats)
+constexpr auto make_filter_surface_formats(auto && desired_formats)
 {
 	return [desired_formats =
-				FW(desired_formats)](std::span<VkSurfaceFormatKHR> available_surface_formats)
+				FW(desired_formats)](std::span<VkSurfaceFormatKHR const> available_surface_formats)
 	{ return filter_surface_formats(available_surface_formats, desired_formats); };
 }
 
 // Filters and logs available VkSurfaceFormatKHRs by desired VkFormat order.
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 	LoggerPtr const & logger,
-	std::span<VkSurfaceFormatKHR> available_surface_formats,
-	std::span<VkFormat> desired_formats);
+	std::span<VkSurfaceFormatKHR const> available_surface_formats,
+	std::span<VkFormat const> desired_formats);
 
 /**
  * Returns a closure that filters and logs VkSurfaceFormatKHRs by desired VkFormat order.
  */
-constexpr auto make_filter_surface_formats(
-	AUTO(LoggerPtr) logger, AUTO(std::vector<VkFormat>) desired_formats)
+constexpr auto make_filter_surface_formats(AUTO(LoggerPtr) logger, auto && desired_formats)
 {
 	return [logger = FW(logger), desired_formats = FW(desired_formats)](
-			   std::span<VkSurfaceFormatKHR> available_surface_formats)
+			   std::span<VkSurfaceFormatKHR const> available_surface_formats)
 	{ return filter_surface_formats(logger, available_surface_formats, desired_formats); };
 }
 
-// Returns a VkSwapchainCreateInfoKHR configured for exclusive sharing mode and double buffering (or as close as possible).
+// Returns a VkSwapchainCreateInfoKHR configured for exclusive sharing mode and double buffering (or
+// as close as possible).
 VkSwapchainCreateInfoKHR exclusive_double_buffer_swapchain_create_info(
 	LoggerPtr const & logger,
 	types::VulkanSurfacePtr const & surface,
 	VkSurfaceFormatKHR const & surface_format,
 	VkSurfaceCapabilitiesKHR const & surface_capabilities,
 	std::span<VkPresentModeKHR const> present_modes,
-	types::VulkanSwapchainPtr const & previous_swapchain);
+	types::VulkanSwapchainPtr const & previous_swapchain = nullptr);
 
 }  // namespace vulkandemo::setup

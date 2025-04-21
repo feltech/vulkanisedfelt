@@ -451,11 +451,24 @@ create_device_and_queues(
 	VkPhysicalDevice physical_device,
 	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
 		queue_family_and_counts,
-	std::span<types::AvailableDeviceExtensionNameView const> const device_extension_names)
+	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names)
 {
-	// Queue priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
-	// create a single array sized to the largest queue count. Array must exist until after
-	// vkCreateDevice.
+	types::VulkanDevicePtr device =
+		create_device(physical_device, queue_family_and_counts, device_extension_names);
+	auto queues = query_queues_for_queue_family_and_counts(device.get(), queue_family_and_counts);
+	return {std::move(device), std::move(queues)};
+}
+
+types::VulkanDevicePtr create_device(
+	VkPhysicalDevice physical_device,
+	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const> const
+		queue_family_and_counts,
+	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names)
+{
+	std::vector<char const *> const device_extension_cstr_names = device_extension_names |
+		hof::views::value_of() | std::views::transform(&std::string_view::data) |
+		ranges::to<std::vector>();
+
 	std::vector const queue_priorities(
 		std::ranges::max(queue_family_and_counts | std::views::values), 1.0F);
 
@@ -465,38 +478,34 @@ create_device_and_queues(
 			[&](auto const & queue_family_and_count)
 			{
 				auto const [queue_family_idx, queue_count] = queue_family_and_count;
-
 				VkDeviceQueueCreateInfo queue_create_info{
 					.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 					.queueFamilyIndex = queue_family_idx,
 					.queueCount = queue_count,
 					.pQueuePriorities = queue_priorities.data()};
-
 				return queue_create_info;
 			}) |
 		ranges::to<std::vector>();
 
-	// Create the device.
-	VkDevice device = [&]
-	{
-		std::vector<char const *> const device_extension_cstr_names = device_extension_names |
-			hof::views::value_of() | std::views::transform(&std::string_view::data) |
-			ranges::to<std::vector>;
+	VkDeviceCreateInfo const device_create_info{
+		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+		.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
+		.pQueueCreateInfos = queue_create_infos.data(),
+		.enabledExtensionCount = static_cast<uint32_t>(device_extension_cstr_names.size()),
+		.ppEnabledExtensionNames = device_extension_cstr_names.data(),
+	};
+	VkDevice device = nullptr;
+	VK_CHECK(
+		vkCreateDevice(physical_device, &device_create_info, nullptr, &device),
+		"Failed to create logical device");
+	return types::make_device_ptr(device);
+}
 
-		VkDeviceCreateInfo const device_create_info{
-			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
-			.pQueueCreateInfos = queue_create_infos.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(device_extension_cstr_names.size()),
-			.ppEnabledExtensionNames = device_extension_cstr_names.data(),
-		};
-		VkDevice out = nullptr;
-		VK_CHECK(
-			vkCreateDevice(physical_device, &device_create_info, nullptr, &out),
-			"Failed to create logical device");
-		return out;
-	}();
-
+types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_and_counts(
+	VkDevice device,
+	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
+		queue_family_and_counts)
+{
 	types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 	for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 	{
@@ -509,8 +518,7 @@ create_device_and_queues(
 			queues_for_family.push_back(queue);
 		}
 	}
-
-	return {types::make_device_ptr(device), std::move(queues)};
+	return queues;
 }
 
 std::vector<VkPhysicalDevice> enumerate_physical_devices(

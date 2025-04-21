@@ -107,7 +107,7 @@ constexpr auto create_exclusive_double_buffer_swapchain_and_image_views(
 			 surface = FW(surface),
 			 previous_swapchain = FW(previous_swapchain)]
 			{
-				return create_exclusive_double_buffer_swapchain_and_image_views(
+				return setup::create_exclusive_double_buffer_swapchain_and_image_views(
 					logger, physical_device, device, surface, surface_format, previous_swapchain);
 			}};
 	};
@@ -125,6 +125,31 @@ constexpr auto create_device_and_queues(
 			  }};
 }
 
+constexpr auto create_device(
+	auto && physical_device, auto && queue_family_and_counts, auto && device_extension_names)
+{
+	return IO{[queue_family_and_counts = FW(queue_family_and_counts),
+			   device_extension_names = FW(device_extension_names),
+			   physical_device = FW(physical_device)]
+			  {
+				  return setup::create_device(
+					  physical_device, queue_family_and_counts, device_extension_names);
+			  }};
+}
+
+constexpr auto query_queues_for_queue_family_and_counts(
+	auto && device, auto && queue_family_and_counts)
+{
+	return IO{[device = FW(device), queue_family_and_counts = FW(queue_family_and_counts)]
+			  {
+				  return setup::query_queues_for_queue_family_and_counts(
+					  device.get(), queue_family_and_counts);
+			  }};
+}
+
+
+
+
 constexpr auto filter_available_surface_formats(
 	auto && logger, auto && physical_device, auto && surface, auto && desired_formats)
 {
@@ -137,6 +162,7 @@ constexpr auto filter_available_surface_formats(
 					  logger, physical_device, surface, desired_formats);
 			  }};
 }
+
 
 constexpr auto select_physical_device(
 	auto && logger,
@@ -263,21 +289,6 @@ constexpr auto filter_available_queue_families(
 					  physical_device, desired_queue_capabilities, desired_surface);
 			  }};
 }
-
-constexpr auto query_surface_capabilities(
-	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
-{
-	return IO{[physical_device, surface = FW(surface)]
-			  { return setup::query_surface_capabilities(physical_device, surface); }};
-}
-
-constexpr auto query_present_modes(
-	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
-{
-	return IO{[physical_device, surface = FW(surface)]
-			  { return setup::query_present_modes(physical_device, surface); }};
-}
-
 constexpr auto create_swapchain(
 	AUTO(types::VulkanDevicePtr) device, VkSwapchainCreateInfoKHR const & create_info)
 {
@@ -326,6 +337,44 @@ constexpr auto query_physical_device_memory_properties(
 				  }
 
 				  return memory_properties;
+			  }};
+}
+
+constexpr auto query_surface_capabilities(
+	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
+{
+	return IO{[physical_device, surface = FW(surface)]
+			  { return setup::query_surface_capabilities(physical_device, surface); }};
+}
+
+constexpr auto query_present_modes(
+	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
+{
+	return IO{[physical_device, surface = FW(surface)]
+			  { return setup::query_present_modes(physical_device, surface); }};
+}
+
+constexpr auto query_available_surface_formats(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
+{
+	return IO{
+		[physical_device, surface = FW(surface)]
+		{ return setup::enumerate_physical_device_surface_formats(physical_device, surface); }};
+}
+
+constexpr auto log_surface_format_selection(
+	LoggerPtr const & logger,
+	auto && filtered_surface_formats,
+	auto && available_surface_formats,
+	auto && desired_formats)
+{
+	return IO{[logger = FW(logger),
+			   filtered_surface_formats = FW(filtered_surface_formats),
+			   available_surface_formats = FW(available_surface_formats),
+			   desired_formats = FW(desired_formats)]
+			  {
+				  setup::log_surface_format_selection(
+					  logger, filtered_surface_formats, available_surface_formats, desired_formats);
 			  }};
 }
 
@@ -467,35 +516,51 @@ constexpr auto create_window(char const * title, int width, int height)
 	return IO{[title, width, height] { return setup::create_window(title, width, height); }};
 }
 
-constexpr auto query_available_surface_formats(
-	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
-{
-	return IO{
-		[physical_device, surface = FW(surface)]
-		{ return setup::enumerate_physical_device_surface_formats(physical_device, surface); }};
-}
-
-constexpr auto log_surface_format_selection(
-	LoggerPtr const & logger,
-	auto && filtered_surface_formats,
-	auto && available_surface_formats,
-	auto && desired_formats)
-{
-	return IO{[logger = FW(logger),
-			   filtered_surface_formats = FW(filtered_surface_formats),
-			   available_surface_formats = FW(available_surface_formats),
-			   desired_formats = FW(desired_formats)]
-			  {
-				  setup::log_surface_format_selection(
-					  logger, filtered_surface_formats, available_surface_formats, desired_formats);
-			  }};
-}
 
 }  // namespace io
 
 namespace stateio
 {
 using vulkandemo::monad::stateio::StateIO;
+using vulkandemo::monad::bind;
+
+constexpr auto create_swapchain(auto && create_info)
+{
+	return StateIO{[create_info = FW(create_info)](auto && state)
+				   {
+					   return io::create_swapchain(state.device, create_info)
+						   .fmap(
+							   [state = FW(state)](auto && swapchain)
+							   {
+								   struct S : std::decay_t<decltype(state)>
+								   {
+									   types::VulkanSwapchainPtr swapchain;
+								   };
+								   return std::pair{FW(swapchain), S{state, swapchain}};
+							   });
+				   }};
+}
+
+constexpr auto create_device(
+	auto && physical_device, auto && queue_family_and_counts, auto && device_extension_names)
+{
+	return StateIO{[physical_device = FW(physical_device),
+					queue_family_and_counts = FW(queue_family_and_counts),
+					device_extension_names = FW(device_extension_names)](auto && state)
+				   {
+					   return io::create_device(
+								  physical_device, queue_family_and_counts, device_extension_names)
+						   .fmap(
+							   [state = FW(state)](auto && device)
+							   {
+								   struct S : std::decay_t<decltype(state)>
+								   {
+									   types::VulkanDevicePtr device;
+								   };
+								   return std::pair{FW(device), S{state, device}};
+							   });
+				   }};
+}
 
 constexpr auto create_surface()
 {
