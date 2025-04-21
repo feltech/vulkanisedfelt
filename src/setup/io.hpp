@@ -217,4 +217,35 @@ types::SDLWindowPtr create_window(char const * title, int width, int height);
  */
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device);
 
+/**
+ * Query surface capabilities for a physical device and surface.
+ *
+ * @param physical_device
+ * @param surface
+ * @return
+ */
+VkSurfaceCapabilitiesKHR query_surface_capabilities(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
+
+/**
+ * Query present modes for a physical device and surface.
+ *
+ * @param physical_device
+ * @param surface
+ * @return
+ */
+std::vector<VkPresentModeKHR> query_present_modes(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
+
+/**
+ * Create a Vulkan swapchain for a device and surface.
+ *
+ * @param device
+ * @param create_info
+ * @return
+ */
+types::VulkanSwapchainPtr create_swapchain(
+	types::VulkanDevicePtr const & device,
+	VkSwapchainCreateInfoKHR const & create_info);
+
 }  // namespace vulkandemo::setup

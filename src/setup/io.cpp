@@ -191,6 +191,42 @@ types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
 	return types::make_render_pass_ptr(device, out);
 }
 
+VkSurfaceCapabilitiesKHR query_surface_capabilities(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
+{
+	VkSurfaceCapabilitiesKHR surface_capabilities{};
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+			physical_device, surface.get(), &surface_capabilities),
+		"Failed to get surface capabilities");
+	return surface_capabilities;
+}
+
+std::vector<VkPresentModeKHR> query_present_modes(
+	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
+{
+	uint32_t count = 0;
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface.get(), &count, nullptr),
+		"Failed to get present mode count");
+	std::vector<VkPresentModeKHR> out(count);
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfacePresentModesKHR(
+			physical_device, surface.get(), &count, out.data()),
+		"Failed to get present modes");
+	return out;
+}
+
+types::VulkanSwapchainPtr create_swapchain(
+	types::VulkanDevicePtr const & device, VkSwapchainCreateInfoKHR const & create_info)
+{
+	VkSwapchainKHR out = nullptr;
+	VK_CHECK(
+		vkCreateSwapchainKHR(device.get(), &create_info, nullptr, &out),
+		"Failed to create swapchain");
+	return types::make_swapchain_ptr(device, out);
+}
+
 namespace
 {
 std::vector<types::VulkanImageViewPtr>
@@ -252,28 +288,12 @@ types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
 	types::VulkanSwapchainPtr const & previous_swapchain)
 {
 	// Get surface capabilities.
-	VkSurfaceCapabilitiesKHR surface_capabilities{};
-	VK_CHECK(
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-			physical_device, surface.get(), &surface_capabilities),
-		"Failed to get surface capabilities");
+	VkSurfaceCapabilitiesKHR surface_capabilities =
+		query_surface_capabilities(physical_device, surface);
 
 	// Get present modes.
-	std::vector<VkPresentModeKHR> const present_modes = [&]
-	{
-		uint32_t count = 0;
-		VK_CHECK(
-			vkGetPhysicalDeviceSurfacePresentModesKHR(
-				physical_device, surface.get(), &count, nullptr),
-			"Failed to get present mode count");
-
-		std::vector<VkPresentModeKHR> out(count);
-		VK_CHECK(
-			vkGetPhysicalDeviceSurfacePresentModesKHR(
-				physical_device, surface.get(), &count, out.data()),
-			"Failed to get present modes");
-		return out;
-	}();
+	std::vector<VkPresentModeKHR> const present_modes =
+		query_present_modes(physical_device, surface);
 
 	// Log present modes at debug level.
 	logger->debug(
@@ -345,11 +365,7 @@ types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
 		.clipped = VK_TRUE,
 		.oldSwapchain = previous_swapchain.get()};
 
-	VkSwapchainKHR out = nullptr;
-	VK_CHECK(
-		vkCreateSwapchainKHR(device.get(), &swapchain_create_info, nullptr, &out),
-		"Failed to create swapchain");
-	return types::make_swapchain_ptr(device, out);
+	return create_swapchain(device, swapchain_create_info);
 }
 
 }  // namespace
@@ -437,10 +453,6 @@ create_device_and_queues(
 		queue_family_and_counts,
 	std::span<types::AvailableDeviceExtensionNameView const> const device_extension_names)
 {
-	std::vector<char const *> const device_extension_cstr_names = device_extension_names |
-		hof::views::value_of() | std::views::transform(&std::string_view::data) |
-		ranges::to<std::vector>;
-
 	// Queue priority of 1.0. Use same array for all VkDeviceQueueCreateInfo. Hence,
 	// create a single array sized to the largest queue count. Array must exist until after
 	// vkCreateDevice.
@@ -467,6 +479,10 @@ create_device_and_queues(
 	// Create the device.
 	VkDevice device = [&]
 	{
+		std::vector<char const *> const device_extension_cstr_names = device_extension_names |
+			hof::views::value_of() | std::views::transform(&std::string_view::data) |
+			ranges::to<std::vector>;
+
 		VkDeviceCreateInfo const device_create_info{
 			.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 			.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size()),
@@ -543,9 +559,9 @@ std::vector<VkExtensionProperties> enumerate_physical_device_extension_propertie
 
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device)
 {
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(physical_device, &properties);
-    return properties;
+	VkPhysicalDeviceProperties properties;
+	vkGetPhysicalDeviceProperties(physical_device, &properties);
+	return properties;
 }
 
 types::VulkanSurfacePtr create_surface(

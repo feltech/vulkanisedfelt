@@ -178,4 +178,13 @@ constexpr auto make_filter_surface_formats(
 	{ return filter_surface_formats(logger, available_surface_formats, desired_formats); };
 }
 
+// Returns a VkSwapchainCreateInfoKHR configured for exclusive sharing mode and double buffering (or as close as possible).
+VkSwapchainCreateInfoKHR exclusive_double_buffer_swapchain_create_info(
+	LoggerPtr const & logger,
+	types::VulkanSurfacePtr const & surface,
+	VkSurfaceFormatKHR const & surface_format,
+	VkSurfaceCapabilitiesKHR const & surface_capabilities,
+	std::span<VkPresentModeKHR const> present_modes,
+	types::VulkanSwapchainPtr const & previous_swapchain);
+
 }  // namespace vulkandemo::setup

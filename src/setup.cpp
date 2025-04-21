@@ -850,27 +850,25 @@ auto bind_to_default_instance_and_physical_device_and_queue_family(auto && lifte
 								   .traverse(
 									   [surface = FW(surface)](auto physical_device)
 									   {
-										   return zip(query_physical_device_properties(
-														  physical_device),
-													  query_available_queue_family_properties(
-														  physical_device)
-														  .fmap(
-															  make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
-																  VK_QUEUE_GRAPHICS_BIT))
-														  .filter(
-															  make_query_is_queue_family_supported_by_physical_device_and_surface(
-																  physical_device, surface)))
-											   .fmap(
-												   [physical_device](auto && args)
-												   {
-													   auto && [physical_device_properties, filtered_queue_family_idxs] =
-														   FW(args);
-
-													   return maybe_score_physical_device_and_queue_family(
-														   physical_device,
-														   physical_device_properties,
-														   filtered_queue_family_idxs);
-												   });
+										   return fmap(
+											   query_physical_device_properties(physical_device),
+											   query_available_queue_family_properties(
+												   physical_device)
+												   .fmap(
+													   make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
+														   VK_QUEUE_GRAPHICS_BIT))
+												   .filter(
+													   make_query_is_queue_family_supported_by_physical_device_and_surface(
+														   physical_device, surface)),
+											   [physical_device](
+												   auto && physical_device_properties,
+												   auto && filtered_queue_family_idxs)
+											   {
+												   return maybe_score_physical_device_and_queue_family(
+													   physical_device,
+													   physical_device_properties,
+													   filtered_queue_family_idxs);
+											   });
 									   })
 								   .compact()
 								   .fmap(
@@ -985,6 +983,23 @@ TEST_CASE("Create swapchain")
 	types::SDLWindowPtr const window = create_window("", 0, 0);
 	types::VulkanInstancePtr const instance = create_vulkan_instance(logger, window, {}, {});
 	types::VulkanSurfacePtr const surface = create_surface(window, instance);
+
+	auto const program = bind_to_default_instance_and_physical_device_and_queue_family(
+		[](auto && physical_device_and_queue_family)
+		{
+			REQUIRE(physical_device_and_queue_family.has_value());
+			auto [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
+
+			return monad::stateio::create_surface().bind(
+				[physical_device, queue_family_idx]([[maybe_unused]] auto && surface)
+				{
+					return StateIO{
+						[physical_device, queue_family_idx](auto && state)
+						{
+							// something
+						}};
+				});
+		});
 
 	auto [physical_device, queue_family_idx] = select_physical_device(
 		logger,

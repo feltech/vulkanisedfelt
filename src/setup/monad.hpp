@@ -231,8 +231,8 @@ constexpr auto make_query_is_queue_family_supported_by_physical_device_and_surfa
 
 constexpr auto query_physical_device_properties(VkPhysicalDevice physical_device)
 {
-    return IO{[physical_device]
-              { return setup::query_physical_device_properties(physical_device); }};
+	return IO{[physical_device]
+			  { return setup::query_physical_device_properties(physical_device); }};
 }
 
 constexpr auto query_available_queue_family_properties(VkPhysicalDevice physical_device)
@@ -262,6 +262,27 @@ constexpr auto filter_available_queue_families(
 				  return setup::filter_available_queue_families(
 					  physical_device, desired_queue_capabilities, desired_surface);
 			  }};
+}
+
+constexpr auto query_surface_capabilities(
+	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
+{
+	return IO{[physical_device, surface = FW(surface)]
+			  { return setup::query_surface_capabilities(physical_device, surface); }};
+}
+
+constexpr auto query_present_modes(
+	VkPhysicalDevice physical_device, AUTO(types::VulkanSurfacePtr) surface)
+{
+	return IO{[physical_device, surface = FW(surface)]
+			  { return setup::query_present_modes(physical_device, surface); }};
+}
+
+constexpr auto create_swapchain(
+	AUTO(types::VulkanDevicePtr) device, VkSwapchainCreateInfoKHR const & create_info)
+{
+	return IO{[device = FW(device), create_info]
+			  { return setup::create_swapchain(device, create_info); }};
 }
 
 [[deprecated]] constexpr auto filter_available_memory_types(
@@ -392,17 +413,6 @@ constexpr auto query_sdl_instance_extension_names(AUTO(types::SDLWindowPtr) sdl_
 			  }};
 }
 
-[[deprecated]] constexpr auto create_vulkan_instance(
-	auto && logger, auto && window, auto && layers_to_enable, auto && extensions_to_enable)
-{
-	return IO{
-		[logger = FW(logger),
-		 layers_to_enable = FW(layers_to_enable),
-		 extensions_to_enable = FW(extensions_to_enable),
-		 window = FW(window)]
-		{ return create_vulkan_instance(logger, window, layers_to_enable, extensions_to_enable); }};
-}
-
 constexpr auto query_available_instance_layers()
 {
 	return IO{[]
@@ -487,19 +497,19 @@ namespace stateio
 {
 using vulkandemo::monad::stateio::StateIO;
 
-constexpr auto create_window(char const * title, int width, int height)
+constexpr auto create_surface()
 {
-	return StateIO{[title, width, height](auto && state)
+	return StateIO{[](auto && state)
 				   {
-					   return io::create_window(title, width, height)
+					   return io::create_surface(state.window, state.instance)
 						   .fmap(
-							   [state = FW(state)](auto && window)
+							   [state = FW(state)](auto && surface)
 							   {
 								   struct S : std::decay_t<decltype(state)>
 								   {
-									   types::SDLWindowPtr window;
+									   types::VulkanSurfacePtr surface;
 								   };
-								   return std::pair{window, S{state, FW(window)}};
+								   return std::pair{FW(surface), S{state, surface}};
 							   });
 				   }};
 }
@@ -528,24 +538,21 @@ constexpr auto create_instance(
 				   }};
 }
 
-[[deprecated]] auto create_vulkan_instance(auto && layers_to_enable, auto && extensions_to_enable)
+constexpr auto create_window(char const * title, int width, int height)
 {
-	return StateIO{
-		[layers_to_enable = FW(layers_to_enable),
-		 extensions_to_enable = FW(extensions_to_enable)](auto && state)
-		{
-			return io::create_vulkan_instance(
-					   state.logger, state.window, layers_to_enable, extensions_to_enable)
-				.fmap(
-					[state = FW(state)](auto && instance)
-					{
-						struct S : std::decay_t<decltype(state)>
-						{
-							types::VulkanInstancePtr instance;
-						};
-						return std::pair{FW(instance), S{FW(state), instance}};
-					});
-		}};
+	return StateIO{[title, width, height](auto && state)
+				   {
+					   return io::create_window(title, width, height)
+						   .fmap(
+							   [state = FW(state)](auto && window)
+							   {
+								   struct S : std::decay_t<decltype(state)>
+								   {
+									   types::SDLWindowPtr window;
+								   };
+								   return std::pair{window, S{state, FW(window)}};
+							   });
+				   }};
 }
 
 constexpr auto create_debug_messenger(auto && instance)

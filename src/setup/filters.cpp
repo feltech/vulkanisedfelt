@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include <fmt/format.h>
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/set_algorithm.hpp>
 #include <spdlog/common.h>
@@ -175,7 +176,7 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 			   desired_extension_names | hof::views::value_of(),
 			   available_extension_names | hof::views::value_of()) |
 		std::views::transform(&std::string_view::data) |
-		ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>();
+		ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>;
 }
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
@@ -220,6 +221,84 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 	}
 
 	return filtered_surface_formats;
+}
+
+VkSwapchainCreateInfoKHR exclusive_double_buffer_swapchain_create_info(
+	LoggerPtr const & logger,
+	types::VulkanSurfacePtr const & surface,
+	VkSurfaceFormatKHR const & surface_format,
+	VkSurfaceCapabilitiesKHR const & surface_capabilities,
+	std::span<VkPresentModeKHR const> present_modes,
+	types::VulkanSwapchainPtr const & previous_swapchain)
+{
+	// Log present modes at debug level.
+	logger->debug(
+		"\tAvailable present modes: {}",
+		fmt::join(std::views::transform(present_modes, &string_VkPresentModeKHR), ", "));
+
+	// Choose best present mode.
+	VkPresentModeKHR const present_mode = [&]
+	{
+		if (std::ranges::contains(present_modes, VK_PRESENT_MODE_MAILBOX_KHR))
+			return VK_PRESENT_MODE_MAILBOX_KHR;
+		return VK_PRESENT_MODE_FIFO_KHR;
+	}();
+
+	logger->debug("\tChoosing present mode {}", string_VkPresentModeKHR(present_mode));
+
+	// Choose double-buffer of images, or as close as we can get.
+	uint32_t const swapchain_image_count = [&]
+	{
+		uint32_t count = std::max(2U, surface_capabilities.minImageCount);
+		// maxImageCount==0 means unlimited.
+		if (surface_capabilities.maxImageCount > 0)
+			count = std::min(surface_capabilities.maxImageCount, count);
+		return count;
+	}();
+
+	logger->debug("\tChoosing swapchain image count {}", swapchain_image_count);
+
+	VkSurfaceTransformFlagBitsKHR const surface_transform =
+		(surface_capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U
+		? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
+		: surface_capabilities.currentTransform;
+
+	logger->debug(
+		"\tSwitching transform from {} to {}",
+		string_VkSurfaceTransformFlagsKHR(surface_capabilities.currentTransform),
+		string_VkSurfaceTransformFlagsKHR(surface_transform));
+
+	if (surface_capabilities.currentExtent.width == std::numeric_limits<uint32_t>::max())
+		throw std::runtime_error{"Surface size is undefined"};
+
+	// Choose opaque composite alpha mode, or throw.
+	constexpr VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	if ((surface_capabilities.supportedCompositeAlpha & composite_alpha) == 0U)
+		throw std::runtime_error{"VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR unavailable"};
+
+	// Swapchain images should support colour attachment.
+	constexpr VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	if ((surface_capabilities.supportedUsageFlags & usage) != usage)
+		throw std::runtime_error{"Surface VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT unavailable"};
+
+	VkSwapchainCreateInfoKHR swapchain_create_info{
+		.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		.surface = surface.get(),
+		.minImageCount = swapchain_image_count,
+		.imageFormat = surface_format.format,
+		.imageColorSpace = surface_format.colorSpace,
+		.imageExtent = surface_capabilities.currentExtent,
+		.imageArrayLayers = 1,
+		.imageUsage = usage,
+		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+		.queueFamilyIndexCount = 0,
+		.pQueueFamilyIndices = nullptr,
+		.preTransform = surface_transform,
+		.compositeAlpha = composite_alpha,
+		.presentMode = present_mode,
+		.clipped = VK_TRUE,
+		.oldSwapchain = previous_swapchain ? previous_swapchain.get() : nullptr};
+	return swapchain_create_info;
 }
 
 }  // namespace vulkandemo::setup
