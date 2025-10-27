@@ -431,6 +431,48 @@ struct StateIO
 		return StateIO<decltype(next)>(std::move(next));
 	}
 
+	static auto lift(detail::SpecialisationOf<io::IO> auto && iom)
+	{
+		return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
+	}
+
+	auto with_state(auto && io_from_state) const &
+	{
+		auto next = [prev = action, io_from_state = FW(io_from_state)](
+						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
+		{
+			return prev(FW(state)).bind(
+				[io_from_state](auto && value_and_state)
+				{
+					auto [value, new_state] = value_and_state;
+
+					return io_from_state(new_state).fmap(
+						[new_state](auto && new_value)
+						{ return std::pair{FW(new_value), new_state}; });
+				});
+		};
+		return StateIO<decltype(next)>(std::move(next));
+	}
+
+	auto with_state(auto && io_from_state) &&
+	{
+		auto next = [prev = std::move(action), io_from_state = FW(io_from_state)](
+						auto && prev_state) -> decltype(auto)  // NOLINT(*-trailing-return)
+		{
+			return prev(FW(prev_state))
+				.bind(
+					[io_from_state](auto && value_and_state)
+					{
+						auto [value, new_state] = value_and_state;
+
+						return io_from_state(new_state).fmap(
+							[new_state](auto && new_value)
+							{ return std::pair{FW(new_value), new_state}; });
+					});
+		};
+		return StateIO<decltype(next)>(std::move(next));
+	}
+
 	template <typename A, typename L, typename S>
 	static constexpr bool assert_valid_bind()
 	{
@@ -466,6 +508,12 @@ struct StateIO
 auto lift(detail::SpecialisationOf<io::IO> auto && iom)
 {
 	return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
+}
+
+auto lift_io_state_cont(auto && io_cont_from_state)
+{
+	return StateIO{[io_cont_from_state = FW(io_cont_from_state)](auto && state)
+				   { return io_cont_from_state(state).pair_with(FW(state)); }};
 }
 
 }  // namespace stateio
