@@ -29,6 +29,16 @@ constexpr auto cast()
 	{ return static_cast<T>(std::forward<U>(obj)); };
 };
 
+struct transform_concat_t
+{
+	auto operator()(std::ranges::range auto first, std::ranges::range auto second) const
+	{
+		first.insert(
+			end(first), make_move_iterator(begin(second)), make_move_iterator(end(second)));
+		return first;
+	};
+};
+
 constexpr auto make_concat()
 {
 	return [](std::ranges::range auto first, std::ranges::range auto second)

@@ -27,6 +27,7 @@ find_package(di REQUIRED)
 find_package(reflect-cpp REQUIRED)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
+find_package(immer)
 
 
 ####################################################################################################
@@ -76,6 +77,7 @@ target_link_libraries(
     etl::etl
     di::di
     reflect-cpp::reflect-cpp
+    immer::immer
 )
 
 target_compile_definitions(

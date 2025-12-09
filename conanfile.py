@@ -21,7 +21,8 @@ class vulkandemoRecipe(ConanFile):
         "frozen/1.2.0",
         "etl/20.39.4",
         "di/1.3.0",
-        "reflect-cpp/0.11.1"
+        "reflect-cpp/0.11.1",
+        "immer/0.8.1"
     ]
 
     settings = "build_type", "os"

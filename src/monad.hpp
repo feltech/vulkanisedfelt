@@ -510,7 +510,7 @@ auto lift(detail::SpecialisationOf<io::IO> auto && iom)
 	return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
 }
 
-auto lift_io_state_cont(auto && io_cont_from_state)
+auto with_state(auto && io_cont_from_state)
 {
 	return StateIO{[io_cont_from_state = FW(io_cont_from_state)](auto && state)
 				   { return io_cont_from_state(state).pair_with(FW(state)); }};

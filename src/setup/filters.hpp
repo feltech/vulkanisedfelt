@@ -109,6 +109,20 @@ layer_description_filter_by_and_transform_to_instance_layer_name(
 	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
 	std::vector<VkLayerProperties> const & available_layer_descs);
 
+struct transform_to_instance_layer_name_filtered_by_instance_layer_name_t
+{
+	LoggerPtr logger;
+	std::set<types::DesiredInstanceLayerNameView> desired_layer_names;
+
+	constexpr std::vector<types::AvailableInstanceLayerNameCstr> operator()(
+		std::vector<VkLayerProperties> const & available_layer_descs) const
+	{
+		return layer_description_filter_by_and_transform_to_instance_layer_name(
+			logger, desired_layer_names, available_layer_descs);
+	}
+
+};
+
 constexpr auto make_layer_description_filter_by_and_transform_to_instance_layer_name(
 	AUTO(LoggerPtr) logger, AUTO(std::set<types::DesiredInstanceLayerNameView>) desired_layer_names)
 {
@@ -128,6 +142,20 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 	LoggerPtr const & logger,
 	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
 	std::vector<VkExtensionProperties> const & available_extensions);
+
+struct transform_to_instance_extension_name_filtered_by_instance_extension_name_t
+{
+	LoggerPtr logger;
+	std::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
+
+	constexpr std::vector<types::AvailableInstanceExtensionNameCstr> operator()(
+		std::vector<VkExtensionProperties> const & available_extensions) const
+	{
+		return extension_properties_filter_by_and_transform_to_instance_extension_name(
+			logger, desired_extension_names, available_extensions);
+	}
+
+};
 
 constexpr auto make_extension_properties_filter_by_and_transform_to_instance_extension_name(
 	AUTO(LoggerPtr) logger,
