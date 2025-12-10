@@ -19,6 +19,8 @@
 #     Conflicts with google-readability-namespace-comments, apparently.
 # - fuchsia-overloaded-operator
 #     Operator overload is useful, especially `operator()` for named lambdas.
+# - portability-avoid-pragma-once
+#     De-facto standard #pragma once is preferred.
 Checks: >
     *,
     -llvmlibc-*,
@@ -29,8 +31,8 @@ Checks: >
     -*-use-trailing-return-type,
     -llvm-header-guard,
     -*-default-arguments-declarations,
-    -clion-misra-cpp2023-19-6-1
-    -llvm-namespace-comment
+    -clion-misra-cpp2023-19-6-1,
+    -llvm-namespace-comment,
     -fuchsia-overloaded-operator
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
@@ -50,7 +52,7 @@ CheckOptions:
     -   key: readability-identifier-naming.ClassCase
         value: CamelCase
     -   key: readability-identifier-naming.ClassIgnoredRegexp
-        value: '_t$'
+        value: '.*_t$'
     -   key: readability-identifier-naming.ClassMemberCase
         value: lower_case
     -   key: readability-identifier-naming.ClassConstantCase

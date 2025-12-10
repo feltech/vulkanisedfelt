@@ -120,7 +120,6 @@ struct transform_to_instance_layer_name_filtered_by_instance_layer_name_t
 		return layer_description_filter_by_and_transform_to_instance_layer_name(
 			logger, desired_layer_names, available_layer_descs);
 	}
-
 };
 
 constexpr auto make_layer_description_filter_by_and_transform_to_instance_layer_name(
@@ -154,20 +153,7 @@ struct transform_to_instance_extension_name_filtered_by_instance_extension_name_
 		return extension_properties_filter_by_and_transform_to_instance_extension_name(
 			logger, desired_extension_names, available_extensions);
 	}
-
 };
-
-constexpr auto make_extension_properties_filter_by_and_transform_to_instance_extension_name(
-	AUTO(LoggerPtr) logger,
-	AUTO(std::set<types::DesiredInstanceExtensionNameView>) desired_extension_names)
-{
-	return [logger = FW(logger), desired_extension_names = FW(desired_extension_names)](
-			   AUTO(std::vector<VkExtensionProperties>) available_extensions)
-	{
-		return extension_properties_filter_by_and_transform_to_instance_extension_name(
-			logger, desired_extension_names, available_extensions);
-	};
-}
 
 /**
  * Filter and prioritize available VkSurfaceFormatKHRs by desired VkFormat order.

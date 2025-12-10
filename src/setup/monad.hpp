@@ -37,7 +37,10 @@ using vulkandemo::monad::io::IO;
 struct create_minimal_pipeline_layout_t
 {
 	types::VulkanDevicePtr device;
-	auto operator()() const { return setup::create_minimal_pipeline_layout(device); }
+	auto operator()() const
+	{
+		return setup::create_minimal_pipeline_layout(device);
+	}
 };
 
 constexpr auto and_then_create_minimal_pipeline_layout(types::VulkanDevicePtr device)
@@ -54,7 +57,10 @@ constexpr auto create_minimal_pipeline_layout(types::VulkanDevicePtr device)
 struct create_semaphore_t
 {
 	types::VulkanDevicePtr device;
-	auto operator()() const { return setup::create_semaphore(device); }
+	auto operator()() const
+	{
+		return setup::create_semaphore(device);
+	}
 };
 
 constexpr auto and_then_create_semaphore(types::VulkanDevicePtr device)
@@ -107,7 +113,10 @@ struct create_command_pool_t
 {
 	types::VulkanDevicePtr device;
 	types::VulkanQueueFamilyIdx queue_family_idx;
-	auto operator()() const { return setup::create_command_pool(device, queue_family_idx); }
+	auto operator()() const
+	{
+		return setup::create_command_pool(device, queue_family_idx);
+	}
 };
 
 constexpr auto and_then_create_command_pool(
@@ -158,9 +167,10 @@ constexpr auto and_then_create_per_image_frame_buffers(
 struct make_create_per_image_frame_buffers_cont_t
 {
 	VkExtent2D size;
-	auto operator()(types::VulkanDevicePtr device,
-				   types::VulkanRenderPassPtr render_pass,
-				   std::vector<types::VulkanImageViewPtr> image_views) const
+	auto operator()(
+		types::VulkanDevicePtr device,
+		types::VulkanRenderPassPtr render_pass,
+		std::vector<types::VulkanImageViewPtr> image_views) const
 	{
 		return and_then_create_per_image_frame_buffers(
 			std::move(device), std::move(render_pass), std::move(image_views), size);
@@ -243,10 +253,11 @@ struct make_create_exclusive_double_buffer_swapchain_and_image_views_cont_t
 {
 	LoggerPtr logger;
 	VkSurfaceFormatKHR surface_format{};
-	auto operator()(VkPhysicalDevice physical_device,
-				   types::VulkanDevicePtr device,
-				   types::VulkanSurfacePtr surface,
-				   types::VulkanSwapchainPtr previous_swapchain = nullptr) const
+	auto operator()(
+		VkPhysicalDevice physical_device,
+		types::VulkanDevicePtr device,
+		types::VulkanSurfacePtr surface,
+		types::VulkanSwapchainPtr previous_swapchain = nullptr) const
 	{
 		return and_then_create_exclusive_double_buffer_swapchain_and_image_views(
 			LoggerPtr{logger},
@@ -263,7 +274,9 @@ constexpr auto create_exclusive_double_buffer_swapchain_and_image_views(
 {
 	// kleisli (curried)
 	return make_create_exclusive_double_buffer_swapchain_and_image_views_cont_t{
-		std::move(logger), VkSurfaceFormatKHR{.format = surface_format, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
+		std::move(logger),
+		VkSurfaceFormatKHR{
+			.format = surface_format, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
 }
 
 // IO monad lifter for creating device and queues (bind-like)
@@ -404,9 +417,7 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 	auto operator()() const
 	{
 		return setup::create_colour_aspect_single_mip_single_layer_image_views(
-			device,
-			surface_format,
-			std::span<VkImage const>{images});
+			device, surface_format, std::span<VkImage const>{images});
 	}
 };
 
@@ -438,10 +449,7 @@ struct filter_available_surface_formats_t
 	auto operator()() const
 	{
 		return setup::filter_available_surface_formats(
-			logger,
-			physical_device,
-			surface,
-			std::span<VkFormat const>{desired_formats});
+			logger, physical_device, surface, std::span<VkFormat const>{desired_formats});
 	}
 };
 
@@ -563,25 +571,25 @@ constexpr auto query_available_device_extensions(VkPhysicalDevice physical_devic
 	types::VulkanSurfacePtr desired_surface)
 {
 	return IO{[physical_device,
-		   desired_surface = std::move(desired_surface),
-		   queue_family_idxs = std::move(queue_family_idxs)]
-		  {
-			  return queue_family_idxs |
-				  std::views::filter(
-						 [&](auto const queue_family_idx)
-						 {
-							 VkBool32 surface_supported = VK_FALSE;
-							 VK_CHECK(
-								 vkGetPhysicalDeviceSurfaceSupportKHR(
-									 physical_device,
-									 queue_family_idx,
-									 desired_surface.get(),
-									 &surface_supported),
-								 "Failed to check surface support");
-							 return surface_supported == VK_TRUE;
-						 }) |
-				  ranges::to<std::vector>;
-		  }};
+			   desired_surface = std::move(desired_surface),
+			   queue_family_idxs = std::move(queue_family_idxs)]
+			  {
+				  return queue_family_idxs |
+					  std::views::filter(
+							 [&](auto const queue_family_idx)
+							 {
+								 VkBool32 surface_supported = VK_FALSE;
+								 VK_CHECK(
+									 vkGetPhysicalDeviceSurfaceSupportKHR(
+										 physical_device,
+										 queue_family_idx,
+										 desired_surface.get(),
+										 &surface_supported),
+									 "Failed to check surface support");
+								 return surface_supported == VK_TRUE;
+							 }) |
+					  ranges::to<std::vector>;
+			  }};
 }
 
 // IO monad lifter for checking if a queue family supports a surface (bind-like)
@@ -632,7 +640,10 @@ constexpr auto make_query_is_queue_family_supported_by_physical_device_and_surfa
 struct query_physical_device_properties_t
 {
 	VkPhysicalDevice physical_device{};
-	auto operator()() const { return setup::query_physical_device_properties(physical_device); }
+	auto operator()() const
+	{
+		return setup::query_physical_device_properties(physical_device);
+	}
 };
 
 constexpr auto and_then_query_physical_device_properties(VkPhysicalDevice physical_device)
@@ -660,8 +671,7 @@ struct query_available_queue_family_properties_t
 	}
 };
 
-constexpr auto and_then_query_available_queue_family_properties(
-	VkPhysicalDevice physical_device)
+constexpr auto and_then_query_available_queue_family_properties(VkPhysicalDevice physical_device)
 {
 	return IO{query_available_queue_family_properties_t{physical_device}};
 }
@@ -689,7 +699,10 @@ struct create_swapchain_t
 {
 	types::VulkanDevicePtr device;
 	VkSwapchainCreateInfoKHR create_info{};
-	auto operator()() const { return setup::create_swapchain(device, create_info); }
+	auto operator()() const
+	{
+		return setup::create_swapchain(device, create_info);
+	}
 };
 
 constexpr auto and_then_create_swapchain(
@@ -767,7 +780,10 @@ struct query_surface_capabilities_t
 {
 	VkPhysicalDevice physical_device{};
 	types::VulkanSurfacePtr surface;
-	auto operator()() const { return setup::query_surface_capabilities(physical_device, surface); }
+	auto operator()() const
+	{
+		return setup::query_surface_capabilities(physical_device, surface);
+	}
 };
 
 constexpr auto and_then_query_surface_capabilities(
@@ -787,7 +803,10 @@ struct query_present_modes_t
 {
 	VkPhysicalDevice physical_device{};
 	types::VulkanSurfacePtr surface;
-	auto operator()() const { return setup::query_present_modes(physical_device, surface); }
+	auto operator()() const
+	{
+		return setup::query_present_modes(physical_device, surface);
+	}
 };
 
 constexpr auto and_then_query_present_modes(
@@ -850,8 +869,10 @@ constexpr auto and_then_log_surface_format_selection(
 {
 	return IO{log_surface_format_selection_t{
 		std::move(logger),
-		std::vector<VkSurfaceFormatKHR>{filtered_surface_formats.begin(), filtered_surface_formats.end()},
-		std::vector<VkSurfaceFormatKHR>{available_surface_formats.begin(), available_surface_formats.end()},
+		std::vector<VkSurfaceFormatKHR>{
+			filtered_surface_formats.begin(), filtered_surface_formats.end()},
+		std::vector<VkSurfaceFormatKHR>{
+			available_surface_formats.begin(), available_surface_formats.end()},
 		std::vector<VkFormat>{desired_formats.begin(), desired_formats.end()}}};
 }
 
@@ -882,8 +903,7 @@ constexpr auto and_then_enumerate_physical_devices(
 	return IO{enumerate_physical_devices_t{std::move(logger), std::move(instance)}};
 }
 
-constexpr auto enumerate_physical_devices(
-	LoggerPtr logger, types::VulkanInstancePtr instance)
+constexpr auto enumerate_physical_devices(LoggerPtr logger, types::VulkanInstancePtr instance)
 {
 	return and_then_enumerate_physical_devices(std::move(logger), std::move(instance));
 }
@@ -893,7 +913,10 @@ struct create_surface_t
 {
 	types::SDLWindowPtr window;
 	types::VulkanInstancePtr instance;
-	auto operator()() const { return setup::create_surface(window, instance); }
+	auto operator()() const
+	{
+		return setup::create_surface(window, instance);
+	}
 };
 
 constexpr auto and_then_create_surface(
@@ -902,8 +925,7 @@ constexpr auto and_then_create_surface(
 	return IO{create_surface_t{std::move(window), std::move(instance)}};
 }
 
-constexpr auto create_surface(
-	types::SDLWindowPtr window, types::VulkanInstancePtr instance)
+constexpr auto create_surface(types::SDLWindowPtr window, types::VulkanInstancePtr instance)
 {
 	return and_then_create_surface(std::move(window), std::move(instance));
 }
@@ -913,86 +935,98 @@ struct create_debug_messenger_t
 {
 	LoggerPtr logger;
 	types::VulkanInstancePtr instance;
-	auto operator()() const { return setup::create_debug_messenger(logger, instance); }
+	auto operator()() const
+	{
+		return setup::create_debug_messenger(logger, instance);
+	}
 };
 
-constexpr auto and_then_create_debug_messenger(
-	LoggerPtr logger, types::VulkanInstancePtr instance)
+constexpr auto and_then_create_debug_messenger(LoggerPtr logger, types::VulkanInstancePtr instance)
 {
 	return IO{create_debug_messenger_t{std::move(logger), std::move(instance)}};
 }
 
-constexpr auto create_debug_messenger(
-	LoggerPtr logger, types::VulkanInstancePtr instance)
+constexpr auto make_create_debug_messenger(LoggerPtr logger, types::VulkanInstancePtr instance)
 {
 	return and_then_create_debug_messenger(std::move(logger), std::move(instance));
 }
 
-// IO monad lifter for creating a Vulkan instance (bind-like)
 struct create_instance_t
 {
-	LoggerPtr logger;
-	char const * name{};
-	std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
-	std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
-	auto operator()() const
+	// IO monad lifter for creating a Vulkan instance
+	struct io_action_t
 	{
-		auto const layers_to_enable_cstr = layers_to_enable | hof::views::value_of() |
-			ranges::to<std::vector<char const *>>;
-		auto const extensions_to_enable_cstr = extensions_to_enable | hof::views::value_of() |
-			ranges::to<std::vector<char const *>>;
+		LoggerPtr logger;
+		std::string name;
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
 
-		logger->debug(
-			"Enabling instance extensions: {}", fmt::join(layers_to_enable_cstr, ", "));
-		logger->debug("Enabling layers: {}", fmt::join(extensions_to_enable_cstr, ", "));
+		auto operator()() const
+		{
+			auto const layers_to_enable_cstr =
+				layers_to_enable | hof::views::value_of() | ranges::to<std::vector<char const *>>;
+			auto const extensions_to_enable_cstr = extensions_to_enable | hof::views::value_of() |
+				ranges::to<std::vector<char const *>>;
 
-		// Application metadata.
-		VkApplicationInfo const app_info = {
-			.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.pApplicationName = name,
-			.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-			.pEngineName = name,
-			.engineVersion = VK_MAKE_VERSION(1, 0, 0),
-			.apiVersion = VK_API_VERSION_1_3,
-		};
+			logger->debug(
+				"Enabling instance extensions: {}", fmt::join(layers_to_enable_cstr, ", "));
+			logger->debug("Enabling layers: {}", fmt::join(extensions_to_enable_cstr, ", "));
 
-		VkInstanceCreateInfo const create_info = {
-			.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-			.pApplicationInfo = &app_info,
-			.enabledLayerCount = static_cast<uint32_t>(layers_to_enable_cstr.size()),
-			.ppEnabledLayerNames = layers_to_enable_cstr.data(),
-			.enabledExtensionCount = static_cast<uint32_t>(extensions_to_enable_cstr.size()),
-			.ppEnabledExtensionNames = extensions_to_enable_cstr.data(),
-		};
+			// Application metadata.
+			VkApplicationInfo const app_info = {
+				.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+				.pApplicationName = name.c_str(),
+				.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+				.pEngineName = name.c_str(),
+				.engineVersion = VK_MAKE_VERSION(1, 0, 0),
+				.apiVersion = VK_API_VERSION_1_3,
+			};
 
-		VkInstance out = nullptr;
-		VK_CHECK(vkCreateInstance(&create_info, nullptr, &out), "Failed to create Vulkan instance");
-		return types::make_instance_ptr(out);
+			VkInstanceCreateInfo const create_info = {
+				.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+				.pApplicationInfo = &app_info,
+				.enabledLayerCount = static_cast<uint32_t>(layers_to_enable_cstr.size()),
+				.ppEnabledLayerNames = layers_to_enable_cstr.data(),
+				.enabledExtensionCount = static_cast<uint32_t>(extensions_to_enable_cstr.size()),
+				.ppEnabledExtensionNames = extensions_to_enable_cstr.data(),
+			};
+
+			VkInstance out = nullptr;
+			VK_CHECK(
+				vkCreateInstance(&create_info, nullptr, &out), "Failed to create Vulkan instance");
+			return types::make_instance_ptr(out);
+		}
+	};
+
+	constexpr auto operator()(
+		LoggerPtr logger,
+		std::string name,
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+	{
+		return IO{io_action_t{
+			.logger = std::move(logger),
+			.name = std::move(name),
+			.layers_to_enable = std::move(layers_to_enable),
+			.extensions_to_enable = std::move(extensions_to_enable)}};
 	}
+
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+		constexpr auto operator()(
+			std::string name,
+			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+		{
+			return IO{io_action_t{
+				.logger = logger,
+				.name = std::move(name),
+				.layers_to_enable = std::move(layers_to_enable),
+				.extensions_to_enable = std::move(extensions_to_enable)}};
+		}
+	};
 };
-
-constexpr auto and_then_create_instance(
-	LoggerPtr logger,
-	char const * name,
-	std::span<types::AvailableInstanceLayerNameCstr const> layers_to_enable,
-	std::span<types::AvailableInstanceExtensionNameCstr const> extensions_to_enable)
-{
-	return IO{create_instance_t{
-		std::move(logger),
-		name,
-		std::vector<types::AvailableInstanceLayerNameCstr>{layers_to_enable.begin(), layers_to_enable.end()},
-		std::vector<types::AvailableInstanceExtensionNameCstr>{extensions_to_enable.begin(), extensions_to_enable.end()}}};
-}
-
-constexpr auto create_instance(
-	LoggerPtr logger,
-	char const * name,
-	std::span<types::AvailableInstanceLayerNameCstr const> layers_to_enable,
-	std::span<types::AvailableInstanceExtensionNameCstr const> extensions_to_enable)
-{
-	return and_then_create_instance(
-		std::move(logger), name, layers_to_enable, extensions_to_enable);
-}
 
 struct query_sdl_instance_extension_names_t
 {
@@ -1009,7 +1043,7 @@ struct query_sdl_instance_extension_names_t
 	}
 };
 
-constexpr auto and_then_query_sdl_instance_extension_names(types::SDLWindowPtr sdl_window)
+constexpr auto make_query_sdl_instance_extension_names(types::SDLWindowPtr sdl_window)
 {
 	return IO{query_sdl_instance_extension_names_t{std::move(sdl_window)}};
 }
@@ -1032,7 +1066,7 @@ struct query_available_instance_layers_t
 	}
 };
 
-constexpr auto query_available_instance_layers()
+constexpr auto make_query_available_instance_layers()
 {
 	return IO{query_available_instance_layers_t{}};
 }
@@ -1044,8 +1078,7 @@ struct query_available_instance_extensions_t
 		std::vector<VkExtensionProperties> out;
 		uint32_t available_extensions_count = 0;
 		VK_CHECK(
-			vkEnumerateInstanceExtensionProperties(
-				nullptr, &available_extensions_count, nullptr),
+			vkEnumerateInstanceExtensionProperties(nullptr, &available_extensions_count, nullptr),
 			"Failed to enumerate instance extensions");
 		out.resize(available_extensions_count);
 		VK_CHECK(
@@ -1057,7 +1090,7 @@ struct query_available_instance_extensions_t
 	}
 };
 
-constexpr auto query_available_instance_extensions()
+constexpr auto make_query_available_instance_extensions()
 {
 	return IO{query_available_instance_extensions_t{}};
 }
@@ -1085,7 +1118,10 @@ constexpr auto window_title(types::SDLWindowPtr window)
 struct window_drawable_size_t
 {
 	types::SDLWindowPtr window;
-	auto operator()() const { return setup::window_drawable_size(window); }
+	auto operator()() const
+	{
+		return setup::window_drawable_size(window);
+	}
 };
 
 constexpr auto and_then_window_drawable_size(types::SDLWindowPtr window)
@@ -1095,7 +1131,10 @@ constexpr auto and_then_window_drawable_size(types::SDLWindowPtr window)
 
 struct make_window_drawable_size_cont_t
 {
-	auto operator()(types::SDLWindowPtr window) const { return and_then_window_drawable_size(std::move(window)); }
+	auto operator()(types::SDLWindowPtr window) const
+	{
+		return and_then_window_drawable_size(std::move(window));
+	}
 };
 
 constexpr auto window_drawable_size()
@@ -1106,20 +1145,28 @@ constexpr auto window_drawable_size()
 
 struct create_window_t
 {
-	std::string title;
-	int width;
-	int height;
-
-	types::SDLWindowPtr operator()() const
+	struct io_action_t
 	{
-		return setup::create_window(title.c_str(), width, height);
+		std::string title;
+		int width;
+		int height;
+
+		types::SDLWindowPtr operator()() const
+		{
+			return setup::create_window(title.c_str(), width, height);
+		}
+	};
+
+	static constexpr auto make_io(std::string title, int const width, int const height)
+	{
+		return IO{io_action_t{.title = std::move(title), .width = width, .height = height}};
+	}
+
+	constexpr auto operator() (std::string title, int const width, int const height) const
+	{
+		return make_io(std::move(title), width, height);
 	}
 };
-
-constexpr auto make_create_window(std::string title, int width, int height)
-{
-	return IO{create_window_t{.title = std::move(title), .width = width, .height = height}};
-}
 
 }  // namespace io
 
@@ -1211,7 +1258,7 @@ constexpr auto create_instance(
 					layers_to_enable = FW(layers_to_enable),
 					extensions_to_enable = FW(extensions_to_enable)](auto && state)
 				   {
-					   return io::create_instance(
+					   return io::create_instance_t{}(
 								  state.logger, app_name, layers_to_enable, extensions_to_enable)
 						   .fmap(
 							   [state = FW(state)](auto && instance)
@@ -1225,39 +1272,112 @@ constexpr auto create_instance(
 				   }};
 }
 
-constexpr auto create_window(char const * title, int width, int height)
+struct add_window_to_state_t
 {
-	return StateIO{[title, width, height](auto && state)
-				   {
-					   return io::make_create_window(title, width, height)
-						   .fmap(
-							   [state = FW(state)](auto && window)
-							   {
-								   struct S : std::decay_t<decltype(state)>
-								   {
-									   types::SDLWindowPtr window;
-								   };
-								   return std::pair{window, S{state, FW(window)}};
-							   });
-				   }};
-}
+	template <class State>
+	struct io_action_t
+	{
+		types::SDLWindowPtr window;
+		State state;
 
-constexpr auto create_debug_messenger(auto && instance)
+		constexpr auto operator()() const
+		{
+			struct S : std::decay_t<decltype(state)>
+			{
+				types::SDLWindowPtr window;
+			};
+			return std::pair{this->window, S{state, this->window}};
+		}
+	};
+
+	struct stateio_action_t
+	{
+		types::SDLWindowPtr window;
+
+		constexpr auto operator()(auto && state) const
+		{
+			return io::IO{io_action_t{window, FW(state)}};
+		}
+	};
+
+	static constexpr auto make_stateio(types::SDLWindowPtr window)
+	{
+		return StateIO{stateio_action_t{std::move(window)}};
+	}
+
+	constexpr auto operator()(types::SDLWindowPtr window) const
+	{
+		return make_stateio(std::move(window));
+	}
+};
+
+
+struct create_window_t
 {
-	return StateIO{[instance = FW(instance)](auto && state)
-				   {
-					   return io::create_debug_messenger(state.logger, instance)
-						   .fmap(
-							   [state = FW(state)](auto && messenger)
-							   {
-								   struct S : std::decay_t<decltype(state)>
-								   {
-									   types::VulkanDebugMessengerPtr messenger;
-								   };
-								   return std::pair{messenger, S{state, FW(messenger)}};
-							   });
-				   }};
-}
+	static constexpr auto make_stateio(char const * title, int width, int height)
+	{
+		using vulkandemo::monad::stateio::lift;
+
+		return lift(io::create_window_t::make_io(title, width, height))
+			.bind(add_window_to_state_t{});
+	}
+};
+
+struct and_then_add_debug_messenger_to_state_t
+{
+	template <class State>
+	struct io_action_t
+	{
+		types::VulkanDebugMessengerPtr messenger;
+		State state;
+
+		auto operator()() const
+		{
+			struct S : std::decay_t<decltype(state)>
+			{
+				types::VulkanDebugMessengerPtr messenger;
+			};
+			return std::pair{this->messenger, S{state, this->messenger}};
+		}
+	};
+
+	struct stateio_action_t
+	{
+		types::VulkanDebugMessengerPtr messenger;
+
+		auto operator()(auto && state) const
+		{
+			return io::IO{io_action_t{messenger, FW(state)}};
+		}
+	};
+
+	auto operator()(types::VulkanDebugMessengerPtr messenger) const
+	{
+		return StateIO{stateio_action_t{std::move(messenger)}};
+	}
+};
+
+struct and_then_create_debug_messenger_t
+{
+	struct io_cont_t
+	{
+		types::VulkanInstancePtr instance;
+		auto operator()(auto && state) const
+		{
+			return io::make_create_debug_messenger(state.logger, instance);
+		}
+	};
+
+	auto operator()(types::VulkanInstancePtr instance) const
+	{
+		using vulkandemo::monad::stateio::lift;
+		using vulkandemo::monad::stateio::with_state;
+
+		return with_state(io_cont_t{std::move(instance)})
+			.bind(and_then_add_debug_messenger_to_state_t{});
+	}
+};
+
 }  // namespace stateio
 
 }  // namespace vulkandemo::setup::monad

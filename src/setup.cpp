@@ -380,34 +380,37 @@ namespace test::create_a_window
 {
 constexpr int kExpectedWidth = 800;
 constexpr int kExpectedHeight = 600;
-static constexpr auto kExpectedName = "Hello Vulkan";
-
-auto check_window(types::SDLWindowPtr window)
-{
-	REQUIRE(window);
-	int width = 0;
-	int height = 0;
-	SDL_GetWindowSize(window.get(), &width, &height);
-	CHECK(width == kExpectedWidth);
-	CHECK(height == kExpectedHeight);
-	CHECK(SDL_GetWindowTitle(window.get()) == std::string_view{kExpectedName});
-	return true;
-}
+constexpr auto kExpectedName = "Hello Vulkan";
 
 struct check_window_t
 {
-	types::SDLWindowPtr window;
-
-	auto operator()() const
+	struct io_action_t
 	{
-		return check_window(window);
+		types::SDLWindowPtr window;
+
+		bool operator()() const
+		{
+			REQUIRE(window);
+			int width = 0;
+			int height = 0;
+			SDL_GetWindowSize(window.get(), &width, &height);
+			CHECK(width == kExpectedWidth);
+			CHECK(height == kExpectedHeight);
+			CHECK(SDL_GetWindowTitle(window.get()) == std::string_view{kExpectedName});
+			return true;
+		}
+	};
+
+	static constexpr auto make_io(types::SDLWindowPtr window)
+	{
+		return IO{io_action_t{std::move(window)}};
+	}
+
+	auto operator()(types::SDLWindowPtr window) const
+	{
+		return make_io(std::move(window));
 	}
 };
-
-auto and_then_check_window(types::SDLWindowPtr window)
-{
-	return IO{check_window_t{std::move(window)}};
-}
 
 }  // namespace test::create_a_window
 
@@ -415,14 +418,11 @@ auto and_then_check_window(types::SDLWindowPtr window)
 
 TEST_CASE("Create a window")
 {
-	using test::create_a_window::and_then_check_window;
-	using test::create_a_window::kExpectedHeight;
-	using test::create_a_window::kExpectedName;
-	using test::create_a_window::kExpectedWidth;
+	using namespace test::create_a_window;
+	using monad::io::create_window_t;
 	// Create a window.
-	auto const program =
-		monad::io::make_create_window(kExpectedName, kExpectedWidth, kExpectedHeight)
-			.bind(and_then_check_window);
+	auto const program = create_window_t::make_io(kExpectedName, kExpectedWidth, kExpectedHeight)
+							 .bind(check_window_t{});
 
 	CHECK(program());
 }
@@ -431,51 +431,45 @@ namespace
 {
 namespace test
 {
-auto make_query_desired_instance_extensions(LoggerPtr logger)
+
+struct query_desired_instance_extensions_t
 {
-	return monad::io::query_available_instance_extensions().fmap(
-		transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
-			logger,
-			std::set{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
-}
+	static constexpr auto make_io(LoggerPtr logger)
+	{
+		return monad::io::make_query_available_instance_extensions().fmap(
+			transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
+				std::move(logger),
+				std::set{
+					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
+	}
+
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+		constexpr auto operator()() const
+		{
+			return make_io(logger);
+		}
+	};
+};
 
 namespace create_a_vulkan_instance
 {
-struct and_then_create_instance_t
-{
-	LoggerPtr logger;
-	auto operator()(
-		std::vector<types::AvailableInstanceLayerNameCstr> desired_layers,
-		std::vector<types::AvailableInstanceExtensionNameCstr> desired_extensions,
-		char const * app_name) const
-	{
-		return monad::io::create_instance(
-			LoggerPtr{logger},
-			app_name,
-			std::span<types::AvailableInstanceLayerNameCstr const>{desired_layers},
-			std::span<types::AvailableInstanceExtensionNameCstr const>{desired_extensions});
-	}
-};
-
-auto make_create_instance(LoggerPtr logger)
-{
-	return and_then_create_instance_t{std::move(logger)};
-}
 
 auto make_query_sdl_and_desired_instance_extensions(LoggerPtr logger, types::SDLWindowPtr window)
 {
 	return fmap(
 		// Get SDL window vulkan extension names.
-		monad::io::and_then_query_sdl_instance_extension_names(std::move(window)),
+		monad::io::make_query_sdl_instance_extension_names(std::move(window)),
 		// Fetch and filter additional extension names.
-		test::make_query_desired_instance_extensions(std::move(logger)),
+		query_desired_instance_extensions_t::make_io(std::move(logger)),
 		// Concatenate SDL and optional extensions.
 		hof::transform_concat_t{});
 }
 
 auto make_query_desired_instance_layer_names(LoggerPtr logger)
 {
-	return monad::io::query_available_instance_layers().fmap(
+	return monad::io::make_query_available_instance_layers().fmap(
 		transform_to_instance_layer_name_filtered_by_instance_layer_name_t{
 			std::move(logger),
 			std::set{
@@ -483,57 +477,55 @@ auto make_query_desired_instance_layer_names(LoggerPtr logger)
 				types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
 }
 
-struct and_then_query_layers_and_extensions_and_create_instance_t
+struct query_layers_and_extensions_and_create_instance_t
 {
-	LoggerPtr logger;
-
-	auto operator()(types::SDLWindowPtr const & window) const
+	static constexpr auto make_io(LoggerPtr logger, types::SDLWindowPtr window)
 	{
+		using monad::io::create_instance_t;
 		using monad::io::make_query_window_title;
 
 		return bind(
+			// Get title of window to use as app/engine name in vulkan.
+			make_query_window_title(window),
 			// Fetch and filter layer names.
 			make_query_desired_instance_layer_names(logger),
 			// Fetch and filter extension names.
 			make_query_sdl_and_desired_instance_extensions(logger, window),
-			// Get title of window to use as app/engine name in vulkan.
-			make_query_window_title(window),
-			and_then_create_instance_t{logger});
+			create_instance_t::with_logger_t{logger});
 	}
-};
 
-auto make_query_layers_and_extensions_and_create_instance_cont(LoggerPtr logger)
-{
-	return and_then_query_layers_and_extensions_and_create_instance_t{std::move(logger)};
-}
-
-auto check_instance(types::VulkanInstancePtr instance)
-{
-	CHECK(instance);
-	return true;
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+		constexpr auto operator()(types::SDLWindowPtr window) const
+		{
+			return make_io(logger, std::move(window));
+		}
+	};
 };
 
 struct check_instance_t
 {
-	types::VulkanInstancePtr instance;
-	auto operator()() const
+	struct io_action_t
 	{
-		return check_instance(instance);
+		types::VulkanInstancePtr instance;
+		constexpr bool operator()() const
+		{
+			CHECK(instance);
+			return true;
+		}
+	};
+
+	static constexpr auto make_io(types::VulkanInstancePtr instance)
+	{
+		return IO{io_action_t{std::move(instance)}};
+	}
+
+	constexpr auto operator()(types::VulkanInstancePtr instance) const
+	{
+		return make_io(std::move(instance));
 	}
 };
-
-struct and_then_check_instance_t
-{
-	auto operator()(types::VulkanInstancePtr instance) const
-	{
-		return IO{check_instance_t{std::move(instance)}};
-	}
-};
-
-auto make_check_instance_io_cont()
-{
-	return and_then_check_instance_t{};
-}
 
 }  // namespace create_a_vulkan_instance
 }  // namespace test
@@ -580,9 +572,9 @@ TEST_CASE("Create a Vulkan instance")
 
 	auto const program =
 		// Create application window.
-		monad::io::make_create_window("", 0, 0)
-			.bind(and_then_query_layers_and_extensions_and_create_instance_t{logger})
-			.bind(and_then_check_instance_t{});
+		monad::io::create_window_t::make_io("", 0, 0)
+			.bind(query_layers_and_extensions_and_create_instance_t::with_logger_t{logger})
+			.bind(check_instance_t{});
 
 	CHECK(program());
 }
@@ -592,66 +584,67 @@ namespace
 namespace test::create_a_vulkan_debug_utils_messenger
 {
 
-struct and_then_create_instance_with_extensions_t
+struct create_instance_with_extensions_t
 {
-	LoggerPtr logger;
-	auto operator()(
-		std::vector<types::AvailableInstanceExtensionNameCstr> available_extensions) const
+	static constexpr auto make_io(
+		LoggerPtr logger,
+		std::vector<types::AvailableInstanceExtensionNameCstr> available_extensions)
 	{
-		return monad::io::create_instance(
-			LoggerPtr{logger},
-			"test",
-			std::array<types::AvailableInstanceLayerNameCstr, 0>{},
-			std::span<types::AvailableInstanceExtensionNameCstr const>{available_extensions});
+		return monad::io::create_instance_t{}(
+			std::move(logger), "test", {}, std::move(available_extensions));
 	}
+
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+
+		auto operator()(
+			std::vector<types::AvailableInstanceExtensionNameCstr> available_extensions) const
+		{
+			return make_io(logger, std::move(available_extensions));
+		}
+	};
 };
 
-auto make_create_instance_with_extensions_cont(LoggerPtr logger)
+struct create_debug_messenger_t
 {
-	return and_then_create_instance_with_extensions_t{std::move(logger)};
-}
-
-struct and_then_create_debug_messenger_t
-{
-	LoggerPtr logger;
-	auto operator()(types::VulkanInstancePtr instance) const
+	static constexpr auto make_io(LoggerPtr logger, types::VulkanInstancePtr instance)
 	{
-		return monad::io::create_debug_messenger(LoggerPtr{logger}, std::move(instance));
+		return monad::io::make_create_debug_messenger(std::move(logger), std::move(instance));
 	}
+
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+		constexpr auto operator()(types::VulkanInstancePtr instance) const
+		{
+			return make_io(logger, std::move(instance));
+		}
+	};
 };
 
-auto make_create_debug_messenger_cont(LoggerPtr logger)
+struct check_messenger_t
 {
-	return and_then_create_debug_messenger_t{std::move(logger)};
-}
-
-auto check_messenger(types::VulkanDebugMessengerPtr messenger)
-{
-	CHECK(messenger);
-	return true;
-}
-
-struct check_messenger_io_t
-{
-	types::VulkanDebugMessengerPtr messenger;
-	auto operator()() const
+	struct io_action_t
 	{
-		return check_messenger(messenger);
+		types::VulkanDebugMessengerPtr messenger;
+		bool operator()() const
+		{
+			CHECK(messenger);
+			return true;
+		}
+	};
+
+	static constexpr auto make_io(types::VulkanDebugMessengerPtr messenger)
+	{
+		return IO{io_action_t{std::move(messenger)}};
+	}
+
+	constexpr auto operator()(types::VulkanDebugMessengerPtr messenger) const
+	{
+		return make_io(std::move(messenger));
 	}
 };
-
-struct and_then_check_messenger_t
-{
-	auto operator()(types::VulkanDebugMessengerPtr messenger) const
-	{
-		return IO{check_messenger_io_t{std::move(messenger)}};
-	}
-};
-
-auto make_check_messenger_io_cont()
-{
-	return and_then_check_messenger_t{};
-}
 
 }  // namespace test::create_a_vulkan_debug_utils_messenger
 }  // namespace
@@ -662,10 +655,10 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 
 	using namespace test::create_a_vulkan_debug_utils_messenger;
 
-	auto const program = test::make_query_desired_instance_extensions(logger)
-							 .bind(and_then_create_instance_with_extensions_t{logger})
-							 .bind(and_then_create_debug_messenger_t{logger})
-							 .bind(and_then_check_messenger_t{});
+	auto const program = test::query_desired_instance_extensions_t::make_io(logger)
+							 .bind(create_instance_with_extensions_t::with_logger_t{logger})
+							 .bind(create_debug_messenger_t::with_logger_t{logger})
+							 .bind(check_messenger_t{});
 
 	CHECK(program());
 }
@@ -674,57 +667,49 @@ namespace
 {
 namespace test::bind_to_default_instance
 {
-auto query_validation_layer_names_io(LoggerPtr logger)
+auto make_query_validation_layer_names(LoggerPtr logger)
 {
-	return monad::io::query_available_instance_layers().fmap(
+	return monad::io::make_query_available_instance_layers().fmap(
 		transform_to_instance_layer_name_filtered_by_instance_layer_name_t{
-			std::move(logger),
-			std::set{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
+			.logger = std::move(logger),
+			.desired_layer_names =
+				std::set{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
 }
 
-auto query_sdl_and_desired_instance_extensions_io(
-	AUTO(LoggerPtr) logger, AUTO(types::SDLWindowPtr) window)
+auto make_query_sdl_and_desired_instance_extensions(LoggerPtr logger, types::SDLWindowPtr window)
 {
 	return fmap(
 		// Get SDL window required vulkan extension names.
-		monad::io::and_then_query_sdl_instance_extension_names(window),
+		monad::io::make_query_sdl_instance_extension_names(std::move(window)),
 		// Fetch and filter additional extension names.
-		monad::io::query_available_instance_extensions().fmap(
-			make_extension_properties_filter_by_and_transform_to_instance_extension_name(
-				logger,
+		monad::io::make_query_available_instance_extensions().fmap(
+			transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
+				std::move(logger),
 				std::set{
-					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}})),
+					types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}),
 		// Concatenate SDL and optional extensions.
 		hof::transform_concat_t{});
 }
 
-struct and_then_query_instance_args_for_window_t
+struct make_query_instance_args_for_window_from_state_t
 {
 	types::SDLWindowPtr window;
 	auto operator()(auto const & state) const
 	{
 		return zip(
 			// Get title of window to use as app/engine name in vulkan.
-			monad::io::window_title(window),
+			monad::io::make_query_window_title(window),
 			// Fetch and filter layer names.
-			query_validation_layer_names_io(state.logger),
+			make_query_validation_layer_names(state.logger),
 			// Fetch and filter extension names (SDL + desired).
-			query_sdl_and_desired_instance_extensions_io(state.logger, window));
+			make_query_sdl_and_desired_instance_extensions(state.logger, window));
 	}
 };
 
-struct and_then_query_instance_args_t
+auto and_then_query_instance_args(types::SDLWindowPtr window)
 {
-	auto operator()(types::SDLWindowPtr window) const
-	{
-		return vulkandemo::monad::stateio::with_state(
-			and_then_query_instance_args_for_window_t{std::move(window)});
-	};
-};
-
-auto make_collect_instance_args_from_window_stateio_cont()
-{
-	return and_then_query_instance_args_t{};
+	return vulkandemo::monad::stateio::with_state(
+		make_query_instance_args_for_window_from_state_t{std::move(window)});
 }
 
 auto make_create_instance_from_args_tuple_cont()
@@ -735,12 +720,6 @@ auto make_create_instance_from_args_tuple_cont()
 			[](auto &&... args) { return monad::stateio::create_instance(FW(args)...); },
 			FW(instance_args));
 	};
-}
-
-auto make_create_debug_messenger_stateio_cont()
-{
-	return [](AUTO(types::VulkanInstancePtr) instance)
-	{ return monad::stateio::create_debug_messenger(FW(instance)); };
 }
 
 template <class F>
@@ -755,34 +734,40 @@ auto make_forward_state_cont(F && io_from_state)
 auto bind_to_default_instance(auto && io_from_state)
 {
 	using namespace test::bind_to_default_instance;
+	using vulkandemo::monad::stateio::with_state;
+
 	// Create application window.
-	return monad::stateio::create_window("", 0, 0)
+	return monad::stateio::create_window_t::make_stateio("", 0, 0)
 		// Gather arguments for constructing a vulkan instance.
-		.bind(and_then_query_instance_args_t{})
+		.bind(and_then_query_instance_args)
 		// Create/store Vulkan instance
 		.bind(make_create_instance_from_args_tuple_cont())
 		// Create/store debug messenger callback closure.
-		.bind(make_create_debug_messenger_stateio_cont())
+		.bind(monad::stateio::and_then_create_debug_messenger_t{})
 		// Continue on to provided function
 		.bind(make_forward_state_cont(FW(io_from_state)));
 }
 
-auto create_default_instance_stateio()
+struct create_default_instance_t
 {
-	// Create application window.
-	return monad::stateio::create_window("", 0, 0)
-		// Gather arguments for constructing a vulkan instance.
-		.bind(test::bind_to_default_instance::make_collect_instance_args_from_window_stateio_cont())
-		// Create/store Vulkan instance
-		.bind(test::bind_to_default_instance::make_create_instance_from_args_tuple_cont())
-		// Create/store debug messenger callback closure.
-		.bind(test::bind_to_default_instance::make_create_debug_messenger_stateio_cont());
-}
+	static constexpr auto make_stateio()
+	{
+		using namespace test::bind_to_default_instance;
+		// Create application window.
+		return monad::stateio::create_window_t::make_stateio("", 0, 0)
+			// Gather arguments for constructing a vulkan instance.
+			.bind(and_then_query_instance_args)
+			// Create/store Vulkan instance
+			.bind(make_create_instance_from_args_tuple_cont())
+			// Create/store debug messenger callback closure.
+			.bind(monad::stateio::and_then_create_debug_messenger_t{});
+	}
+};
 }  // namespace
 
 TEST_CASE("Create a Vulkan surface")
 {
-	auto const program = create_default_instance_stateio().with_state(
+	auto const program = create_default_instance_t::make_stateio().with_state(
 		[](auto && state)
 		{
 			return monad::io::create_surface(state.window, state.instance)
@@ -828,12 +813,6 @@ namespace test::enumerate_devices
 {
 
 using monad::io::IO;
-
-auto choose_first_device(std::vector<VkPhysicalDevice> physical_devices)
-{
-	REQUIRE(!physical_devices.empty());
-	return physical_devices.front();
-}
 
 struct transform_choose_first_device_t
 {
@@ -906,7 +885,7 @@ auto make_choose_physical_device_io(LoggerPtr logger, types::VulkanInstancePtr i
 
 TEST_CASE("Enumerate devices")
 {
-	auto const program = create_default_instance_stateio().with_state(
+	auto const program = create_default_instance_t::make_stateio().with_state(
 		[](auto && state)
 		{
 			return monad::io::bind(
@@ -1032,12 +1011,14 @@ auto make_finalize_selection_checks()
 
 TEST_CASE("Select physical device")
 {
+	using namespace test::select_physical_device;
+
 	const struct
 	{
 		LoggerPtr logger = create_logger("Select physical device");
 	} initial_state;
 
-	auto const program = bind_to_default_instance(
+	auto const program = create_default_instance_t::make_stateio().with_state(
 		[](auto && state)
 		{
 			return monad::io::create_surface(state.window, state.instance)
@@ -1045,18 +1026,12 @@ TEST_CASE("Select physical device")
 					[state](auto && surface)
 					{
 						return monad::io::enumerate_physical_devices(state.logger, state.instance)
-							.filter(
-								test::select_physical_device::filter_has_host_visible_memory_t{
-									state.logger})
-							.filter(
-								test::select_physical_device::filter_has_required_device_extensions(
-									state.logger))
-							.traverse(
-								test::select_physical_device::traverse_score_for_surface(surface))
+							.filter(filter_has_host_visible_memory_t{state.logger})
+							.filter(filter_has_required_device_extensions(state.logger))
+							.traverse(traverse_score_for_surface(surface))
 							.compact()
 							.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx)
-							.fmap(test::select_physical_device::make_finalize_selection_checks())
-							.pair_with(state);
+							.fmap(make_finalize_selection_checks());
 					});
 		});
 
@@ -1275,6 +1250,60 @@ TEST_CASE("Create logical device with queues")
 	CHECK(result);
 }
 
+namespace
+{
+
+template <template <typename...> typename Func, typename... BoundArgs>
+struct template_bind_front
+{
+	std::tuple<BoundArgs...> bound;
+
+	template <typename... Args>
+	constexpr auto operator()(Args &&... args) const
+	{
+		return std::apply(
+			[&](auto const &... b)
+			{
+				// Deduce T from the call arguments
+				return Func<BoundArgs..., Args...>{}(b..., std::forward<Args>(args)...);
+			},
+			bound);
+	}
+};
+
+// Helper
+template <template <typename...> typename Func, typename... BoundArgs>
+constexpr auto make_template_bind_front(BoundArgs &&... bound)
+{
+	return template_bind_front<Func, std::decay_t<BoundArgs>...>{
+		{std::forward<BoundArgs>(bound)...}};
+}
+
+namespace create_swapchain
+{
+auto check_swapchain_fn(auto && image_views, auto && state)
+{
+	return [state = FW(state), image_views = FW(image_views)]
+	{
+		CHECK(state.swapchain);
+		CHECK(!image_views.empty());
+		CHECK(image_views == state.image_views);
+		WARN(image_views.size() == 2);
+		return true;
+	};
+}
+auto check_swapchain_io(auto && image_views, auto && state)
+{
+	return IO{check_swapchain_fn(FW(image_views), FW(state))};
+}
+auto check_swapchain_stateio(auto && image_views)
+{
+	return StateIO{[image_views = FW(image_views)](auto && state)
+				   { return check_swapchain_io(image_views, FW(state)).pair_with(state); }};
+}
+}  // namespace create_swapchain
+}  // namespace
+
 TEST_CASE("Create swapchain")
 {
 	LoggerPtr const logger = vulkandemo::create_logger("Create swapchain");
@@ -1370,19 +1399,8 @@ TEST_CASE("Create swapchain")
 							.bind(
 								[](auto && image_views)
 								{
-									return StateIO{
-										[image_views = FW(image_views)](auto && state)
-										{
-											return IO{[state, image_views]
-													  {
-														  CHECK(state.swapchain);
-														  CHECK(!image_views.empty());
-														  CHECK(image_views == state.image_views);
-														  WARN(image_views.size() == 2);
-														  return true;
-													  }}
-												.pair_with(FW(state));
-										}};
+									return create_swapchain::check_swapchain_stateio(
+										FW(image_views));
 								});
 					});
 		});
