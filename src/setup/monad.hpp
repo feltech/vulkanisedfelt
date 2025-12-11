@@ -909,27 +909,24 @@ constexpr auto enumerate_physical_devices(LoggerPtr logger, types::VulkanInstanc
 	return and_then_enumerate_physical_devices(std::move(logger), std::move(instance));
 }
 
-// IO monad lifter for creating a surface (bind-like)
 struct create_surface_t
 {
-	types::SDLWindowPtr window;
-	types::VulkanInstancePtr instance;
-	auto operator()() const
+	struct io_action_t
 	{
-		return setup::create_surface(window, instance);
+		types::SDLWindowPtr window;
+		types::VulkanInstancePtr instance;
+		auto operator()() const
+		{
+			return setup::create_surface(window, instance);
+		}
+	};
+
+	static constexpr auto make_io(
+		types::SDLWindowPtr window, types::VulkanInstancePtr instance)
+	{
+		return IO{io_action_t{std::move(window), std::move(instance)}};
 	}
 };
-
-constexpr auto and_then_create_surface(
-	types::SDLWindowPtr window, types::VulkanInstancePtr instance)
-{
-	return IO{create_surface_t{std::move(window), std::move(instance)}};
-}
-
-constexpr auto create_surface(types::SDLWindowPtr window, types::VulkanInstancePtr instance)
-{
-	return and_then_create_surface(std::move(window), std::move(instance));
-}
 
 // IO monad lifter for creating a debug messenger (bind-like)
 struct create_debug_messenger_t
@@ -1040,89 +1037,97 @@ struct create_instance_t
 
 struct query_sdl_instance_extension_names_t
 {
-	types::SDLWindowPtr sdl_window;
-	std::vector<types::AvailableInstanceExtensionNameCstr> operator()() const
+	struct io_action_t
 	{
-		std::vector<char const *> out;
-		uint32_t extension_count = 0;
-		SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, nullptr);
-		out.resize(extension_count);
-		SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, out.data());
-		return hof::views::cast<types::AvailableInstanceExtensionNameCstr>(out) |
-			ranges::to<std::vector>;
+		types::SDLWindowPtr sdl_window;
+		std::vector<types::AvailableInstanceExtensionNameCstr> operator()() const
+		{
+			std::vector<char const *> out;
+			uint32_t extension_count = 0;
+			SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, nullptr);
+			out.resize(extension_count);
+			SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, out.data());
+			return hof::views::cast<types::AvailableInstanceExtensionNameCstr>(out) |
+				ranges::to<std::vector>;
+		}
+	};
+
+	static constexpr auto make_io(types::SDLWindowPtr sdl_window)
+	{
+		return IO{io_action_t{std::move(sdl_window)}};
 	}
 };
-
-constexpr auto make_query_sdl_instance_extension_names(types::SDLWindowPtr sdl_window)
-{
-	return IO{query_sdl_instance_extension_names_t{std::move(sdl_window)}};
-}
 
 struct query_available_instance_layers_t
 {
-	std::vector<VkLayerProperties> operator()() const
+	struct io_action_t
 	{
-		std::vector<VkLayerProperties> out;
-		uint32_t available_layers_count = 0;
-		VK_CHECK(
-			vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
-			"Failed to enumerate instance layers");
-		out.resize(available_layers_count);
-		VK_CHECK(
-			vkEnumerateInstanceLayerProperties(&available_layers_count, out.data()),
-			"Failed to enumerate instance layers");
+		std::vector<VkLayerProperties> operator()() const
+		{
+			std::vector<VkLayerProperties> out;
+			uint32_t available_layers_count = 0;
+			VK_CHECK(
+				vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
+				"Failed to enumerate instance layers");
+			out.resize(available_layers_count);
+			VK_CHECK(
+				vkEnumerateInstanceLayerProperties(&available_layers_count, out.data()),
+				"Failed to enumerate instance layers");
 
-		return out;
+			return out;
+		}
+	};
+
+	static constexpr auto make_io()
+	{
+		return IO{io_action_t{}};
 	}
 };
-
-constexpr auto make_query_available_instance_layers()
-{
-	return IO{query_available_instance_layers_t{}};
-}
 
 struct query_available_instance_extensions_t
 {
-	std::vector<VkExtensionProperties> operator()() const
+	struct io_action_t
 	{
-		std::vector<VkExtensionProperties> out;
-		uint32_t available_extensions_count = 0;
-		VK_CHECK(
-			vkEnumerateInstanceExtensionProperties(nullptr, &available_extensions_count, nullptr),
-			"Failed to enumerate instance extensions");
-		out.resize(available_extensions_count);
-		VK_CHECK(
-			vkEnumerateInstanceExtensionProperties(
-				nullptr, &available_extensions_count, out.data()),
-			"Failed to enumerate instance extensions");
+		std::vector<VkExtensionProperties> operator()() const
+		{
+			std::vector<VkExtensionProperties> out;
+			uint32_t available_extensions_count = 0;
+			VK_CHECK(
+				vkEnumerateInstanceExtensionProperties(
+					nullptr, &available_extensions_count, nullptr),
+				"Failed to enumerate instance extensions");
+			out.resize(available_extensions_count);
+			VK_CHECK(
+				vkEnumerateInstanceExtensionProperties(
+					nullptr, &available_extensions_count, out.data()),
+				"Failed to enumerate instance extensions");
 
-		return out;
+			return out;
+		}
+	};
+
+	static constexpr auto make_io()
+	{
+		return IO{io_action_t{}};
 	}
 };
-
-constexpr auto make_query_available_instance_extensions()
-{
-	return IO{query_available_instance_extensions_t{}};
-}
 
 struct query_window_title_t
 {
-	types::SDLWindowPtr window;
-	auto operator()() const
+	struct io_action_t
 	{
-		return SDL_GetWindowTitle(window.get());
+		types::SDLWindowPtr window;
+		auto operator()() const
+		{
+			return SDL_GetWindowTitle(window.get());
+		}
+	};
+
+	static constexpr auto make_io(types::SDLWindowPtr window)
+	{
+		return IO{io_action_t{std::move(window)}};
 	}
 };
-
-constexpr auto make_query_window_title(types::SDLWindowPtr window)
-{
-	return IO{query_window_title_t{std::move(window)}};
-}
-
-constexpr auto window_title(types::SDLWindowPtr window)
-{
-	return make_query_window_title(std::move(window));
-}
 
 // IO monad lifter for window drawable size (bind-like)
 struct window_drawable_size_t
@@ -1170,11 +1175,6 @@ struct create_window_t
 	static constexpr auto make_io(std::string title, int const width, int const height)
 	{
 		return IO{io_action_t{.title = std::move(title), .width = width, .height = height}};
-	}
-
-	constexpr auto operator()(std::string title, int const width, int const height) const
-	{
-		return make_io(std::move(title), width, height);
 	}
 };
 
@@ -1245,7 +1245,7 @@ constexpr auto create_surface()
 {
 	return StateIO{[](auto && state)
 				   {
-					   return io::create_surface(state.window, state.instance)
+					   return io::create_surface_t::make_io(state.window, state.instance)
 						   .fmap(
 							   [state = FW(state)](auto && surface)
 							   {
@@ -1301,12 +1301,12 @@ struct create_instance_t
 	}
 
 	constexpr auto operator()(
-		std::tuple<
-			std::string,
-			std::vector<types::AvailableInstanceLayerNameCstr>,
-			std::vector<types::AvailableInstanceExtensionNameCstr>> args_tuple) const
+		std::string name,
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
 	{
-		return std::apply(make_stateio, std::move(args_tuple));
+		return make_stateio(
+			std::move(name), std::move(layers_to_enable), std::move(extensions_to_enable));
 	}
 };
 

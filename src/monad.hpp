@@ -55,6 +55,18 @@ concept CallableWithResultsOf = requires(T f, As... a)
 	f(a()...);
 };
 
+constexpr decltype(auto) ensure_tuple(auto && value)
+{
+	if constexpr (SpecialisationOf<std::decay_t<decltype(value)>, std::tuple>)
+	{
+		return FW(value);
+	}
+	else
+	{
+		return std::tuple{FW(value)};
+	}
+}
+
 template <class>
 struct FnTraitsImpl
 {
@@ -221,6 +233,12 @@ concept Lifter = requires(F func, R io)
 	{
 		func(io())
 	} -> detail::SpecialisationOf<IO>;
+}
+|| requires(F func, R io)
+{
+	{
+		std::apply(func, io())
+	} -> detail::SpecialisationOf<IO>;
 };
 
 template <typename F, typename I, typename R>
@@ -250,29 +268,80 @@ struct IO
 		return action();
 	}
 
+	template <class Prev, class Lifter>
+	struct bind_io_action_t
+	{
+		Prev prev_io_action;
+		Lifter lifter;
+		constexpr auto operator()() const
+		{
+			if constexpr (requires { lifter(prev_io_action()); })
+			{
+				return lifter(prev_io_action())();
+			}
+			else if constexpr (requires { std::apply(lifter, prev_io_action()); })
+			{
+				return std::apply(lifter, prev_io_action())();
+			}
+		}
+	};
+
 	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) const &
 	{
-		auto next = [prev = action, lifter = FW(lifter)] { return lifter(prev())(); };
+		auto next = bind_io_action_t{action, FW(lifter)};
 		return IO<decltype(next)>{std::move(next)};
 	}
 
 	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) &&
 	{
-		auto next = [prev = std::move(action), lifter = FW(lifter)] { return lifter(prev())(); };
+		auto next = bind_io_action_t{std::move(action), FW(lifter)};
 		return IO<decltype(next)>{std::move(next)};
 	}
 
+	template <class Prev, class Transformer>
+	struct fmap_io_transformer_t
+	{
+		Prev prev_io_action;
+		Transformer transformer;
+		constexpr auto operator()() const
+		{
+			if constexpr (requires { transformer(prev_io_action()); })
+			{
+				return transformer(prev_io_action());
+			}
+			else if constexpr (requires { std::apply(transformer, prev_io_action()); })
+			{
+				return std::apply(transformer, prev_io_action());
+			}
+		}
+	};
+
 	[[nodiscard]] auto fmap(Transformer auto && transformer) const &
 	{
-		auto next = [prev = action, transformer = FW(transformer)] { return transformer(prev()); };
+		auto next = fmap_io_transformer_t{action, FW(transformer)};
 		return IO<decltype(next)>{std::move(next)};
 	}
 
 	[[nodiscard]] auto fmap(Transformer auto && transformer) &&
 	{
-		auto next = [prev = std::move(action), transformer = FW(transformer)]
-		{ return transformer(prev()); };
+		auto next = fmap_io_transformer_t{std::move(action), FW(transformer)};
 		return IO<decltype(next)>{std::move(next)};
+	}
+
+	template <typename OtherAction>
+	[[nodiscard]] auto zip(IO<OtherAction> rhs_io)
+	{
+		return bind(
+			[rhs_io = std::move(rhs_io)](Ret lhs_value)
+			{
+				return rhs_io.fmap(
+					[lhs_value = std::move(lhs_value)](typename IO<OtherAction>::Ret rhs_value)
+					{
+						return std::tuple_cat(
+							detail::ensure_tuple(lhs_value),
+							detail::ensure_tuple(std::move(rhs_value)));
+					});
+			});
 	}
 
 	template <typename... As>
@@ -400,32 +469,76 @@ struct StateIO
 		return action(FW(state));
 	}
 
+	template <class Prev, class Lifter>
+	struct bind_stateio_action_t
+	{
+		Prev prev_stateio_action;
+		Lifter stateio_lifter;
+
+		struct io_lifter_t
+		{
+			Lifter stateio_lifter;
+
+			constexpr auto operator()(auto value_and_state) const
+			{
+				if constexpr (requires { stateio_lifter(value_and_state.first); })
+				{
+					return stateio_lifter(std::move(value_and_state.first))(
+						std::move(value_and_state.second));
+				}
+				else if constexpr (requires { std::apply(stateio_lifter, value_and_state.first); })
+				{
+					return std::apply(stateio_lifter, std::move(value_and_state.first))(
+						std::move(value_and_state.second));
+				}
+				else
+				{
+					static_assert(false, "Lifter is not callable with value");
+				}
+			}
+		};
+
+		constexpr auto operator()(auto && state) const
+		{
+			return prev_stateio_action(FW(state)).bind(io_lifter_t{stateio_lifter});
+		}
+	};
+
 	auto bind(auto && lifter) const &
 	{
-		auto next = [prev = action, lifter = FW(lifter)](
-						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			static_assert(assert_valid_bind<decltype(prev), decltype(lifter), decltype(state)>());
-
-			return prev(FW(state)).bind(
-				[lifter](auto && value_and_state)
-				{ return lifter(FW(value_and_state).first)(FW(value_and_state).second); });
-		};
-		return StateIO<decltype(next)>(std::move(next));
+		auto next = bind_stateio_action_t{action, FW(lifter)};
+		return StateIO<decltype(next)>{std::move(next)};
 	}
 
 	auto bind(auto && lifter) &&
 	{
-		auto next = [prev = std::move(action), lifter = FW(lifter)](
-						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			static_assert(assert_valid_bind<decltype(prev), decltype(lifter), decltype(state)>());
+		auto next = bind_stateio_action_t{std::move(action), FW(lifter)};
+		return StateIO<decltype(next)>{std::move(next)};
+	}
 
-			return prev(FW(state)).bind(
-				[lifter](auto value_and_state)
+	auto fmap(auto && transformer) const &
+	{
+		auto next = [prev = action, transformer = FW(transformer)](auto && state)
+		{
+			return prev(FW(state)).fmap(
+				[transformer](auto && value_and_state)
 				{
-					return lifter(std::move(value_and_state.first))(
-						std::move(value_and_state.second));
+					return std::pair(
+						transformer(FW(value_and_state).first), FW(value_and_state).second);
+				});
+		};
+		return StateIO<decltype(next)>(std::move(next));
+	}
+
+	auto fmap(auto && transformer) &&
+	{
+		auto next = [prev = std::move(action), transformer = FW(transformer)](auto && state)
+		{
+			return prev(FW(state)).fmap(
+				[transformer](auto && value_and_state)
+				{
+					return std::pair(
+						transformer(FW(value_and_state).first), FW(value_and_state).second);
 				});
 		};
 		return StateIO<decltype(next)>(std::move(next));
@@ -490,16 +603,16 @@ struct StateIO
 				} -> detail::SpecialisationOf<std::pair>;
 			},
 			"StateIO's IO action must return a pair");
-		static_assert(
-			requires(A action, S state, L lifter) { {lifter(action(state)().first)}; },
-			"StateIO lifter function has incorrect arguments");
-		static_assert(
-			requires(A action, S state, L lifter) {
-				{
-					lifter(action(state)().first)
-				} -> detail::SpecialisationOf<StateIO>;
-			},
-			"StateIO lifter function must return a StateIO");
+		// static_assert(
+		// 	requires(A action, S state, L lifter) { {lifter(action(state)().first)}; },
+		// 	"StateIO lifter function has incorrect arguments");
+		// static_assert(
+		// 	requires(A action, S state, L lifter) {
+		// 		{
+		// 			lifter(action(state)().first)
+		// 		} -> detail::SpecialisationOf<StateIO>;
+		// 	},
+		// 	"StateIO lifter function must return a StateIO");
 
 		return true;
 	}
@@ -522,7 +635,7 @@ struct get_t
 	struct io_action_t
 	{
 		State state;
-		constexpr auto operator()()const
+		constexpr auto operator()() const
 		{
 			return std::pair{state, state};
 		}
@@ -530,7 +643,7 @@ struct get_t
 
 	struct stateio_action_t
 	{
-		constexpr auto operator()(auto state)
+		constexpr auto operator()(auto state) const
 		{
 			return io::IO{io_action_t{std::move(state)}};
 		}
@@ -541,7 +654,7 @@ struct get_t
 		return StateIO{stateio_action_t{}};
 	}
 
-	constexpr auto operator()([[maybe_unused]] auto const&... unused) const
+	constexpr auto operator()([[maybe_unused]] auto &&... unused) const
 	{
 		return make_stateio();
 	}
