@@ -9,6 +9,7 @@
 #include <span>
 
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -998,17 +999,26 @@ struct create_instance_t
 		}
 	};
 
-	constexpr auto operator()(
+	static constexpr auto make_io(
 		LoggerPtr logger,
 		std::string name,
 		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 	{
 		return IO{io_action_t{
 			.logger = std::move(logger),
 			.name = std::move(name),
 			.layers_to_enable = std::move(layers_to_enable),
 			.extensions_to_enable = std::move(extensions_to_enable)}};
+	}
+	constexpr auto operator()(
+		LoggerPtr logger,
+		std::string name,
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+	{
+		return make_io(
+			logger, std::move(name), std::move(layers_to_enable), std::move(extensions_to_enable));
 	}
 
 	struct with_logger_t
@@ -1162,7 +1172,7 @@ struct create_window_t
 		return IO{io_action_t{.title = std::move(title), .width = width, .height = height}};
 	}
 
-	constexpr auto operator() (std::string title, int const width, int const height) const
+	constexpr auto operator()(std::string title, int const width, int const height) const
 	{
 		return make_io(std::move(title), width, height);
 	}
@@ -1248,133 +1258,128 @@ constexpr auto create_surface()
 				   }};
 }
 
-constexpr auto create_instance(
-	char const * app_name,
-	types::ContiguousContainerOf<types::AvailableInstanceLayerNameCstr> auto && layers_to_enable,
-	types::ContiguousContainerOf<types::AvailableInstanceExtensionNameCstr> auto &&
-		extensions_to_enable)
-{
-	return StateIO{[app_name,
-					layers_to_enable = FW(layers_to_enable),
-					extensions_to_enable = FW(extensions_to_enable)](auto && state)
-				   {
-					   return io::create_instance_t{}(
-								  state.logger, app_name, layers_to_enable, extensions_to_enable)
-						   .fmap(
-							   [state = FW(state)](auto && instance)
-							   {
-								   struct S : std::decay_t<decltype(state)>
-								   {
-									   types::VulkanInstancePtr instance;
-								   };
-								   return std::pair{FW(instance), S{state, instance}};
-							   });
-				   }};
-}
-
-struct add_window_to_state_t
+struct create_instance_t
 {
 	template <class State>
-	struct io_action_t
+	struct add_instance_to_state_t
 	{
-		types::SDLWindowPtr window;
 		State state;
 
-		constexpr auto operator()() const
+		constexpr auto operator()(types::VulkanInstancePtr instance) const
 		{
 			struct S : std::decay_t<decltype(state)>
 			{
-				types::SDLWindowPtr window;
+				types::VulkanInstancePtr instance;
 			};
-			return std::pair{this->window, S{state, this->window}};
+			return std::pair{instance, S{state, instance}};
 		}
 	};
 
 	struct stateio_action_t
 	{
-		types::SDLWindowPtr window;
+		std::string name;
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
 
-		constexpr auto operator()(auto && state) const
+		constexpr auto operator()(auto const & state) const
 		{
-			return io::IO{io_action_t{window, FW(state)}};
+			return io::create_instance_t::make_io(
+					   state.logger, name, layers_to_enable, extensions_to_enable)
+				.fmap(add_instance_to_state_t{state});
 		}
 	};
 
-	static constexpr auto make_stateio(types::SDLWindowPtr window)
+	static constexpr auto make_stateio(
+		std::string name,
+		std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+		std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 	{
-		return StateIO{stateio_action_t{std::move(window)}};
+		return StateIO{stateio_action_t{
+			.name = std::move(name),
+			.layers_to_enable = std::move(layers_to_enable),
+			.extensions_to_enable = std::move(extensions_to_enable)}};
 	}
 
-	constexpr auto operator()(types::SDLWindowPtr window) const
+	constexpr auto operator()(
+		std::tuple<
+			std::string,
+			std::vector<types::AvailableInstanceLayerNameCstr>,
+			std::vector<types::AvailableInstanceExtensionNameCstr>> args_tuple) const
 	{
-		return make_stateio(std::move(window));
+		return std::apply(make_stateio, std::move(args_tuple));
 	}
 };
-
 
 struct create_window_t
 {
-	static constexpr auto make_stateio(char const * title, int width, int height)
-	{
-		using vulkandemo::monad::stateio::lift;
-
-		return lift(io::create_window_t::make_io(title, width, height))
-			.bind(add_window_to_state_t{});
-	}
-};
-
-struct and_then_add_debug_messenger_to_state_t
-{
 	template <class State>
-	struct io_action_t
+	struct add_window_to_state_t
 	{
-		types::VulkanDebugMessengerPtr messenger;
 		State state;
 
-		auto operator()() const
+		constexpr auto operator()(types::SDLWindowPtr window) const
 		{
-			struct S : std::decay_t<decltype(state)>
+			struct S : State
 			{
-				types::VulkanDebugMessengerPtr messenger;
+				types::SDLWindowPtr window;
 			};
-			return std::pair{this->messenger, S{state, this->messenger}};
+			return std::pair{window, S{state, window}};
 		}
 	};
 
 	struct stateio_action_t
 	{
-		types::VulkanDebugMessengerPtr messenger;
+		std::string title;
+		int width;
+		int height;
 
-		auto operator()(auto && state) const
+		constexpr auto operator()(auto state) const
 		{
-			return io::IO{io_action_t{messenger, FW(state)}};
+			return io::create_window_t::make_io(title, width, height)
+				.fmap(add_window_to_state_t{std::move(state)});
 		}
 	};
 
-	auto operator()(types::VulkanDebugMessengerPtr messenger) const
+	static constexpr auto make_stateio(std::string title, int width, int height)
 	{
-		return StateIO{stateio_action_t{std::move(messenger)}};
+		using vulkandemo::monad::stateio::lift;
+
+		return StateIO{
+			stateio_action_t{.title = std::move(title), .width = width, .height = height}};
 	}
 };
 
-struct and_then_create_debug_messenger_t
+struct create_debug_messenger_t
 {
-	struct io_cont_t
+	template <class State>
+	struct add_debug_messenger_to_state_t
+	{
+		State state;
+
+		auto operator()(types::VulkanDebugMessengerPtr messenger) const
+		{
+			struct S : State
+			{
+				types::VulkanDebugMessengerPtr messenger;
+			};
+			return std::pair{messenger, S{state, messenger}};
+		}
+	};
+
+	struct stateio_action_t
 	{
 		types::VulkanInstancePtr instance;
-		auto operator()(auto && state) const
+
+		auto operator()(auto const & state) const
 		{
-			return io::make_create_debug_messenger(state.logger, instance);
+			return io::make_create_debug_messenger(state.logger, instance)
+				.fmap(add_debug_messenger_to_state_t{state});
 		}
 	};
 
 	auto operator()(types::VulkanInstancePtr instance) const
 	{
-		using vulkandemo::monad::stateio::lift;
-		using vulkandemo::monad::stateio::with_state;
-
-		return with_state(io_cont_t{std::move(instance)})
-			.bind(and_then_add_debug_messenger_to_state_t{});
+		return StateIO{stateio_action_t{std::move(instance)}};
 	}
 };
 

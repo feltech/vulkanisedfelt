@@ -691,36 +691,38 @@ auto make_query_sdl_and_desired_instance_extensions(LoggerPtr logger, types::SDL
 		hof::transform_concat_t{});
 }
 
-struct make_query_instance_args_for_window_from_state_t
+struct query_instance_args_for_window_t
 {
-	types::SDLWindowPtr window;
-	auto operator()(auto const & state) const
+	static constexpr auto make_io(LoggerPtr const & logger, types::SDLWindowPtr const & window)
 	{
 		return zip(
 			// Get title of window to use as app/engine name in vulkan.
 			monad::io::make_query_window_title(window),
 			// Fetch and filter layer names.
-			make_query_validation_layer_names(state.logger),
+			make_query_validation_layer_names(logger),
 			// Fetch and filter extension names (SDL + desired).
-			make_query_sdl_and_desired_instance_extensions(state.logger, window));
+			make_query_sdl_and_desired_instance_extensions(logger, window));
+	}
+
+	struct stateio_action_t
+	{
+		types::SDLWindowPtr window;
+		constexpr auto operator()(auto const & state) const
+		{
+			return make_io(state.logger, window).pair_with(state);
+		}
+	};
+
+	static constexpr auto make_stateio(types::SDLWindowPtr window)
+	{
+		return StateIO{stateio_action_t{std::move(window)}};
+	}
+
+	constexpr auto operator()(types::SDLWindowPtr window) const
+	{
+		return make_stateio(std::move(window));
 	}
 };
-
-auto and_then_query_instance_args(types::SDLWindowPtr window)
-{
-	return vulkandemo::monad::stateio::with_state(
-		make_query_instance_args_for_window_from_state_t{std::move(window)});
-}
-
-auto make_create_instance_from_args_tuple_cont()
-{
-	return [](auto && instance_args)
-	{
-		return std::apply(
-			[](auto &&... args) { return monad::stateio::create_instance(FW(args)...); },
-			FW(instance_args));
-	};
-}
 
 template <class F>
 auto make_forward_state_cont(F && io_from_state)
@@ -734,16 +736,17 @@ auto make_forward_state_cont(F && io_from_state)
 auto bind_to_default_instance(auto && io_from_state)
 {
 	using namespace test::bind_to_default_instance;
-	using vulkandemo::monad::stateio::with_state;
+	using monad::stateio::create_instance_t;
+	using monad::stateio::create_debug_messenger_t;
 
 	// Create application window.
 	return monad::stateio::create_window_t::make_stateio("", 0, 0)
 		// Gather arguments for constructing a vulkan instance.
-		.bind(and_then_query_instance_args)
+		.bind(query_instance_args_for_window_t{})
 		// Create/store Vulkan instance
-		.bind(make_create_instance_from_args_tuple_cont())
+		.bind(create_instance_t{})
 		// Create/store debug messenger callback closure.
-		.bind(monad::stateio::and_then_create_debug_messenger_t{})
+		.bind(create_debug_messenger_t{})
 		// Continue on to provided function
 		.bind(make_forward_state_cont(FW(io_from_state)));
 }
@@ -753,31 +756,68 @@ struct create_default_instance_t
 	static constexpr auto make_stateio()
 	{
 		using namespace test::bind_to_default_instance;
+		using monad::stateio::create_instance_t;
+		using monad::stateio::create_debug_messenger_t;
+		using vulkandemo::monad::stateio::get_t;
 		// Create application window.
 		return monad::stateio::create_window_t::make_stateio("", 0, 0)
 			// Gather arguments for constructing a vulkan instance.
-			.bind(and_then_query_instance_args)
+			.bind(query_instance_args_for_window_t{})
 			// Create/store Vulkan instance
-			.bind(make_create_instance_from_args_tuple_cont())
+			.bind(create_instance_t{})
 			// Create/store debug messenger callback closure.
-			.bind(monad::stateio::and_then_create_debug_messenger_t{});
+			.bind(create_debug_messenger_t{})
+		// Replace arg with state for subsequent bind() calls.
+		.bind(get_t{});
 	}
 };
+
+
+namespace test::create_a_vulkan_surface
+{
+
+struct create_surface_t
+{
+	struct stateio_action_t
+	{
+		constexpr auto operator()(auto const& state)
+		{
+			return monad::io::create_surface(state.window, state.instance)	.pair_with(state);
+		}
+	};
+
+	static constexpr auto make_stateio()
+	{
+		return StateIO{stateio_action_t{}};
+	}
+
+	constexpr auto operator()([[maybe_unused]] auto const& state) const
+	{
+		// using vulkandemo::monad::stateio::lift;
+		// return lift(monad::io::create_surface(state.window, state.instance));
+		return make_stateio();
+	}
+};
+
+struct check_surface_t
+{
+	constexpr bool operator()(types::VulkanSurfacePtr const& surface)
+	{
+		CHECK(surface);
+		return true;
+	}
+};
+
+}
+
 }  // namespace
 
 TEST_CASE("Create a Vulkan surface")
 {
-	auto const program = create_default_instance_t::make_stateio().with_state(
-		[](auto && state)
-		{
-			return monad::io::create_surface(state.window, state.instance)
-				.fmap(
-					[](auto && surface)
-					{
-						CHECK(surface);
-						return true;
-					});
-		});
+using namespace test::create_a_vulkan_surface;
+
+	auto const program = create_default_instance_t::make_stateio().bind(
+		create_surface_t{}).fmap(check_surface_t{});
 
 	const struct
 	{

@@ -516,6 +516,37 @@ auto with_state(auto && io_cont_from_state)
 				   { return io_cont_from_state(state).pair_with(FW(state)); }};
 }
 
+struct get_t
+{
+	template <class State>
+	struct io_action_t
+	{
+		State state;
+		constexpr auto operator()()const
+		{
+			return std::pair{state, state};
+		}
+	};
+
+	struct stateio_action_t
+	{
+		constexpr auto operator()(auto state)
+		{
+			return io::IO{io_action_t{std::move(state)}};
+		}
+	};
+
+	static constexpr auto make_stateio()
+	{
+		return StateIO{stateio_action_t{}};
+	}
+
+	constexpr auto operator()([[maybe_unused]] auto const&... unused) const
+	{
+		return make_stateio();
+	}
+};
+
 }  // namespace stateio
 
 // NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
