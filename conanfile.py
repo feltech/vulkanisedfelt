@@ -10,6 +10,7 @@ class vulkandemoRecipe(ConanFile):
     # Sources are located in the same place as this recipe, copy them to the recipe
     exports_sources = "CMakeLists.txt", "src/*"
 
+    # Keep other deps here; remove Boost from this list
     requires = [
         "doctest/2.4.11",
         "sdl/2.30.8",
@@ -26,6 +27,53 @@ class vulkandemoRecipe(ConanFile):
     ]
 
     settings = "build_type", "os"
+
+    def requirements(self):
+        # Set True to DISABLE a Boost component (maps to Boost's "without_<comp>=True").
+        # NOTE: causes error
+        # > ConanException: These libraries were built, but were not used in any boost module:
+        # > {'boost_process', 'boost_iostreams', ...
+        # So went with "header_only" instead.
+
+        # disable = dict(
+        #     atomic=True,
+        #     charconv=True,
+        #     chrono=True,
+        #     cobalt=True,
+        #     container=True,
+        #     context=True,
+        #     contract=True,
+        #     coroutine=True,
+        #     date_time=True,
+        #     exception=True,
+        #     fiber=True,
+        #     filesystem=True,
+        #     graph=True,
+        #     graph_parallel=True,
+        #     iostreams=True,
+        #     json=True,
+        #     locale=True,
+        #     log=True,
+        #     math=True,
+        #     mpi=True,
+        #     nowide=True,
+        #     process=True,
+        #     program_options=True,
+        #     python=True,
+        #     random=True,
+        #     regex=True,
+        #     serialization=True,
+        #     stacktrace=True,
+        #     test=True,
+        #     thread=True,
+        #     timer=True,
+        #     type_erasure=True,
+        #     url=True,
+        #     wave=True,
+        # )
+        # opts = {f"without_{k}": v for k, v in disable.items() if v}
+        opts = {"header_only": True}
+        self.requires("boost/1.89.0", options=opts)
 
     def layout(self):
         cmake_layout(self)
@@ -47,7 +95,3 @@ class vulkandemoRecipe(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-
-    
-
-    

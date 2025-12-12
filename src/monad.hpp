@@ -9,6 +9,12 @@
 #include <type_traits>
 #include <utility>
 
+#include <boost/hana.hpp>
+#include <boost/hana/ext/std/tuple.hpp>
+#include <boost/hana/fwd/core/to.hpp>
+#include <boost/hana/fwd/transform.hpp>
+#include <boost/hana/fwd/tuple.hpp>
+
 #include "macros.hpp"
 
 namespace vulkandemo::monad
@@ -542,6 +548,56 @@ struct StateIO
 				});
 		};
 		return StateIO<decltype(next)>(std::move(next));
+	}
+
+	auto then(detail::SpecialisationOf<StateIO> auto && next)
+	{
+		return FW(next);
+	}
+
+	template <class State, class IOs>
+	struct then_io_action_t
+	{
+		State state;
+		IOs ios;
+		constexpr auto operator()() const
+		{
+			std::tuple results{boost::hana::transform(ios, [](auto const & io) { return io().first; })};
+			return results;
+		}
+	};
+
+	template <class OtherStateIOs>
+	struct then_stateio_action_t
+	{
+		OtherStateIOs nexts;
+
+		constexpr auto operator()(auto const & state) const
+		{
+			auto ios =
+				boost::hana::transform(nexts, [&state](auto const & next) { return next(state); });
+			return io::IO{then_io_action_t{state, std::move(ios)}}.pair_with(state);
+		}
+	};
+
+	template <class OtherStateIOs>
+	struct then_lifter_t
+	{
+		OtherStateIOs nexts;
+
+		constexpr auto operator()([[maybe_unused]] auto const & unused) const
+		{
+			auto then_action = then_stateio_action_t{nexts};
+			return StateIO<decltype(then_action)>{std::move(then_action)};
+		}
+	};
+
+	auto then(
+		detail::SpecialisationOf<StateIO> auto && next_a,
+		detail::SpecialisationOf<StateIO> auto && next_b,
+		detail::SpecialisationOf<StateIO> auto &&... nexts) const
+	{
+		return bind(then_lifter_t{std::tuple(FW(next_a), FW(next_b), FW(nexts)...)});
 	}
 
 	static auto lift(detail::SpecialisationOf<io::IO> auto && iom)

@@ -25,6 +25,7 @@ find_package(etl REQUIRED)
 find_package(Vulkan REQUIRED)
 find_package(di REQUIRED)
 find_package(reflect-cpp REQUIRED)
+find_package(Boost REQUIRED COMPONENTS headers)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
 find_package(immer)
@@ -78,6 +79,7 @@ target_link_libraries(
     di::di
     reflect-cpp::reflect-cpp
     immer::immer
+    Boost::headers
 )
 
 target_compile_definitions(

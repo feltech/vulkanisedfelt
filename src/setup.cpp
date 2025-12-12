@@ -864,7 +864,8 @@ namespace
 namespace test::enumerate_devices
 {
 
-using monad::io::IO;
+using vulkandemo::monad::io::IO;
+using vulkandemo::monad::stateio::StateIO;
 
 struct transform_choose_first_device_t
 {
@@ -941,6 +942,74 @@ struct choose_physical_device_t
 		return monad::io::enumerate_physical_devices(std::move(logger), std::move(instance))
 			.fmap(transform_choose_first_device_t{});
 	}
+
+	struct stateio_action_t
+	{
+		constexpr auto operator()(auto const & state) const
+		{
+			return make_io(state.logger, state.instance).pair_with(state);
+		}
+	};
+
+	static constexpr auto make_stateio()
+	{
+		return StateIO{stateio_action_t{}};
+	}
+};
+
+struct create_surface_t
+{
+	static constexpr auto make_io(types::SDLWindowPtr window, types::VulkanInstancePtr instance)
+	{
+		return monad::io::create_surface_t::make_io(std::move(window), std::move(instance));
+	}
+
+	struct stateio_action_t
+	{
+		constexpr auto operator()(auto const & state) const
+		{
+			return make_io(state.window, state.instance).pair_with(state);
+		}
+	};
+
+	static constexpr auto make_stateio()
+	{
+		return StateIO{stateio_action_t{}};
+	}
+};
+
+struct check_supported_extensions_and_memory_types_and_queue_families_t
+{
+	static constexpr auto make_io(
+		LoggerPtr const & logger, VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface)
+	{
+		return zip(query_filtered_device_extensions_t::make_io(logger, chosen_device),
+				   query_host_visible_memory_type_idxs_t::make_io(logger, chosen_device),
+				   query_supported_graphics_queue_families_t::make_io(
+					   chosen_device, std::move(surface)))
+			.fmap(transform_check_availability_t{});
+	}
+
+	struct stateio_action_t
+	{
+		VkPhysicalDevice chosen_device;
+		types::VulkanSurfacePtr surface;
+		constexpr auto operator()(auto const & state) const
+		{
+			return make_io(state.logger, chosen_device, surface).pair_with(state);
+		}
+	};
+
+	static constexpr auto make_stateio(
+		VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface)
+	{
+		return StateIO{stateio_action_t{std::move(chosen_device), std::move(surface)}};
+	}
+
+	constexpr auto operator()(VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface) const
+	{
+		return make_stateio(std::move(chosen_device), std::move(surface));
+	}
 };
 
 }  // namespace test::enumerate_devices
@@ -949,25 +1018,10 @@ struct choose_physical_device_t
 TEST_CASE("Enumerate devices")
 {
 	using namespace test::enumerate_devices;
-	auto const program = create_default_instance_t::make_stateio().with_state(
-		[](auto && state)
-		{
-			return choose_physical_device_t::make_io(state.logger, state.instance)
-				.zip(monad::io::create_surface_t::make_io(state.window, state.instance))
-				.bind(
-					[state](VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface)
-					{
-						return query_filtered_device_extensions_t::make_io(
-								   state.logger, chosen_device)
-							.zip(
-								query_host_visible_memory_type_idxs_t::make_io(
-									state.logger, chosen_device))
-							.zip(
-								query_supported_graphics_queue_families_t::make_io(
-									chosen_device, std::move(surface)))
-							.fmap(transform_check_availability_t{});
-					});
-		});
+	auto const program =
+		create_default_instance_t::make_stateio()
+			.then(choose_physical_device_t::make_stateio(), create_surface_t::make_stateio())
+			.bind(check_supported_extensions_and_memory_types_and_queue_families_t{});
 
 	const struct
 	{
