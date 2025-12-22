@@ -60,16 +60,21 @@ queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
 	VkQueueFlagBits desired_queue_capabilities,
 	std::vector<VkQueueFamilyProperties> const & queue_family_properties);
 
-constexpr auto make_queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
-	VkQueueFlagBits const desired_queue_capabilities)
+struct transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t
 {
-	return [desired_queue_capabilities](AUTO(std::vector<VkQueueFamilyProperties>)
-											queue_family_properties)
+	struct with_desired_queue_capabilities
 	{
-		return queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
-			desired_queue_capabilities, FW(queue_family_properties));
+		VkQueueFlagBits desired_queue_capabilities;
+
+		constexpr std::vector<types::VulkanQueueFamilyIdx> operator()(
+			std::vector<VkQueueFamilyProperties> const & queue_family_properties) const
+		{
+			return queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
+				desired_queue_capabilities, queue_family_properties);
+		}
 	};
 }
+;
 
 constexpr auto make_instance_extension_appender(
 	AUTO(std::vector<types::AvailableInstanceExtensionNameCstr>) additional_instance_extensions)

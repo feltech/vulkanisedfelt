@@ -1,5 +1,11 @@
 #pragma once
 #include <algorithm>
+#include <boost/hana/core/tag_of.hpp>
+#include <boost/hana/fwd/ap.hpp>
+#include <boost/hana/fwd/append.hpp>
+#include <boost/hana/fwd/chain.hpp>
+#include <boost/hana/fwd/fold_left.hpp>
+#include <boost/hana/fwd/lift.hpp>
 #include <concepts>
 #include <cstddef>
 #include <functional>
@@ -10,6 +16,7 @@
 #include <utility>
 
 #include <boost/hana.hpp>
+#include <boost/hana/ext/std/integer_sequence.hpp>
 #include <boost/hana/ext/std/tuple.hpp>
 #include <boost/hana/fwd/core/to.hpp>
 #include <boost/hana/fwd/transform.hpp>
@@ -217,7 +224,11 @@ decltype(auto) operator>>(SpecialisationOf<Collect> auto && lhs, auto && rhs)
 namespace io
 {
 using monad::bind;	// For ADL?.
-using monad::fmap;	// For ADL?.
+// using monad::fmap;	// For ADL?.
+
+struct io_tag_t
+{
+};
 
 template <typename F>
 concept Action = !std::is_void_v<F>;
@@ -262,6 +273,138 @@ concept LifterFromTo = requires(F func, E elem)
 		func(elem)
 	} -> IOFor<R>;
 };
+}  // namespace io
+}  // namespace vulkandemo::monad
+namespace boost::hana
+{
+namespace io = vulkandemo::monad::io;
+using vulkandemo::monad::detail::ensure_tuple;
+
+template <typename A>
+struct tag_of<io::IO<A>>
+{
+	using type = io::io_tag_t;
+};
+
+template <>
+struct lift_impl<io::io_tag_t>
+{
+	static auto apply(auto && value)
+	{
+		return io::IO{io_action_t{FW(value)}};
+	}
+
+	template <class Value>
+	struct io_action_t
+	{
+		Value value;
+		constexpr auto operator()() const
+		{
+			return value;
+		}
+	};
+};
+
+template <>
+struct chain_impl<io::io_tag_t>
+{
+	static auto apply(auto && iom, auto && lifter)
+	{
+		return io::IO{io_action_t{FW(iom), FW(lifter)}};
+	}
+
+	template <class WrappedIO, class Lifter>
+	struct io_action_t
+	{
+		WrappedIO iom;
+		Lifter lifter;
+		constexpr auto operator()() const
+		{
+			if constexpr (requires { lifter(iom()); })
+			{
+				auto value = iom();
+				auto new_io = lifter(std::move(value));
+				auto new_value = std::move(new_io)();
+				return new_value;
+			}
+			else if constexpr (requires { std::apply(lifter, iom()); })
+			{
+				return std::apply(lifter, iom())();
+			}
+			else
+			{
+				static_assert(false, "IO lifter is not callable with value");
+			}
+		}
+	};
+};
+
+template <>
+struct transform_impl<io::io_tag_t>
+{
+	static auto apply(auto && iom, auto && transformer)
+	{
+		return io::IO{io_action_t{FW(iom), FW(transformer)}};
+	}
+
+	template <class WrappedIO, class Transformer>
+	struct io_action_t
+	{
+		WrappedIO iom;
+		Transformer transformer;
+		constexpr auto operator()() const
+		{
+			if constexpr (requires { transformer(iom()); })
+			{
+				return transformer(iom());
+			}
+			else
+			{
+				static_assert(
+					requires { std::apply(transformer, iom()); },
+					"IO value transformer is not callable with value");
+
+				return std::apply(transformer, iom());
+			}
+		}
+	};
+};
+
+template <>
+struct ap_impl<io::io_tag_t>
+{
+	static auto apply(auto && fn_io, auto && value_io)
+	{
+		return io::IO{io_action_t{FW(fn_io), FW(value_io)}};
+	}
+
+	template <class FnIO, class ValueIO>
+	struct io_action_t
+	{
+		FnIO fn_io;
+		ValueIO value_io;
+		constexpr auto operator()() const
+		{
+			// TODO(DF): fn and value can be computed concurrently.
+			auto fn = fn_io();
+			auto value = value_io();
+
+			auto result = fn(value);
+			return result;
+		}
+	};
+};
+}  // namespace boost::hana
+
+namespace vulkandemo::monad
+{
+namespace io
+{
+
+constexpr auto lift(auto && value)
+{
+	return boost::hana::lift<io_tag_t>(FW(value));
+}
 
 template <Action Act>
 struct IO
@@ -274,64 +417,14 @@ struct IO
 		return action();
 	}
 
-	template <class Prev, class Lifter>
-	struct bind_io_action_t
+	[[nodiscard]] auto bind(this auto && self, Lifter<IO> auto && lifter)
 	{
-		Prev prev_io_action;
-		Lifter lifter;
-		constexpr auto operator()() const
-		{
-			if constexpr (requires { lifter(prev_io_action()); })
-			{
-				return lifter(prev_io_action())();
-			}
-			else if constexpr (requires { std::apply(lifter, prev_io_action()); })
-			{
-				return std::apply(lifter, prev_io_action())();
-			}
-		}
-	};
-
-	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) const &
-	{
-		auto next = bind_io_action_t{action, FW(lifter)};
-		return IO<decltype(next)>{std::move(next)};
+		return boost::hana::chain(FW(self), FW(lifter));
 	}
 
-	[[nodiscard]] auto bind(Lifter<IO> auto && lifter) &&
+	[[nodiscard]] auto fmap(this auto && self, Transformer auto && transformer)
 	{
-		auto next = bind_io_action_t{std::move(action), FW(lifter)};
-		return IO<decltype(next)>{std::move(next)};
-	}
-
-	template <class Prev, class Transformer>
-	struct fmap_io_transformer_t
-	{
-		Prev prev_io_action;
-		Transformer transformer;
-		constexpr auto operator()() const
-		{
-			if constexpr (requires { transformer(prev_io_action()); })
-			{
-				return transformer(prev_io_action());
-			}
-			else if constexpr (requires { std::apply(transformer, prev_io_action()); })
-			{
-				return std::apply(transformer, prev_io_action());
-			}
-		}
-	};
-
-	[[nodiscard]] auto fmap(Transformer auto && transformer) const &
-	{
-		auto next = fmap_io_transformer_t{action, FW(transformer)};
-		return IO<decltype(next)>{std::move(next)};
-	}
-
-	[[nodiscard]] auto fmap(Transformer auto && transformer) &&
-	{
-		auto next = fmap_io_transformer_t{std::move(action), FW(transformer)};
-		return IO<decltype(next)>{std::move(next)};
+		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
 	template <typename OtherAction>
@@ -348,21 +441,6 @@ struct IO
 							detail::ensure_tuple(std::move(rhs_value)));
 					});
 			});
-	}
-
-	template <typename... As>
-	requires detail::CallableWithResultsOf<Ret, As...> [[nodiscard]] auto apply(
-		IO<As> &&... ios) const &
-	{
-		auto next = [prev = action, ... ios = FW(ios)] { return prev()(ios()...); };
-		return IO<decltype(next)>{std::move(next)};
-	}
-
-	template <typename... As>
-	requires detail::CallableWithResultsOf<Ret, As...> [[nodiscard]] auto apply(IO<As> &&... ios) &&
-	{
-		auto next = [prev = std::move(action), ... ios = FW(ios)] { return prev()(ios()...); };
-		return IO<decltype(next)>{std::move(next)};
 	}
 
 	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
@@ -435,11 +513,42 @@ struct IO
 	}
 };
 
-auto zip(detail::SpecialisationOf<IO> auto &&... ms)
+auto sequence(detail::SpecialisationOf<IO> auto &&... ms)
 {
-	return fmap(FW(ms)..., [](auto &&... args) { return std::tuple{args...}; });
+	using boost::hana::ap;
+	using boost::hana::append;
+	using boost::hana::fold_left;
+	using boost::hana::lift;
+
+	return fold_left(
+		std::tuple{FW(ms)...},
+		lift<io_tag_t>(std::tuple{}),
+		[](auto && acc, auto && iom)
+		{
+			// Applicative - unwrap two IOs, the first yielding a function and the second yielding a
+			// value, then call the function with the value in a new IO. In this case, append the
+			// result of an io to a tuple.
+			return ap(
+				// Transform IO result from a tuple of values to a function that appends a value
+				// to the (captured) tuple and returns the new tuple.
+				acc.fmap(
+					[](auto && values)
+					{
+						return [values = FW(values)](auto && value_to_append)
+						{ return append(values, FW(value_to_append)); };
+					}),
+				FW(iom));
+			;
+		});
 }
 
+auto fmap(auto &&... ms_and_transformer)
+{
+	return detail::rotate_right(
+		[](auto && transformer, detail::SpecialisationOf<IO> auto &&... ms)
+		{ return sequence(FW(ms)...).fmap(FW(transformer)); },
+		FW(ms_and_transformer)...);
+}
 decltype(auto) operator>>(detail::SpecialisationOf<IO> auto && lhs, auto && rhs)
 {
 	return FW(lhs).bind(FW(rhs));
@@ -458,8 +567,9 @@ decltype(auto) operator>>(
 
 namespace stateio
 {
-template <typename Act>
-struct StateIO;
+struct stateio_tag_t
+{
+};
 
 template <typename Act>
 struct StateIO
@@ -468,143 +578,30 @@ struct StateIO
 	// using Ret = typename detail::FnTraits<Act>::return_value;
 
 	decltype(auto) operator()(auto && state) const
-		// Must return an IO monad that itself returns a pair.
-		requires detail::SpecialisationOf<decltype(action(state)), io::IO> && detail::
-			SpecialisationOf<decltype(action(state)()), std::pair>
 	{
+		// Must return an IO monad that itself returns a pair.
+		static_assert(
+			detail::SpecialisationOf<decltype(action(state)), io::IO> &&
+				detail::SpecialisationOf<decltype(action(state)()), std::pair>,
+			"StateIO action must return IO<pair<value, state>>");
 		return action(FW(state));
 	}
 
-	template <class Prev, class Lifter>
-	struct bind_stateio_action_t
+	auto bind(this auto && self, auto && lifter)
 	{
-		Prev prev_stateio_action;
-		Lifter stateio_lifter;
-
-		struct io_lifter_t
-		{
-			Lifter stateio_lifter;
-
-			constexpr auto operator()(auto value_and_state) const
-			{
-				if constexpr (requires { stateio_lifter(value_and_state.first); })
-				{
-					return stateio_lifter(std::move(value_and_state.first))(
-						std::move(value_and_state.second));
-				}
-				else if constexpr (requires { std::apply(stateio_lifter, value_and_state.first); })
-				{
-					return std::apply(stateio_lifter, std::move(value_and_state.first))(
-						std::move(value_and_state.second));
-				}
-				else
-				{
-					static_assert(false, "Lifter is not callable with value");
-				}
-			}
-		};
-
-		constexpr auto operator()(auto && state) const
-		{
-			return prev_stateio_action(FW(state)).bind(io_lifter_t{stateio_lifter});
-		}
-	};
-
-	auto bind(auto && lifter) const &
-	{
-		auto next = bind_stateio_action_t{action, FW(lifter)};
-		return StateIO<decltype(next)>{std::move(next)};
+		return boost::hana::chain(FW(self), FW(lifter));
 	}
 
-	auto bind(auto && lifter) &&
+	auto fmap(this auto && self, auto && transformer)
 	{
-		auto next = bind_stateio_action_t{std::move(action), FW(lifter)};
-		return StateIO<decltype(next)>{std::move(next)};
+		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
-	auto fmap(auto && transformer) const &
+	auto then(detail::SpecialisationOf<StateIO> auto && stateiom) const
 	{
-		auto next = [prev = action, transformer = FW(transformer)](auto && state)
-		{
-			return prev(FW(state)).fmap(
-				[transformer](auto && value_and_state)
-				{
-					return std::pair(
-						transformer(FW(value_and_state).first), FW(value_and_state).second);
-				});
-		};
-		return StateIO<decltype(next)>(std::move(next));
+		return this->bind([stateiom = FW(stateiom)]([[maybe_unused]] auto &&... unused)
+						  { return stateiom; });
 	}
-
-	auto fmap(auto && transformer) &&
-	{
-		auto next = [prev = std::move(action), transformer = FW(transformer)](auto && state)
-		{
-			return prev(FW(state)).fmap(
-				[transformer](auto && value_and_state)
-				{
-					return std::pair(
-						transformer(FW(value_and_state).first), FW(value_and_state).second);
-				});
-		};
-		return StateIO<decltype(next)>(std::move(next));
-	}
-
-	auto then(detail::SpecialisationOf<StateIO> auto && next)
-	{
-		return FW(next);
-	}
-
-	template <class State, class IOs>
-	struct then_io_action_t
-	{
-		State state;
-		IOs ios;
-		constexpr auto operator()() const
-		{
-			std::tuple results{boost::hana::transform(ios, [](auto const & io) { return io().first; })};
-			return results;
-		}
-	};
-
-	template <class OtherStateIOs>
-	struct then_stateio_action_t
-	{
-		OtherStateIOs nexts;
-
-		constexpr auto operator()(auto const & state) const
-		{
-			auto ios =
-				boost::hana::transform(nexts, [&state](auto const & next) { return next(state); });
-			return io::IO{then_io_action_t{state, std::move(ios)}}.pair_with(state);
-		}
-	};
-
-	template <class OtherStateIOs>
-	struct then_lifter_t
-	{
-		OtherStateIOs nexts;
-
-		constexpr auto operator()([[maybe_unused]] auto const & unused) const
-		{
-			auto then_action = then_stateio_action_t{nexts};
-			return StateIO<decltype(then_action)>{std::move(then_action)};
-		}
-	};
-
-	auto then(
-		detail::SpecialisationOf<StateIO> auto && next_a,
-		detail::SpecialisationOf<StateIO> auto && next_b,
-		detail::SpecialisationOf<StateIO> auto &&... nexts) const
-	{
-		return bind(then_lifter_t{std::tuple(FW(next_a), FW(next_b), FW(nexts)...)});
-	}
-
-	static auto lift(detail::SpecialisationOf<io::IO> auto && iom)
-	{
-		return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
-	}
-
 	auto with_state(auto && io_from_state) const &
 	{
 		auto next = [prev = action, io_from_state = FW(io_from_state)](
@@ -673,11 +670,177 @@ struct StateIO
 		return true;
 	}
 };
+}  // namespace stateio
+}  // namespace vulkandemo::monad
 
-auto lift(detail::SpecialisationOf<io::IO> auto && iom)
+namespace boost::hana
 {
-	return StateIO{[iom = FW(iom)](auto && state) { return iom.pair_with(FW(state)); }};
-}
+namespace io = vulkandemo::monad::io;
+namespace stateio = vulkandemo::monad::stateio;
+using vulkandemo::monad::detail::SpecialisationOf;
+
+template <typename A>
+struct tag_of<stateio::StateIO<A>>
+{
+	using type = stateio::stateio_tag_t;
+};
+
+template <>
+struct lift_impl<stateio::stateio_tag_t>
+{
+	// TODO(DF): Perhaps can be removed, depending how clever hana::lift<io_tag_t> is.
+	static auto apply(SpecialisationOf<io::IO> auto && iom)
+	{
+		return stateio::StateIO{action_t{FW(iom)}};
+	}
+
+	static auto apply(auto && value)
+	{
+		return stateio::StateIO{action_t{lift<io::io_tag_t>(FW(value))}};
+	}
+
+	template <class IO>
+	struct action_t
+	{
+		IO iom;
+
+		constexpr auto operator()(auto && state) const
+		{
+			return iom.pair_with(FW(state));
+		}
+	};
+};
+
+template <>
+struct chain_impl<stateio::stateio_tag_t>
+{
+	constexpr static auto apply(auto && stateiom, auto && lifter)
+	{
+		return stateio::StateIO{stateio_action_t{FW(stateiom), FW(lifter)}};
+	}
+
+	template <class WrappedStateIO, class StateIOLifter>
+	struct stateio_action_t
+	{
+		WrappedStateIO stateiom;
+		StateIOLifter lifter;
+		constexpr auto operator()(auto && state) const
+		{
+			auto iom = stateiom(FW(state));
+			return std::move(iom).bind(io_lifter_t{lifter});
+		}
+	};
+
+	template <class StateIOLifter>
+	struct io_lifter_t
+	{
+		StateIOLifter lifter;
+		constexpr auto operator()(auto value_and_state) const
+		{
+			static_assert(
+				requires { lifter(value_and_state.first); } ||
+					requires { std::apply(lifter, value_and_state.first); },
+				"StateIO lifter is not callable with value");
+
+			if constexpr (requires { std::apply(lifter, value_and_state.first); })
+			{
+				auto new_stateio = std::apply(lifter, std::move(value_and_state.first));
+				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
+				return new_io;
+			}
+			else
+			{
+				auto new_stateio = lifter(std::move(value_and_state.first));
+				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
+				return new_io;
+			}
+		}
+	};
+};
+
+template <>
+struct transform_impl<stateio::stateio_tag_t>
+{
+	static auto apply(auto && stateiom, auto && transformer)
+	{
+		return stateio::StateIO{stateio_action_t{FW(stateiom), FW(transformer)}};
+	}
+
+	template <class WrappedStateIO, class Transformer>
+	struct stateio_action_t
+	{
+		WrappedStateIO stateiom;
+		Transformer transformer;
+
+		constexpr auto operator()(auto const state) const
+		{
+			return stateiom(state).fmap(io_transformer_t{transformer, state});
+		}
+	};
+
+	template <class State, class ValueTransformer>
+	struct io_transformer_t
+	{
+		ValueTransformer transformer;
+		State state;
+
+		constexpr auto operator()(auto && value_and_state) const
+		{
+			if constexpr (requires { transformer(value_and_state.first); })
+			{
+				return std::pair{
+					transformer(FW(value_and_state).first), FW(value_and_state).second};
+			}
+			else if constexpr (requires { std::apply(transformer, value_and_state.first); })
+			{
+				return std::pair{
+					std::apply(transformer, FW(value_and_state).first), FW(value_and_state).second};
+			}
+			else
+			{
+				static_assert(false, "StateIO value transformer is not callable with value");
+			}
+		}
+	};
+};
+
+template <>
+struct ap_impl<stateio::stateio_tag_t>
+{
+	// Note that StateIO is inherently sequential since state must be threaded
+	// through, so may as well use nested bind() calls (unlike e.g. ap<io_tag_t>).
+	static auto apply(auto && lhs, auto && rhs)
+	{
+		return FW(lhs).bind(fn_lifter_t{FW(rhs)});
+	}
+
+	template <class ValueStateIO>
+	struct fn_lifter_t
+	{
+		ValueStateIO value_stateio;
+
+		constexpr auto operator()(auto && fn) const
+		{
+			return value_stateio.bind(value_lifter_t{FW(fn)});
+		}
+	};
+
+	template <class Fn>
+	struct value_lifter_t
+	{
+		Fn fn;
+		constexpr auto operator()(auto && value) const
+		{
+			return lift<stateio::stateio_tag_t>(fn(FW(value)));
+		}
+	};
+};
+}  // namespace boost::hana
+
+namespace vulkandemo::monad
+{
+namespace stateio
+{
 
 auto with_state(auto && io_cont_from_state)
 {
@@ -709,13 +872,44 @@ struct get_t
 	{
 		return StateIO{stateio_action_t{}};
 	}
-
 	constexpr auto operator()([[maybe_unused]] auto &&... unused) const
 	{
 		return make_stateio();
 	}
 };
 
+constexpr auto lift(auto && value)
+{
+	return boost::hana::lift<stateio_tag_t>(FW(value));
+}
+
+auto sequence(detail::SpecialisationOf<StateIO> auto &&... ms)
+{
+	using boost::hana::ap;
+	using boost::hana::append;
+	using boost::hana::fold_left;
+
+	return fold_left(
+		std::tuple{FW(ms)...},
+		lift(std::tuple{}),
+		[](auto && acc, auto && iom)
+		{
+			// Applicative - unwrap two IOs, the first yielding a function and the second
+			// yielding a value, then call the function with the value in a new IO. In this
+			// case, append the result of an io to a tuple.
+			return ap(
+				// Transform IO result from a tuple of values to a function that appends a value
+				// to the (captured) tuple and returns the new tuple.
+				acc.fmap(
+					[](auto && values)
+					{
+						return [values = FW(values)](auto && value_to_append)
+						{ return append(values, FW(value_to_append)); };
+					}),
+				FW(iom));
+			;
+		});
+}
 }  // namespace stateio
 
 // NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
