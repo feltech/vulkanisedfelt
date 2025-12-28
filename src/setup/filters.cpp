@@ -180,7 +180,8 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 }
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(
-	std::span<VkSurfaceFormatKHR const> available_surface_formats, std::span<VkFormat const> desired_formats)
+	std::span<VkSurfaceFormatKHR const> available_surface_formats,
+	std::span<VkFormat const> desired_formats)
 {
 	return available_surface_formats |
 		std::views::filter(

@@ -37,23 +37,24 @@ extension_properties_filter_by_and_transform_to_device_extension_name(
 	std::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names,
 	std::vector<VkExtensionProperties> const & available_device_extensions);
 
-constexpr auto make_extension_properties_filter_by_and_transform_to_device_extension_name(
-	AUTO(LoggerPtr) logger,
-	VkPhysicalDevice physical_device,
-	AUTO(std::set<types::DesiredDeviceExtensionNameView>) desired_device_extension_names)
+struct extension_properties_filter_by_and_transform_to_device_extension_name_t
 {
-	return [logger = FW(logger),
-			physical_device,
-			desired_device_extension_names = FW(desired_device_extension_names)](
-			   AUTO(std::vector<VkExtensionProperties>) available_device_extensions)
+	struct with_logger_and_physical_device_and_desired_device_extension_names_t
 	{
-		return extension_properties_filter_by_and_transform_to_device_extension_name(
-			logger,
-			physical_device,
-			desired_device_extension_names,
-			FW(available_device_extensions));
+		LoggerPtr logger;
+		VkPhysicalDevice physical_device;
+		std::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
+		constexpr std::vector<types::AvailableDeviceExtensionNameView> operator()(
+			std::vector<VkExtensionProperties> const & available_device_extensions) const
+		{
+			return extension_properties_filter_by_and_transform_to_device_extension_name(
+				logger,
+				physical_device,
+				desired_device_extension_names,
+				available_device_extensions);
+		}
 	};
-}
+};
 
 std::vector<types::VulkanQueueFamilyIdx>
 queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
@@ -62,7 +63,7 @@ queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
 
 struct transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t
 {
-	struct with_desired_queue_capabilities
+	struct with_desired_queue_capabilities_t
 	{
 		VkQueueFlagBits desired_queue_capabilities;
 
@@ -73,8 +74,7 @@ struct transform_queue_family_properties_to_queue_family_idxs_filtered_by_capabi
 				desired_queue_capabilities, queue_family_properties);
 		}
 	};
-}
-;
+};
 
 constexpr auto make_instance_extension_appender(
 	AUTO(std::vector<types::AvailableInstanceExtensionNameCstr>) additional_instance_extensions)
@@ -97,15 +97,20 @@ memory_properties_filter_by_and_transform_to_memory_type_idx(
 	VkMemoryPropertyFlags memory_property_flags,
 	VkPhysicalDeviceMemoryProperties const & memory_properties);
 
-constexpr auto make_memory_properties_filter_by_and_transform_to_memory_type_idx(
-	VkMemoryPropertyFlags const memory_property_flags)
+struct memory_properties_filter_by_and_transform_to_memory_type_idx_t
 {
-	return [memory_property_flags](AUTO(VkPhysicalDeviceMemoryProperties) memory_properties)
+	struct with_memory_property_flags_t
 	{
-		return memory_properties_filter_by_and_transform_to_memory_type_idx(
-			memory_property_flags, FW(memory_properties));
+		VkMemoryPropertyFlags memory_property_flags;
+
+		constexpr std::vector<types::VulkanMemoryTypeIdx> operator()(
+			VkPhysicalDeviceMemoryProperties const & memory_properties) const
+		{
+			return memory_properties_filter_by_and_transform_to_memory_type_idx(
+				memory_property_flags, memory_properties);
+		}
 	};
-}
+};
 
 // Filters available instance layers by desired names and transforms to C string pointers
 std::vector<types::AvailableInstanceLayerNameCstr>

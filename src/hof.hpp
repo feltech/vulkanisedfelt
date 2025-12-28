@@ -13,6 +13,15 @@
  */
 namespace vulkandemo::hof
 {
+template <typename Container>
+struct unspecialise_t;
+
+template <template <typename...> class Container, typename... OldArgs>
+struct unspecialise_t<Container<OldArgs...>>
+{
+	template <typename... Args>
+	using specialise_t = Container<Args...>;
+};
 
 /**
  * Returns a lambda that performs a static_cast to the given type.
@@ -39,15 +48,32 @@ struct transform_concat_t
 	};
 };
 
-constexpr auto make_concat()
+struct transform_range_to_check_non_empty_t
 {
-	return [](std::ranges::range auto first, std::ranges::range auto second)
+	constexpr auto operator()(std::ranges::range auto&& values) const
 	{
-		first.insert(
-			end(first), make_move_iterator(begin(second)), make_move_iterator(end(second)));
-		return first;
-	};
-}
+		return !std::ranges::empty(FW(values));
+	}
+};
+
+struct transform_maybes_to_values_t
+{
+	template <std::ranges::range InputContainer>
+	constexpr auto operator()(InputContainer && values) const
+	{
+		return FW(values) |
+			std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
+			std::views::transform([](auto && elem) { return *FW(elem); }) |
+			ranges::to<unspecialise_t<InputContainer>::template specialise_t>;
+	}
+};
+
+template <class Second>
+struct transform_pair_with_t
+{
+	Second second;
+	constexpr auto operator()(auto && first) const { return std::pair{FW(first), second}; }
+};
 
 namespace mem_fn
 {

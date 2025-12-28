@@ -118,12 +118,12 @@ if (${PROJECT_NAME}_ENABLE_TESTS)
             ${_exe_target}
             PRIVATE
             -ggdb3 -fno-omit-frame-pointer -fno-inline
-#            -fconcepts-diagnostics-depth=5  # Breaks clang-tidy
+            -fconcepts-diagnostics-depth=5  # Breaks clang-tidy
             -fdiagnostics-show-template-tree
             # Fail on first error
 #            -Wfatal-errors  # Note: strips concept failures.
-            # Reduce "required from" lines.
-            -ftemplate-backtrace-limit=1
+            # Reduce "required from" lines?.
+            -ftemplate-backtrace-limit=2
             -Wno-deprecated-declarations # TODO(DF): reducing verbosity temporarily. Remove.
         )
     endif ()

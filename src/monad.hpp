@@ -22,6 +22,7 @@
 #include <boost/hana/fwd/transform.hpp>
 #include <boost/hana/fwd/tuple.hpp>
 
+#include "hof.hpp"
 #include "macros.hpp"
 
 namespace vulkandemo::monad
@@ -67,6 +68,40 @@ concept CallableWithResultsOf = requires(T f, As... a)
 {
 	f(a()...);
 };
+
+template <class T>
+inline constexpr bool is_tuple_like_v = false;
+
+template <class... Elems>
+inline constexpr bool is_tuple_like_v<std::tuple<Elems...>> = true;
+
+template <class T1, class T2>
+inline constexpr bool is_tuple_like_v<std::pair<T1, T2>> = true;
+
+template <class T, size_t N>
+inline constexpr bool is_tuple_like_v<std::array<T, N>> = true;
+
+template <class It, class Sent, std::ranges::subrange_kind Kind>
+inline constexpr bool is_tuple_like_v<std::ranges::subrange<It, Sent, Kind>> = true;
+
+template <class T>
+concept tuple_like = is_tuple_like_v<std::remove_cvref_t<T>>;
+
+template <typename T>
+concept pair_like = tuple_like<T> && std::tuple_size_v<std::remove_cvref_t<T>> == 2;
+
+template <typename, typename>
+struct is_applicable : std::false_type
+{
+};
+
+template <typename Func, template <typename...> typename Tuple, typename... Args>
+struct is_applicable<Func, Tuple<Args...>> : std::is_invocable<Func, Args...>
+{
+};
+
+template <class F, class T>
+concept applicable_with = is_applicable<F, T>::value;
 
 constexpr decltype(auto) ensure_tuple(auto && value)
 {
@@ -245,16 +280,17 @@ concept IOFor = requires(T t)
 };
 
 template <typename F, typename R>
-concept Lifter = requires(F func, R io)
+concept Lifter = (detail::tuple_like<std::invoke_result_t<R>> &&
+				  detail::applicable_with<F, std::invoke_result_t<R>> &&
+				  requires(F func, R io) {
+					  {
+						  std::apply(func, io())
+					  } -> detail::SpecialisationOf<IO>;
+				  }) ||
+	requires(F func, R io)
 {
 	{
 		func(io())
-	} -> detail::SpecialisationOf<IO>;
-}
-|| requires(F func, R io)
-{
-	{
-		std::apply(func, io())
 	} -> detail::SpecialisationOf<IO>;
 };
 
@@ -406,6 +442,64 @@ constexpr auto lift(auto && value)
 	return boost::hana::lift<io_tag_t>(FW(value));
 }
 
+struct traverse_t
+{
+	static constexpr auto make_io(std::ranges::range auto && values, auto && element_lifter)
+	{
+		using ValueRange = std::decay_t<decltype(values)>;
+		using ValueElem = ValueRange::value_type;
+		using IOElem = decltype(element_lifter(std::declval<ValueElem>()));
+		using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
+
+		auto ios = values |
+			std::views::transform([&](auto const & elem) { return element_lifter(elem); }) |
+			ranges::to<IORange>();
+		return sequence(std::move(ios));
+	}
+
+	template <class ElementLifter>
+	struct with_element_lifter_t
+	{
+		ElementLifter element_lifter;
+		constexpr auto operator()(std::ranges::range auto && values) const
+		{
+			return make_io(FW(values), element_lifter);
+		}
+	};
+};
+
+struct filter_t
+{
+	static constexpr auto make_io(auto && values, auto && element_lifter)
+	{
+		return IO{io_action_t{FW(values), FW(element_lifter)}};
+	}
+
+	template <class ElementLifter>
+	struct with_element_lifter_t
+	{
+		ElementLifter element_lifter;
+		constexpr auto operator()(std::ranges::range auto && values) const
+		{
+			return make_io(FW(values), element_lifter);
+		}
+	};
+
+	template <class Values, class ElementLifter>
+	struct io_action_t
+	{
+		Values values;
+		ElementLifter element_lifter;
+		constexpr auto operator()() const
+		{
+			auto new_range = values;
+			std::ranges::remove_if(
+				new_range, [](auto && iom) { return FW(iom)(); }, element_lifter);
+			return new_range;
+		}
+	};
+};
+
 template <Action Act>
 struct IO
 {
@@ -445,71 +539,20 @@ struct IO
 
 	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
 	{
-		using InputContainer = Ret;
-
-		return bind(
-			[element_lifter = FW(element_lifter)](AUTO(InputContainer) range)
-			{
-				auto next = [element_lifter, range = FW(range)]
-				{
-					return range |
-						std::views::transform([element_lifter](auto && elem)
-											  { return element_lifter(elem)(); }) |
-						ranges::to<detail::Unspecialise<InputContainer>::template Specialise>;
-				};
-				return IO<decltype(next)>{std::move(next)};
-			});
+		return bind(traverse_t::with_element_lifter_t{FW(element_lifter)});
 	}
 
 	[[nodiscard]] auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
 		const requires std::ranges::range<Ret>
 	{
-		// Note: due to IO being templated on a lambda, mapping elements to IO means a different
-		// type for each element. This means we cannot have a container of IOs. It also means
-		// recursive algorithms can hit the max template depth.
-
-		return bind(
-			[element_lifter = FW(element_lifter)](AUTO(Ret) range)
-			{
-				auto next = [element_lifter, range = FW(range)]
-				{
-					auto new_range = range;
-					std::ranges::remove_if(
-						new_range, [](auto && io) { return FW(io)(); }, element_lifter);
-					return new_range;
-				};
-				return IO<decltype(next)>{std::move(next)};
-			});
-	}
-
-	// [[nodiscard]] auto compact() const requires std::ranges::range<Ret>
-	// {
-	// 	return filter([](typename Ret::value_type const & elem)
-	// 				  { return static_cast<bool>(elem); });
-	// }
-
-	[[nodiscard]] auto compact() const requires
-		std::ranges::range<Ret> && detail::SpecialisationOf<typename Ret::value_type, std::optional>
-	{
-		using InputContainer = Ret;
-		return fmap(
-			[](auto && range)
-			{
-				return range |
-					std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
-					std::views::transform([](auto && elem) { return *FW(elem); }) |
-					ranges::to<detail::Unspecialise<InputContainer>::template Specialise>;
-			});
+		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e. where
+		// the action type is homogenous, so the IO type as a whole is the same for all elements.
+		return bind(filter_t::with_element_lifter_t{element_lifter});
 	}
 
 	[[nodiscard]] auto pair_with(auto && second) const
 	{
-		return fmap([second = FW(second)](auto && value) { return std::pair{FW(value), second}; });
-	}
-
-	[[nodiscard]] auto as_bool() const requires std::ranges::range<Ret>
-	{
-		return fmap([](auto && range) { return !std::ranges::empty(FW(range)); });
+		return fmap(hof::transform_pair_with_t{FW(second)});
 	}
 };
 
@@ -542,6 +585,35 @@ auto sequence(detail::SpecialisationOf<IO> auto &&... ms)
 		});
 }
 
+struct sequence_t
+{
+	template <std::ranges::range RngOfIOs>
+	struct io_action_t
+	{
+		RngOfIOs rng_of_ios;
+		constexpr auto operator()() const
+		{
+			using Elem = typename RngOfIOs::value_type::Ret;
+			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
+			return rng_of_ios |
+				std::views::transform([](typename RngOfIOs::value_type const & iom)
+									  { return iom(); }) |
+				ranges::to<Rng>;
+		}
+	};
+
+	static constexpr auto make_io(std::ranges::range auto && rng_of_ios)
+	{
+		return IO{io_action_t{FW(rng_of_ios)}};
+	}
+};
+
+template <std::ranges::range ValueRng>
+auto sequence(ValueRng && rng)
+{
+	return sequence_t::make_io(FW(rng));
+}
+
 auto fmap(auto &&... ms_and_transformer)
 {
 	return detail::rotate_right(
@@ -569,6 +641,62 @@ namespace stateio
 {
 struct stateio_tag_t
 {
+};
+
+template <typename Act>
+struct StateIO;
+
+struct modify_t
+{
+	struct io_factory_t
+	{
+		template <class State, class Value, class Fn>
+		struct action_t
+		{
+			State state;
+			Value value;
+			Fn fn;
+
+			constexpr auto operator()() const
+			{
+				return std::pair{value, fn(value, state)};
+			}
+		};
+
+		constexpr auto operator()(auto && state, auto && value, auto && fn) const
+		{
+			return io::IO{action_t{FW(state), FW(value), FW(fn)}};
+		};
+	};
+
+	struct stateio_factory_t
+	{
+		template <class Value, class Fn>
+		struct action_t
+		{
+			Value value;
+			Fn fn;
+			constexpr auto operator()(auto && state) const
+			{
+				return io_factory_t{}(FW(state), value, fn);
+			}
+		};
+
+		constexpr auto operator()(auto && value, auto && fn) const
+		{
+			return StateIO{action_t{FW(value), FW(fn)}};
+		}
+
+		template <class Fn>
+		struct with_mutator_t
+		{
+			Fn fn;
+			constexpr auto operator()(auto && value) const
+			{
+				return stateio_factory_t{}(FW(value), fn);
+			}
+		};
+	};
 };
 
 template <typename Act>
@@ -639,6 +767,17 @@ struct StateIO
 		return StateIO<decltype(next)>(std::move(next));
 	}
 
+	auto store(this auto&& self, auto&& fn)
+	{
+		return FW(self).bind(modify_t::stateio_factory_t::with_mutator_t{FW(fn)});
+	}
+
+	// constexpr auto store(this auto&& self, detail::SpecialisationOf<io::IO> auto&& iom, auto&&
+	// inserter_fn)
+	// {
+	// 	return FW(self).bind(modify_t::stateio::with_fn_t{FW(fn)});
+	// }
+
 	template <typename A, typename L, typename S>
 	static constexpr bool assert_valid_bind()
 	{
@@ -678,6 +817,7 @@ namespace boost::hana
 namespace io = vulkandemo::monad::io;
 namespace stateio = vulkandemo::monad::stateio;
 using vulkandemo::monad::detail::SpecialisationOf;
+using vulkandemo::monad::detail::tuple_like;
 
 template <typename A>
 struct tag_of<stateio::StateIO<A>>
@@ -737,22 +877,33 @@ struct chain_impl<stateio::stateio_tag_t>
 		StateIOLifter lifter;
 		constexpr auto operator()(auto value_and_state) const
 		{
-			static_assert(
-				requires { lifter(value_and_state.first); } ||
-					requires { std::apply(lifter, value_and_state.first); },
-				"StateIO lifter is not callable with value");
-
-			if constexpr (requires { std::apply(lifter, value_and_state.first); })
+			if constexpr (requires { lifter(value_and_state.first); })
+			{
+				auto new_stateio = lifter(std::move(value_and_state.first));
+				static_assert(
+					SpecialisationOf<decltype(new_stateio), stateio::StateIO>,
+					"StateIO lifter must return a StateIO");
+				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
+				static_assert(
+					SpecialisationOf<decltype(new_io), io::IO>, "StateIO action must return an IO");
+				return new_io;
+			}
+			else if constexpr (tuple_like<decltype(value_and_state.first)> && requires {
+								   std::apply(lifter, value_and_state.first);
+							   })
 			{
 				auto new_stateio = std::apply(lifter, std::move(value_and_state.first));
+				static_assert(
+					SpecialisationOf<decltype(new_stateio), stateio::StateIO>,
+					"StateIO lifter must return a StateIO");
 				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
+				static_assert(
+					SpecialisationOf<decltype(new_io), io::IO>, "StateIO action must return an IO");
 				return new_io;
 			}
 			else
 			{
-				auto new_stateio = lifter(std::move(value_and_state.first));
-				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
-				return new_io;
+				static_assert(false, "StateIO lifter not compatible with value.");
 			}
 		}
 	};
@@ -878,9 +1029,15 @@ struct get_t
 	}
 };
 
-constexpr auto lift(auto && value)
+constexpr auto pure(auto && value)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(value));
+}
+
+template <class Act>
+constexpr auto lift(io::IO<Act> && iom)
+{
+	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }
 
 auto sequence(detail::SpecialisationOf<StateIO> auto &&... ms)
@@ -891,7 +1048,7 @@ auto sequence(detail::SpecialisationOf<StateIO> auto &&... ms)
 
 	return fold_left(
 		std::tuple{FW(ms)...},
-		lift(std::tuple{}),
+		pure(std::tuple{}),
 		[](auto && acc, auto && iom)
 		{
 			// Applicative - unwrap two IOs, the first yielding a function and the second
@@ -910,6 +1067,7 @@ auto sequence(detail::SpecialisationOf<StateIO> auto &&... ms)
 			;
 		});
 }
+
 }  // namespace stateio
 
 // NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)
