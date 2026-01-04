@@ -95,7 +95,8 @@ struct create_primary_command_buffers_t
 			types::VulkanCommandPoolPtr pool,
 			types::VulkanCommandBufferCount count) const
 		{
-			return IO{action_t{.device=std::move(device), .pool=std::move(pool), .count=count}};
+			return IO{
+				action_t{.device = std::move(device), .pool = std::move(pool), .count = count}};
 		}
 	};
 };
@@ -117,7 +118,7 @@ struct create_command_pool_t
 		constexpr auto operator()(
 			types::VulkanDevicePtr device, types::VulkanQueueFamilyIdx queue_family_idx) const
 		{
-			return IO{action_t{.device=std::move(device), .queue_family_idx=queue_family_idx}};
+			return IO{action_t{.device = std::move(device), .queue_family_idx = queue_family_idx}};
 		}
 
 		struct with_queue_family_idx_t
@@ -385,10 +386,7 @@ struct query_queues_for_queue_family_and_counts_t
 			auto operator()() const
 			{
 				return setup::query_queues_for_queue_family_and_counts(
-					device.get(),
-					std::span<
-						std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>{
-						queue_family_and_counts});
+					device.get(), std::span{queue_family_and_counts});
 			}
 		};
 
@@ -398,9 +396,10 @@ struct query_queues_for_queue_family_and_counts_t
 				queue_family_and_counts) const
 		{
 			return IO{action_t{
-				std::move(device),
-				std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>{
-					queue_family_and_counts.begin(), queue_family_and_counts.end()}}};
+				.device = std::move(device),
+				.queue_family_and_counts =
+					std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>{
+						queue_family_and_counts.begin(), queue_family_and_counts.end()}}};
 		}
 	};
 };
@@ -426,19 +425,12 @@ struct query_swapchain_images_t
 		}
 	};
 
-	struct stateio_action_t
+	struct stateio_factory_t
 	{
 		constexpr auto operator()(auto const & state) const
 		{
-			return io_factory_t{}(state.device, state.swapchain).pair_with(state);
-		}
-	};
-
-	struct stateio_factory_t
-	{
-		constexpr auto operator()() const
-		{
-			return StateIO{stateio_action_t{}};
+			using vulkandemo::monad::stateio::lift;
+			return lift(io_factory_t{}(state.device, state.swapchain));
 		}
 	};
 };
@@ -473,13 +465,14 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		struct with_surface_format_and_images_t
 		{
 			VkSurfaceFormatKHR surface_format;
 			std::vector<VkImage> images;
 			constexpr auto operator()(auto const & state) const
 			{
-				return io_factory_t{}(state.device, surface_format, images).pair_with(state);
+				using vulkandemo::monad::stateio::lift;
+				return lift(io_factory_t{}(state.device, surface_format, images));
 			}
 		};
 
@@ -499,7 +492,9 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 		constexpr auto operator()(
 			VkSurfaceFormatKHR surface_format, std::vector<VkImage> images) const
 		{
-			return StateIO{action_t{.surface_format = surface_format, .images = std::move(images)}}
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}()
+				.bind(with_surface_format_and_images_t{surface_format, std::move(images)})
 				.store(modify_state_t{});
 		}
 
@@ -754,12 +749,13 @@ struct create_swapchain_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		struct with_swapchain_create_info_t
 		{
 			VkSwapchainCreateInfoKHR create_info;
 			constexpr auto operator()(auto const & state) const
 			{
-				return io_factory_t{}(state.device, create_info).pair_with(state);
+				using vulkandemo::monad::stateio::lift;
+				return lift(io_factory_t{}(state.device, create_info));
 			}
 		};
 
@@ -777,7 +773,10 @@ struct create_swapchain_t
 
 		constexpr auto operator()(VkSwapchainCreateInfoKHR const create_info) const
 		{
-			return StateIO{action_t{create_info}}.store(modify_state_t{});
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}()
+				.bind(with_swapchain_create_info_t{create_info})
+				.store(modify_state_t{});
 		}
 	};
 };
@@ -1006,9 +1005,10 @@ struct create_surface_t
 		{
 			types::SDLWindowPtr window;
 			types::VulkanInstancePtr instance;
-			auto operator()() const
+			auto operator()(this auto&& self)
 			{
-				return setup::create_surface(window, instance);
+				// NOLINTNEXTLINE(bugprone-use-after-move)
+				return setup::create_surface(FW(self).window, FW(self).instance);
 			}
 		};
 
@@ -1021,11 +1021,12 @@ struct create_surface_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		struct from_state_t
 		{
 			constexpr auto operator()(auto && state) const
 			{
-				return io_factory_t{}(state.window, state.instance).pair_with(state);
+				using vulkandemo::monad::stateio::lift;
+				return lift(io_factory_t{}(state.window, state.instance));
 			}
 		};
 
@@ -1043,7 +1044,8 @@ struct create_surface_t
 
 		constexpr auto operator()() const
 		{
-			return StateIO{action_t{}}.store(modify_state_t{});
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}().bind(from_state_t{}).store(modify_state_t{});
 		}
 	};
 };

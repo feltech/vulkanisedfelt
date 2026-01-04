@@ -376,6 +376,9 @@ using vulkandemo::monad::stateio::StateIO;
 
 namespace test
 {
+using vulkandemo::monad::stateio::get_state_t;
+using vulkandemo::monad::stateio::lift;
+
 namespace create_a_window
 {
 constexpr int kExpectedWidth = 800;
@@ -647,18 +650,10 @@ struct query_instance_args_for_window_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		constexpr auto operator()(auto const & state) const
 		{
-			types::SDLWindowPtr window;
-			constexpr auto operator()(auto const & state) const
-			{
-				return io_factory_t{}(state.logger, window).pair_with(state);
-			}
-		};
-
-		constexpr auto operator()(types::SDLWindowPtr window) const
-		{
-			return StateIO{action_t{std::move(window)}};
+			using vulkandemo::monad::stateio::lift;
+			return lift(io_factory_t{}(state.logger, state.window));
 		}
 	};
 };
@@ -671,17 +666,19 @@ struct create_default_instance_t
 		{
 			using monad::create_debug_messenger_t;
 			using monad::create_instance_t;
-			using vulkandemo::monad::stateio::get_t;
+			using vulkandemo::monad::stateio::get_state_t;
+			using vulkandemo::monad::stateio::sequence;
 			// Create application window.
 			return monad::create_window_t::stateio_factory_t{}("", 0, 0)
 				// Gather arguments for constructing a vulkan instance.
+				.then(get_state_t::stateio_factory_t{}())
 				.bind(query_instance_args_for_window_t::stateio_factory_t{})
 				// Create/store Vulkan instance
 				.bind(create_instance_t::stateio_factory_t{})
 				// Create/store debug messenger callback closure.
 				.bind(create_debug_messenger_t::stateio_factory_t{})
 				// Replace arg with state, in case useful for subsequent bind()/fmap() calls.
-				.bind(get_t{});
+				.then(get_state_t::stateio_factory_t{}());
 		}
 	};
 };
@@ -693,18 +690,9 @@ struct create_surface_t
 {
 	struct stateio_factory_t
 	{
-		struct action_t
+		constexpr auto operator()(auto const & state) const
 		{
-			constexpr auto operator()(auto const & state) const
-			{
-				return monad::create_surface_t::io_factory_t{}(state.window, state.instance)
-					.pair_with(state);
-			}
-		};
-
-		constexpr auto operator()() const
-		{
-			return StateIO{action_t{}};
+			return lift(monad::create_surface_t::io_factory_t{}(state.window, state.instance));
 		}
 	};
 };
@@ -786,7 +774,7 @@ struct query_supported_graphics_queue_families_t
 	};
 };
 
-struct transform_check_availability_t
+struct check_availability_t
 {
 	constexpr auto operator()(
 		std::vector<types::AvailableDeviceExtensionNameView> const & available_device_extensions,
@@ -823,39 +811,17 @@ struct create_surface_t
 			return monad::create_surface_t::io_factory_t{}(std::move(window), std::move(instance));
 		}
 	};
-
-	struct stateio_action_t
-	{
-		constexpr auto operator()(auto const & state) const
-		{
-			return io_factory_t{}(state.window, state.instance).pair_with(state);
-		}
-	};
-
-	static constexpr auto make_stateio()
-	{
-		return StateIO{stateio_action_t{}};
-	}
 };
 
 struct choose_physical_device_and_create_surface_t
 {
 	struct stateio_factory_t
 	{
-		struct action_t
+		constexpr auto operator()(auto const & state) const
 		{
-			constexpr auto operator()(auto const & state) const
-			{
-				return sequence(
-						   choose_physical_device_t::io_factory_t{}(state.logger, state.instance),
-						   create_surface_t::io_factory_t{}(state.window, state.instance))
-					.pair_with(state);
-			}
-		};
-
-		constexpr auto operator()() const
-		{
-			return StateIO{action_t{}};
+			return lift(sequence(
+				choose_physical_device_t::io_factory_t{}(state.logger, state.instance),
+				create_surface_t::io_factory_t{}(state.window, state.instance)));
 		}
 	};
 };
@@ -874,26 +840,30 @@ struct check_supported_extensions_and_memory_types_and_queue_families_t
 					   query_host_visible_memory_type_idxs_t::io_factory_t{}(logger, chosen_device),
 					   query_supported_graphics_queue_families_t::io_factory_t{}(
 						   chosen_device, std::move(surface)))
-				.fmap(transform_check_availability_t{});
+				.fmap(check_availability_t{});
 		}
 	};
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		struct with_device_and_surface
 		{
 			VkPhysicalDevice chosen_device;
 			types::VulkanSurfacePtr surface;
 			constexpr auto operator()(auto const & state) const
 			{
-				return io_factory_t{}(state.logger, chosen_device, surface).pair_with(state);
+				return lift(io_factory_t{}(state.logger, chosen_device, surface));
 			}
 		};
 
 		constexpr auto operator()(
 			VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface) const
 		{
-			return StateIO{action_t{.chosen_device = chosen_device, .surface = std::move(surface)}};
+			using vulkandemo::monad::stateio::get_state_t;
+
+			return get_state_t::stateio_factory_t{}().bind(
+				with_device_and_surface{
+					.chosen_device = chosen_device, .surface = std::move(surface)});
 		}
 	};
 };
@@ -963,22 +933,32 @@ struct has_required_device_extensions_t
 	};
 };
 
+struct maybe_score_physical_device_and_queue_family_t
+{
+	constexpr auto operator()(
+		VkPhysicalDevice physical_device,
+		VkPhysicalDeviceProperties const & physical_device_properties,
+		std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs) const
+	{
+		return maybe_score_physical_device_and_queue_family(
+			physical_device, physical_device_properties, filtered_queue_family_idxs);
+	}
+
+	struct with_physical_device_t
+	{
+		VkPhysicalDevice physical_device;
+		constexpr auto operator()(
+			VkPhysicalDeviceProperties const & physical_device_properties,
+			std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs) const
+		{
+			return maybe_score_physical_device_and_queue_family_t{}(
+				physical_device, physical_device_properties, filtered_queue_family_idxs);
+		}
+	};
+};
+
 struct compute_device_score_t
 {
-	struct transform_to_maybe_score_t
-	{
-		struct with_physical_device_t
-		{
-			VkPhysicalDevice physical_device;
-			constexpr auto operator()(
-				VkPhysicalDeviceProperties const & physical_device_properties,
-				std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs) const
-			{
-				return maybe_score_physical_device_and_queue_family(
-					physical_device, physical_device_properties, filtered_queue_family_idxs);
-			}
-		};
-	};
 	struct io_factory_t
 	{
 		constexpr auto operator()(
@@ -1001,17 +981,19 @@ struct compute_device_score_t
 									   io_factory_t::with_physical_device_and_surface_t{
 										   .physical_device = physical_device,
 										   .surface = std::move(surface)}}))
-				.fmap(transform_to_maybe_score_t::with_physical_device_t{physical_device});
+				.fmap(
+					maybe_score_physical_device_and_queue_family_t::with_physical_device_t{
+						physical_device});
 		}
-	};
 
-	struct with_surface_t
-	{
-		types::VulkanSurfacePtr surface;
-		auto operator()(VkPhysicalDevice physical_device) const
+		struct with_surface_t
 		{
-			return io_factory_t{}(surface, physical_device);
-		}
+			types::VulkanSurfacePtr surface;
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			{
+				return io_factory_t{}(surface, physical_device);
+			}
+		};
 	};
 };
 
@@ -1029,29 +1011,30 @@ struct check_selected_physical_device_and_queue_family_t
 	}
 };
 
+struct score_devices_and_select_best_and_check_valid_t
+{
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			types::VulkanSurfacePtr surface, std::vector<VkPhysicalDevice> physical_devices) const
+		{
+			namespace io = vulkandemo::monad::io;
+			auto score_ios =
+				std::move(physical_devices) |
+				std::views::transform(
+					compute_device_score_t::io_factory_t::with_surface_t{std::move(surface)}) |
+				ranges::to<std::vector>;
+
+			return io::sequence(std::move(score_ios))
+				.fmap(hof::transform_maybes_to_values_t{})
+				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx)
+				.fmap(check_selected_physical_device_and_queue_family_t{});
+		}
+	};
+};
+
 struct select_physical_device_and_queue_family_and_check_t
 {
-	struct score_devices_and_select_best_and_check_valid_t
-	{
-		struct io_factory_t
-		{
-			constexpr auto operator()(
-				types::VulkanSurfacePtr surface,
-				std::vector<VkPhysicalDevice> physical_devices) const
-			{
-				namespace io = vulkandemo::monad::io;
-				auto score_ios = physical_devices |
-					std::views::transform(compute_device_score_t::with_surface_t{surface}) |
-					ranges::to<std::vector>;
-
-				return io::sequence(std::move(score_ios))
-					.fmap(hof::transform_maybes_to_values_t{})
-					.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx)
-					.fmap(check_selected_physical_device_and_queue_family_t{});
-			}
-		};
-	};
-
 	struct io_factory_t
 	{
 		constexpr auto operator()(
@@ -1072,99 +1055,99 @@ struct select_physical_device_and_queue_family_and_check_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		constexpr auto operator()(auto const & state) const
 		{
-			constexpr auto operator()(auto const & state) const
-			{
-				return io_factory_t{}(state.logger, state.window, state.instance).pair_with(state);
-			}
-		};
-
-		constexpr auto operator()() const
-		{
-			return StateIO{action_t{}};
+			return lift(io_factory_t{}(state.logger, state.window, state.instance));
 		}
 	};
 };
 
 }  // namespace select_physical_device
 
-struct create_default_instance_and_physical_device_and_queue_family_t
+struct check_has_host_visible_mem_for_physical_device_t
 {
-	struct create_surface_and_select_physical_device_and_queue_family_for_state_t
+	struct io_factory_t
 	{
-		template <class State>
-		auto operator()(State const & state) const
-		{
-			return monad::create_surface_t::io_factory_t{}(state.window, state.instance)
-				.bind(with_state_select_physical_device_and_queue_family_for_surface_t{state});
-		}
-	};
-
-	template <class State>
-	struct with_state_select_physical_device_and_queue_family_for_surface_t
-	{
-		State state;
-		auto operator()(types::VulkanSurfacePtr surface) const
-		{
-			return monad::enumerate_physical_devices_t::io_factory_t{}(state.logger, state.instance)
-				.filter(with_state_check_has_host_visible_mem_for_physical_device_t{state})
-				.filter(with_state_check_has_swapchain_extension_for_physical_device_t{state})
-				.bind(with_surface_compute_score_for_physical_devices_t{std::move(surface)})
-				.fmap(hof::transform_maybes_to_values_t{})
-				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx);
-		}
-	};
-
-	template <class State>
-	struct with_state_check_has_host_visible_mem_for_physical_device_t
-	{
-		State state;
-		auto operator()(VkPhysicalDevice physical_device) const
+		constexpr auto operator()(LoggerPtr logger, VkPhysicalDevice physical_device) const
 		{
 			return monad::query_physical_device_memory_properties_t::io_factory_t{}(
-					   state.logger, physical_device)
+					   logger, physical_device)
 				.fmap(
 					memory_properties_filter_by_and_transform_to_memory_type_idx_t::
 						with_memory_property_flags_t(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
 				.fmap(hof::transform_range_to_check_non_empty_t{});
 		}
-	};
 
-	template <class State>
-	struct with_state_check_has_swapchain_extension_for_physical_device_t
+		struct with_logger_t
+		{
+			LoggerPtr logger;
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			{
+				return io_factory_t{}(logger, physical_device);
+			}
+		};
+	};
+};
+
+struct check_has_swapchain_extension_for_physical_device_t
+{
+	struct io_factory_t
 	{
-		State state;
-		auto operator()(VkPhysicalDevice physical_device) const
+		constexpr auto operator()(LoggerPtr logger, VkPhysicalDevice physical_device) const
 		{
 			return monad::query_available_device_extensions_t::io_factory_t{}(physical_device)
 				.fmap(
 					extension_properties_filter_by_and_transform_to_device_extension_name_t::
 						with_logger_and_physical_device_and_desired_device_extension_names_t{
-							state.logger,
-							physical_device,
-							std::set{types::DesiredDeviceExtensionNameView{
-								VK_KHR_SWAPCHAIN_EXTENSION_NAME}}})
+							.logger = std::move(logger),
+							.physical_device = physical_device,
+							.desired_device_extension_names =
+								std::set{types::DesiredDeviceExtensionNameView{
+									VK_KHR_SWAPCHAIN_EXTENSION_NAME}}})
 				.fmap(hof::transform_range_to_check_non_empty_t{});
 		}
-	};
 
-	struct with_physical_device_maybe_score_for_physical_device_properties_and_queue_family_t
+		struct with_logger_t
+		{
+			LoggerPtr logger;
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			{
+				return io_factory_t{}(logger, physical_device);
+			}
+		};
+	};
+};
+
+struct maybe_score_for_physical_device_properties_and_queue_family_t
+{
+	constexpr auto operator()(
+		VkPhysicalDevice physical_device,
+		VkPhysicalDeviceProperties const & physical_device_properties,
+		std::vector<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
+	{
+		return maybe_score_physical_device_and_queue_family(
+			physical_device, physical_device_properties, queue_family_idxs);
+	}
+
+	struct with_physical_device_t
 	{
 		VkPhysicalDevice physical_device;
-		auto operator()(
+		constexpr auto operator()(
 			VkPhysicalDeviceProperties const & physical_device_properties,
 			std::vector<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
 		{
-			return maybe_score_physical_device_and_queue_family(
+			return maybe_score_for_physical_device_properties_and_queue_family_t{}(
 				physical_device, physical_device_properties, queue_family_idxs);
 		}
 	};
+};
 
-	struct with_surface_compute_score_for_physical_device_t
+struct compute_score_for_physical_device_t
+{
+	struct io_factory_t
 	{
-		types::VulkanSurfacePtr surface;
-		auto operator()(VkPhysicalDevice physical_device) const
+		constexpr auto operator()(
+			types::VulkanSurfacePtr surface, VkPhysicalDevice physical_device) const
 		{
 			using monad::query_available_queue_family_properties_t;
 			using monad::query_is_queue_family_supported_by_physical_device_and_surface_t;
@@ -1180,68 +1163,166 @@ struct create_default_instance_and_physical_device_and_queue_family_t
 								   io_factory_t::with_physical_device_and_surface_t{
 									   physical_device, surface}))
 				.fmap(
-					with_physical_device_maybe_score_for_physical_device_properties_and_queue_family_t{
-						physical_device});
+					maybe_score_for_physical_device_properties_and_queue_family_t::
+						with_physical_device_t{physical_device});
 		}
-	};
 
-	struct with_surface_compute_score_for_physical_devices_t
+		struct with_surface_t
+		{
+			types::VulkanSurfacePtr surface;
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			{
+				return io_factory_t{}(surface, physical_device);
+			}
+		};
+	};
+};
+
+struct compute_score_for_physical_devices_t
+{
+	struct io_factory_t
 	{
-		types::VulkanSurfacePtr surface;
-		auto operator()(std::vector<VkPhysicalDevice> const & physical_devices) const
+		constexpr auto operator()(
+			types::VulkanSurfacePtr surface, std::vector<VkPhysicalDevice> physical_devices) const
 		{
 			using monad::query_available_queue_family_properties_t;
 			using monad::query_is_queue_family_supported_by_physical_device_and_surface_t;
 			using monad::query_physical_device_properties_t;
 			using vulkandemo::monad::io::sequence;
 
-			auto const score_ios = physical_devices |
-				std::views::transform(with_surface_compute_score_for_physical_device_t{surface}) |
+			auto const score_ios =
+				std::move(physical_devices) |
+				std::views::transform(
+					compute_score_for_physical_device_t::io_factory_t::with_surface_t{
+						std::move(surface)}) |
 				ranges::to<std::vector>;
 
 			return sequence(score_ios);
+		}
+
+		struct with_surface_t
+		{
+			types::VulkanSurfacePtr surface;
+			constexpr auto operator()(std::vector<VkPhysicalDevice> physical_devices) const
+			{
+				return io_factory_t{}(surface, std::move(physical_devices));
+			}
+		};
+	};
+};
+
+struct select_physical_device_and_queue_family_for_surface_t
+{
+	constexpr auto operator()(
+		LoggerPtr const & logger,
+		types::VulkanInstancePtr instance,
+		types::VulkanSurfacePtr surface) const
+	{
+		return monad::enumerate_physical_devices_t::io_factory_t{}(logger, std::move(instance))
+			.filter(
+				check_has_host_visible_mem_for_physical_device_t::io_factory_t::with_logger_t{
+					logger})
+			.filter(
+				check_has_swapchain_extension_for_physical_device_t::io_factory_t::with_logger_t{
+					logger})
+			.bind(
+				compute_score_for_physical_devices_t::io_factory_t::with_surface_t{
+					std::move(surface)})
+			.fmap(hof::transform_maybes_to_values_t{})
+			.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx);
+	}
+
+	struct with_logger_and_instance_t
+	{
+		LoggerPtr logger;
+		types::VulkanInstancePtr instance;
+		constexpr auto operator()(types::VulkanSurfacePtr surface) const
+		{
+			return select_physical_device_and_queue_family_for_surface_t{}(
+				logger, instance, std::move(surface));
+		}
+	};
+};
+
+struct create_surface_and_select_physical_device_and_queue_family_t
+{
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			LoggerPtr logger,
+			types::SDLWindowPtr window,
+			types::VulkanInstancePtr const & instance) const
+		{
+			return monad::create_surface_t::io_factory_t{}(std::move(window), instance)
+				.bind(
+					select_physical_device_and_queue_family_for_surface_t::
+						with_logger_and_instance_t{
+							.logger = std::move(logger), .instance = instance});
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		constexpr auto operator()(auto const & state) const
+		{
+			using vulkandemo::monad::stateio::lift;
+
+			return lift(io_factory_t{}(state.logger, state.window, state.instance));
+		}
+	};
+};
+
+struct create_default_instance_and_physical_device_and_queue_family_t
+{
+	struct stateio_factory_t
+	{
+		constexpr auto operator()() const
+		{
+			using vulkandemo::monad::stateio::get_state_t;
+			return create_default_instance_t::stateio_factory_t{}()
+				.then(get_state_t::stateio_factory_t{}())
+				.bind(
+					create_surface_and_select_physical_device_and_queue_family_t::
+						stateio_factory_t{});
 		}
 	};
 
 	static constexpr auto make_stateio()
 	{
-		return create_default_instance_t::stateio_factory_t{}().with_state(
-			create_surface_and_select_physical_device_and_queue_family_for_state_t{});
+		return stateio_factory_t{}();
 	}
 };
-
 namespace select_device_with_capability
 {
 using vulkandemo::monad::io::IO;
 
+struct select_basic_physical_device_t
+{
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			LoggerPtr logger, std::vector<VkPhysicalDevice> physical_devices) const
+		{
+			return monad::select_physical_device_t::io_factory_t{}(
+				std::move(logger),
+				std::move(physical_devices),
+				std::set{types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
+				VK_QUEUE_GRAPHICS_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+		}
+	};
+	struct with_logger_t
+	{
+		LoggerPtr logger;
+		constexpr auto operator()(std::vector<VkPhysicalDevice> physical_devices) const
+		{
+			return io_factory_t{}(logger, std::move(physical_devices));
+		}
+	};
+};
+
 struct select_physical_device_with_requirements_t
 {
-	struct select_basic_physical_device_t
-	{
-		struct io_factory_t
-		{
-			constexpr auto operator()(
-				LoggerPtr logger, std::vector<VkPhysicalDevice> physical_devices) const
-			{
-				return monad::select_physical_device_t::io_factory_t{}(
-					std::move(logger),
-					std::move(physical_devices),
-					std::set{
-						types::DesiredDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}},
-					VK_QUEUE_GRAPHICS_BIT,
-					VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-			}
-		};
-		struct with_logger_t
-		{
-			LoggerPtr logger;
-			constexpr auto operator()(std::vector<VkPhysicalDevice> physical_devices) const
-			{
-				return io_factory_t{}(logger, std::move(physical_devices));
-			}
-		};
-	};
-
 	struct io_factory_t
 	{
 		constexpr auto operator()(LoggerPtr const & logger, types::VulkanInstancePtr instance) const
@@ -1253,17 +1334,9 @@ struct select_physical_device_with_requirements_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		constexpr auto operator()(auto const & state) const
 		{
-			constexpr auto operator()(auto const & state) const
-			{
-				return io_factory_t{}(state.logger, state.instance).pair_with(state);
-			}
-		};
-
-		constexpr auto operator()() const
-		{
-			return StateIO{action_t{}};
+			return lift(io_factory_t{}(state.logger, state.instance));
 		}
 	};
 };
@@ -1287,27 +1360,36 @@ struct check_selected_device_t
 			}
 		};
 
-		struct stateio_factory_t
+		constexpr auto operator()(
+			VkPhysicalDevice physical_device,
+			types::VulkanQueueFamilyIdx const queue_family_idx) const
 		{
-			struct action_t
-			{
-				VkPhysicalDevice device;
-				types::VulkanQueueFamilyIdx queue_family_idx;
+			return IO{action_t{physical_device, queue_family_idx}};
+		}
+	};
 
-				constexpr auto operator()(auto && state) const
-				{
-					return IO{io_factory_t::action_t{device, queue_family_idx}}.pair_with(
-						FW(state));
-				}
-			};
+	struct stateio_factory_t
+	{
+		struct with_device_and_queue_family_t
+		{
+			VkPhysicalDevice device;
+			types::VulkanQueueFamilyIdx queue_family_idx;
 
-			constexpr auto operator()(std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>
-										  device_and_queue_family) const
+			constexpr auto operator()(auto && state) const
 			{
-				auto [device, queue_family_idx] = device_and_queue_family;
-				return StateIO{action_t{device, queue_family_idx}};
+				return lift(io_factory_t{}(device, queue_family_idx));
 			}
 		};
+
+		constexpr auto operator()(
+			std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx> device_and_queue_family) const
+		{
+			auto [device, queue_family_idx] = device_and_queue_family;
+			using vulkandemo::monad::stateio::get_state_t;
+
+			return get_state_t::stateio_factory_t{}().bind(
+				with_device_and_queue_family_t{device, queue_family_idx});
+		}
 	};
 };
 }  // namespace select_device_with_capability
@@ -1316,85 +1398,100 @@ namespace create_logical_device_with_queues
 {
 constexpr types::VulkanQueueCount kExpectedQueueCount{2};
 
-using CountsVec = std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>;
+using QueueFamilyIdxAndCounts =
+	std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>;
 
-struct create_device_and_queues_and_check_t
+struct query_queues_and_check_t
 {
-	struct query_queues_and_check_t
+	struct check_validity_of_queues_t
 	{
-		struct with_device_and_queue_family_check_validity_of_queues_t
+		constexpr auto operator()(
+			types::VulkanDevicePtr device,
+			types::VulkanQueueFamilyIdx queue_family_idx,
+			types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues) const
+		{
+			CHECK(device);
+			CHECK(queues.size() == 1);
+			CHECK(queues.at(queue_family_idx).size() == kExpectedQueueCount);
+			CHECK(queues.at(queue_family_idx)[0]);
+			CHECK(queues.at(queue_family_idx)[1]);
+			return true;
+		}
+
+		struct with_device_and_queue_family_idx_t
 		{
 			types::VulkanDevicePtr device;
 			types::VulkanQueueFamilyIdx queue_family_idx;
 
-			auto operator()(types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues) const
+			constexpr auto operator()(types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues) const
 			{
-				CHECK(device);
-				CHECK(queues.size() == 1);
-				CHECK(queues.at(queue_family_idx).size() == kExpectedQueueCount);
-				CHECK(queues.at(queue_family_idx)[0]);
-				CHECK(queues.at(queue_family_idx)[1]);
-				return true;
-			}
-		};
-
-		struct io_factory_t
-		{
-			constexpr auto operator()(
-				types::VulkanDevicePtr const & device,
-				types::VulkanQueueFamilyIdx queue_family_idx,
-				CountsVec queue_family_and_counts) const
-			{
-				return monad::query_queues_for_queue_family_and_counts_t::io_factory_t{}(
-						   device, std::move(queue_family_and_counts))
-					.fmap(
-						with_device_and_queue_family_check_validity_of_queues_t{
-							device, queue_family_idx});
-			}
-		};
-
-		struct stateio_factory_t
-		{
-			struct action_t
-			{
-				types::VulkanQueueFamilyIdx queue_family_idx;
-				CountsVec queue_family_and_counts;
-				constexpr auto operator()(auto const & state) const
-				{
-					return io_factory_t{}(state.device, queue_family_idx, queue_family_and_counts)
-						.pair_with(state);
-				}
-			};
-
-			constexpr auto operator()(
-				types::VulkanQueueFamilyIdx queue_family_idx,
-				CountsVec queue_family_and_counts) const
-			{
-				return StateIO{action_t{
-					.queue_family_idx = queue_family_idx,
-					.queue_family_and_counts = std::move(queue_family_and_counts)}};
+				return check_validity_of_queues_t{}(device, queue_family_idx, std::move(queues));
 			}
 		};
 	};
 
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			types::VulkanDevicePtr const & device,
+			types::VulkanQueueFamilyIdx queue_family_idx,
+			QueueFamilyIdxAndCounts queue_family_and_counts) const
+		{
+			return monad::query_queues_for_queue_family_and_counts_t::io_factory_t{}(
+					   device, std::move(queue_family_and_counts))
+				.fmap(
+					check_validity_of_queues_t::with_device_and_queue_family_idx_t{
+						.device = device, .queue_family_idx = queue_family_idx});
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		constexpr auto operator()(
+			types::VulkanQueueFamilyIdx queue_family_idx,
+			QueueFamilyIdxAndCounts queue_family_and_counts,
+			auto const & state) const
+		{
+			using vulkandemo::monad::stateio::lift;
+			return lift(io_factory_t{}(state.device, queue_family_idx, queue_family_and_counts));
+		}
+
+		struct with_queue_family_idx_and_queue_counts_t
+		{
+			types::VulkanQueueFamilyIdx queue_family_idx;
+			QueueFamilyIdxAndCounts queue_family_and_counts;
+			constexpr auto operator()(auto const & state) const
+			{
+				return stateio_factory_t{}(queue_family_idx, queue_family_and_counts, state);
+			}
+		};
+	};
+};
+
+struct create_device_and_queues_and_check_t
+{
 	struct stateio_factory_t
 	{
 		constexpr auto operator()(
 			std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
 				physical_device_and_queue_family) const
 		{
+			using vulkandemo::monad::stateio::get_state_t;
+
 			REQUIRE(physical_device_and_queue_family.has_value());
 			auto const [physical_device, queue_family_idx] = *FW(physical_device_and_queue_family);
-			CountsVec const queue_family_and_counts{
+			QueueFamilyIdxAndCounts const queue_family_and_counts{
 				std::pair{queue_family_idx, kExpectedQueueCount}};
 
 			return monad::create_device_t::stateio_factory_t{}(
 					   physical_device,
 					   queue_family_and_counts,
 					   {types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
-				.then(
-					query_queues_and_check_t::stateio_factory_t{}(
-						queue_family_idx, queue_family_and_counts));
+				.then(get_state_t::stateio_factory_t{}())
+				.bind(
+					query_queues_and_check_t::stateio_factory_t::
+						with_queue_family_idx_and_queue_counts_t{
+							queue_family_idx, queue_family_and_counts});
 		}
 	};
 };
@@ -1402,145 +1499,146 @@ struct create_device_and_queues_and_check_t
 
 namespace create_swapchain
 {
-struct query_surface_formats_and_create_swapchain_and_image_views_t
+
+struct select_first_surface_format_t
 {
-	struct query_and_filter_surface_formats_t
+	constexpr auto operator()(std::vector<VkSurfaceFormatKHR> const & surface_formats) const
 	{
-		struct select_first_surface_format_t
+		REQUIRE(!surface_formats.empty());
+		return surface_formats.front();
+	}
+};
+
+struct query_and_filter_surface_formats_t
+{
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			LoggerPtr logger,
+			VkPhysicalDevice physical_device,
+			types::VulkanSurfacePtr surface) const
 		{
-			constexpr auto operator()(std::vector<VkSurfaceFormatKHR> const & surface_formats) const
-			{
-				REQUIRE(!surface_formats.empty());
-				return surface_formats.front();
-			}
-		};
+			return monad::query_available_surface_formats_t::io_factory_t{}(
+					   physical_device, std::move(surface))
+				.fmap(make_filter_surface_formats(
+					std::move(logger),
+					std::array{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}))
+				.fmap(select_first_surface_format_t{});
+		}
+	};
 
-		struct io_factory_t
+	struct stateio_factory_t
+	{
+		constexpr auto operator()(VkPhysicalDevice physical_device, auto const & state) const
 		{
-			constexpr auto operator()(
-				LoggerPtr logger,
-				VkPhysicalDevice physical_device,
-				types::VulkanSurfacePtr surface) const
-			{
-				return monad::query_available_surface_formats_t::io_factory_t{}(
-						   physical_device, surface)
-					.fmap(make_filter_surface_formats(
-						logger, std::array{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}))
-					.fmap(select_first_surface_format_t{});
-			}
-		};
-
-		struct stateio_factory_t
+			using vulkandemo::monad::stateio::lift;
+			return lift(io_factory_t{}(state.logger, physical_device, state.surface));
+		}
+		struct with_physical_device_t
 		{
-			struct action_t
-			{
-				VkPhysicalDevice physical_device;
+			VkPhysicalDevice physical_device;
 
-				constexpr auto operator()(auto const & state) const
-				{
-					return io_factory_t{}(state.logger, physical_device, state.surface)
-						.pair_with(state);
-				}
-			};
-
-			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			constexpr auto operator()(auto const & state) const
 			{
-				return StateIO{action_t{physical_device}};
+				return stateio_factory_t{}(physical_device, state);
 			}
 		};
 	};
+};
 
-	struct swapchain_create_info_t
+struct exclusive_double_buffer_swapchain_create_info_t
+{
+	struct with_logger_surface_and_format_t
 	{
-		struct exclusive_double_buffer_swapchain_create_info_t
+		LoggerPtr logger;
+		types::VulkanSurfacePtr surface;
+		VkSurfaceFormatKHR surface_format;
+
+		constexpr auto operator()(
+			std::vector<VkPresentModeKHR> surface_present_modes,
+			VkSurfaceCapabilitiesKHR const surface_capabilities) const
 		{
-			struct with_logger_surface_and_format_t
-			{
-				LoggerPtr logger;
-				types::VulkanSurfacePtr surface;
-				VkSurfaceFormatKHR surface_format;
+			return exclusive_double_buffer_swapchain_create_info(
+				logger,
+				surface,
+				surface_format,
+				surface_capabilities,
+				std::move(surface_present_modes));
+		}
+	};
+};
 
-				constexpr auto operator()(
-					std::vector<VkPresentModeKHR> surface_present_modes,
-					VkSurfaceCapabilitiesKHR surface_capabilities) const
-				{
-					return exclusive_double_buffer_swapchain_create_info(
-						logger,
-						surface,
-						surface_format,
-						surface_capabilities,
-						std::move(surface_present_modes));
-				}
-			};
-		};
-
-		struct io_factory_t
+struct swapchain_create_info_t
+{
+	struct io_factory_t
+	{
+		constexpr auto operator()(
+			LoggerPtr logger,
+			VkPhysicalDevice physical_device,
+			types::VulkanSurfacePtr const & surface,
+			VkSurfaceFormatKHR surface_format) const
 		{
-			constexpr auto operator()(
-				LoggerPtr logger,
-				VkPhysicalDevice physical_device,
-				types::VulkanSurfacePtr surface,
-				VkSurfaceFormatKHR surface_format) const
-			{
-				return sequence(
-						   monad::query_present_modes_t::io_factory_t{}(physical_device, surface),
-						   monad::query_surface_capabilities_t::io_factory_t{}(
-							   physical_device, surface))
-					.fmap(
-						exclusive_double_buffer_swapchain_create_info_t::
-							with_logger_surface_and_format_t{logger, surface, surface_format});
-			}
-		};
-
-		struct stateio_factory_t
-		{
-			struct action_t
-			{
-				VkPhysicalDevice physical_device;
-				VkSurfaceFormatKHR surface_format;
-				constexpr auto operator()(auto const & state) const
-				{
-					return io_factory_t{}(
-							   state.logger, physical_device, state.surface, surface_format)
-						.pair_with(state);
-				}
-			};
-
-			constexpr auto operator()(
-				VkPhysicalDevice physical_device, VkSurfaceFormatKHR surface_format) const
-			{
-				return StateIO{action_t{physical_device, surface_format}};
-			}
-		};
+			return sequence(
+					   monad::query_present_modes_t::io_factory_t{}(physical_device, surface),
+					   monad::query_surface_capabilities_t::io_factory_t{}(
+						   physical_device, surface))
+				.fmap(
+					exclusive_double_buffer_swapchain_create_info_t::
+						with_logger_surface_and_format_t{
+							std::move(logger), surface, surface_format});
+		}
 	};
 
-	struct create_swapchain_and_image_views_t
+	struct stateio_factory_t
 	{
-		struct stateio_factory_t
+		struct with_physical_device_and_surface_format_t
 		{
-			struct action_t
+			VkPhysicalDevice physical_device;
+			VkSurfaceFormatKHR surface_format;
+			constexpr auto operator()(auto const & state) const
 			{
-				VkPhysicalDevice physical_device;
-				VkSurfaceFormatKHR surface_format;
-
-				constexpr auto operator()(auto const & state) const
-				{
-					return swapchain_create_info_t::stateio_factory_t{}(
-							   physical_device, surface_format)
-						.bind(monad::create_swapchain_t::stateio_factory_t{})
-						.then(monad::query_swapchain_images_t::stateio_factory_t{}())
-						.bind(
-							monad::create_colour_aspect_single_mip_single_layer_image_views_t::
-								stateio_factory_t::with_surface_format_t{surface_format})(state);
-				}
-			};
-
-			constexpr auto operator()(
-				VkPhysicalDevice physical_device, VkSurfaceFormatKHR surface_format) const
-			{
-				return StateIO{action_t{physical_device, surface_format}};
+				return lift(
+					io_factory_t{}(state.logger, physical_device, state.surface, surface_format));
 			}
 		};
+
+		constexpr auto operator()(
+			VkPhysicalDevice physical_device, VkSurfaceFormatKHR surface_format) const
+		{
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}().bind(
+				with_physical_device_and_surface_format_t{physical_device, surface_format});
+		}
+	};
+};
+
+struct create_swapchain_and_image_views_t
+{
+	struct stateio_factory_t
+	{
+		struct action_t
+		{
+			VkPhysicalDevice physical_device;
+			VkSurfaceFormatKHR surface_format;
+
+			constexpr auto operator()(auto const & state) const
+			{
+				return swapchain_create_info_t::stateio_factory_t{}(physical_device, surface_format)
+					.bind(monad::create_swapchain_t::stateio_factory_t{})
+					.then(get_state_t::stateio_factory_t{}())
+					.bind(monad::query_swapchain_images_t::stateio_factory_t{})
+					.bind(
+						monad::create_colour_aspect_single_mip_single_layer_image_views_t::
+							stateio_factory_t::with_surface_format_t{surface_format})(state);
+			}
+		};
+
+		constexpr auto operator()(
+			VkPhysicalDevice physical_device, VkSurfaceFormatKHR surface_format) const
+		{
+			return StateIO{
+				action_t{.physical_device = physical_device, .surface_format = surface_format}};
+		}
 
 		struct with_physical_device_t
 		{
@@ -1550,18 +1648,25 @@ struct query_surface_formats_and_create_swapchain_and_image_views_t
 				return stateio_factory_t{}(physical_device, surface_format);
 			}
 		};
-
-		struct stateio_factory_t_outer
-		{
-			constexpr auto operator()(VkPhysicalDevice physical_device) const
-			{
-				return query_and_filter_surface_formats_t::stateio_factory_t{}(physical_device)
-					.bind(with_physical_device_t{physical_device});
-			}
-		};
 	};
+};
 
-	// use the outer stateio factory in callers
+struct query_surface_formats_and_create_swapchain_and_image_views_t
+{
+	struct stateio_factory_t
+	{
+		constexpr auto operator()(VkPhysicalDevice physical_device) const
+		{
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}()
+				.bind(
+					query_and_filter_surface_formats_t::stateio_factory_t::with_physical_device_t{
+						physical_device})
+				.bind(
+					create_swapchain_and_image_views_t::stateio_factory_t::with_physical_device_t{
+						physical_device});
+		}
+	};
 };
 
 struct check_swapchain_t
@@ -1592,18 +1697,20 @@ struct check_swapchain_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
+		struct with_image_views_t
 		{
 			std::vector<types::VulkanImageViewPtr> image_views;
 			constexpr auto operator()(auto const & state) const
 			{
-				return io_factory_t{}(state.swapchain, image_views).pair_with(state);
+				return lift(io_factory_t{}(state.swapchain, image_views));
 			}
 		};
 
 		constexpr auto operator()(std::vector<types::VulkanImageViewPtr> image_views) const
 		{
-			return StateIO{action_t{std::move(image_views)}};
+			using vulkandemo::monad::stateio::get_state_t;
+			return get_state_t::stateio_factory_t{}().bind(
+				with_image_views_t{std::move(image_views)});
 		}
 	};
 };
@@ -1625,12 +1732,11 @@ struct create_and_check_swapchain_for_physical_device_and_queue_family_t
 				.then(
 					monad::create_device_t::stateio_factory_t{}(
 						physical_device,
-						queue_family_and_counts,
+						std::move(queue_family_and_counts),
 						{types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}}))
 				.then(
 					query_surface_formats_and_create_swapchain_and_image_views_t::
-						create_swapchain_and_image_views_t::stateio_factory_t_outer{}(
-							physical_device))
+						stateio_factory_t{}(physical_device))
 				.bind(check_swapchain_t::stateio_factory_t{});
 		}
 	};
@@ -1720,7 +1826,7 @@ TEST_CASE("Create a Vulkan surface")
 	using namespace test::create_a_vulkan_surface;
 
 	auto const program = test::create_default_instance_t::stateio_factory_t{}()
-							 .then(create_surface_t::stateio_factory_t{}())
+							 .bind(create_surface_t::stateio_factory_t{})
 							 .fmap(check_surface_t{});
 
 	const struct
@@ -1752,12 +1858,11 @@ TEST_CASE("Create a Vulkan surface")
 TEST_CASE("Enumerate devices")
 {
 	using namespace test::enumerate_devices;
-	auto const program =
-		test::create_default_instance_t::stateio_factory_t{}()
-			.then(choose_physical_device_and_create_surface_t::stateio_factory_t{}())
-			.bind(
-				check_supported_extensions_and_memory_types_and_queue_families_t::
-					stateio_factory_t{});
+	auto const program = test::create_default_instance_t::stateio_factory_t{}()
+							 .bind(choose_physical_device_and_create_surface_t::stateio_factory_t{})
+							 .bind(
+								 check_supported_extensions_and_memory_types_and_queue_families_t::
+									 stateio_factory_t{});
 
 	const struct
 	{
@@ -1771,14 +1876,17 @@ TEST_CASE("Enumerate devices")
 TEST_CASE("Select physical device")
 {
 	using namespace test::select_physical_device;
+	using vulkandemo::monad::stateio::get_state_t;
 
 	const struct
 	{
 		LoggerPtr logger = create_logger("Select physical device");
 	} initial_state;
 
-	auto const program = test::create_default_instance_t::stateio_factory_t{}().then(
-		select_physical_device_and_queue_family_and_check_t::stateio_factory_t{}());
+	auto const program =
+		test::create_default_instance_t::stateio_factory_t{}()
+			.then(get_state_t::stateio_factory_t{}())
+			.bind(select_physical_device_and_queue_family_and_check_t::stateio_factory_t{});
 
 	auto [result, _] = program(initial_state)();
 	CHECK(result);
@@ -1786,14 +1894,10 @@ TEST_CASE("Select physical device")
 
 TEST_CASE("Select device with capability")
 {
-	auto const program =
-		test::create_default_instance_t::stateio_factory_t{}()
-			.then(
-				test::select_device_with_capability::select_physical_device_with_requirements_t::
-					stateio_factory_t{}())
-			.bind(
-				test::select_device_with_capability::check_selected_device_t::io_factory_t::
-					stateio_factory_t{});
+	using namespace test::select_device_with_capability;
+	auto const program = test::create_default_instance_t::stateio_factory_t{}()
+							 .bind(select_physical_device_with_requirements_t::stateio_factory_t{})
+							 .bind(check_selected_device_t::stateio_factory_t{});
 
 	const struct
 	{

@@ -21,6 +21,8 @@
 #     Operator overload is useful, especially `operator()` for named lambdas.
 # - portability-avoid-pragma-once
 #     De-facto standard #pragma once is preferred.
+# - -hicpp-invalid-access-moved
+#     Duplicate of bugprone-use-after-move. Disabled to allow easier inline suppression.
 Checks: >
     *,
     -llvmlibc-*,
@@ -33,7 +35,8 @@ Checks: >
     -*-default-arguments-declarations,
     -clion-misra-cpp2023-19-6-1,
     -llvm-namespace-comment,
-    -fuchsia-overloaded-operator
+    -fuchsia-overloaded-operator,
+    -hicpp-invalid-access-moved
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: file

@@ -767,7 +767,7 @@ struct StateIO
 		return StateIO<decltype(next)>(std::move(next));
 	}
 
-	auto store(this auto&& self, auto&& fn)
+	auto store(this auto && self, auto && fn)
 	{
 		return FW(self).bind(modify_t::stateio_factory_t::with_mutator_t{FW(fn)});
 	}
@@ -864,10 +864,10 @@ struct chain_impl<stateio::stateio_tag_t>
 	{
 		WrappedStateIO stateiom;
 		StateIOLifter lifter;
-		constexpr auto operator()(auto && state) const
+		constexpr auto operator()(this auto && self, auto && state)
 		{
-			auto iom = stateiom(FW(state));
-			return std::move(iom).bind(io_lifter_t{lifter});
+			// NOLINTNEXTLINE(bugprone-use-after-move)
+			return FW(self).stateiom(FW(state)).bind(io_lifter_t{FW(self).lifter});
 		}
 	};
 
@@ -923,9 +923,9 @@ struct transform_impl<stateio::stateio_tag_t>
 		WrappedStateIO stateiom;
 		Transformer transformer;
 
-		constexpr auto operator()(auto const state) const
+		constexpr auto operator()(this auto && self, auto const state)
 		{
-			return stateiom(state).fmap(io_transformer_t{transformer, state});
+			return FW(self).stateiom(state).fmap(io_transformer_t{FW(self).transformer, state});
 		}
 	};
 
@@ -935,17 +935,18 @@ struct transform_impl<stateio::stateio_tag_t>
 		ValueTransformer transformer;
 		State state;
 
-		constexpr auto operator()(auto && value_and_state) const
+		constexpr auto operator()(this auto && self, auto && value_and_state)
 		{
-			if constexpr (requires { transformer(value_and_state.first); })
+			if constexpr (requires { self.transformer(value_and_state.first); })
 			{
 				return std::pair{
-					transformer(FW(value_and_state).first), FW(value_and_state).second};
+					FW(self).transformer(FW(value_and_state).first), FW(value_and_state).second};
 			}
-			else if constexpr (requires { std::apply(transformer, value_and_state.first); })
+			else if constexpr (requires { std::apply(self.transformer, value_and_state.first); })
 			{
 				return std::pair{
-					std::apply(transformer, FW(value_and_state).first), FW(value_and_state).second};
+					std::apply(FW(self).transformer, FW(value_and_state).first),
+					FW(value_and_state).second};
 			}
 			else
 			{
@@ -970,9 +971,9 @@ struct ap_impl<stateio::stateio_tag_t>
 	{
 		ValueStateIO value_stateio;
 
-		constexpr auto operator()(auto && fn) const
+		constexpr auto operator()(this auto && self, auto && fn)
 		{
-			return value_stateio.bind(value_lifter_t{FW(fn)});
+			return FW(self).value_stateio.bind(value_lifter_t{FW(fn)});
 		}
 	};
 
@@ -980,9 +981,9 @@ struct ap_impl<stateio::stateio_tag_t>
 	struct value_lifter_t
 	{
 		Fn fn;
-		constexpr auto operator()(auto && value) const
+		constexpr auto operator()(this auto && self, auto && value)
 		{
-			return lift<stateio::stateio_tag_t>(fn(FW(value)));
+			return lift<stateio::stateio_tag_t>(FW(self).fn(FW(value)));
 		}
 	};
 };
@@ -999,34 +1000,41 @@ auto with_state(auto && io_cont_from_state)
 				   { return io_cont_from_state(state).pair_with(FW(state)); }};
 }
 
-struct get_t
+struct get_state_t
 {
-	template <class State>
-	struct io_action_t
+	struct io_factory_t
 	{
-		State state;
+		template <class State>
+		struct action_t
+		{
+			State state;
+			constexpr auto operator()() const
+			{
+				return std::pair{state, state};
+			}
+		};
+
+		constexpr auto operator()(auto && state) const
+		{
+			return io::IO{action_t{FW(state)}};
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		struct action_t
+		{
+			constexpr auto operator()(auto && state) const
+			{
+				return io_factory_t{}(FW(state));
+			}
+		};
+
 		constexpr auto operator()() const
 		{
-			return std::pair{state, state};
+			return StateIO{action_t{}};
 		}
 	};
-
-	struct stateio_action_t
-	{
-		constexpr auto operator()(auto state) const
-		{
-			return io::IO{io_action_t{std::move(state)}};
-		}
-	};
-
-	static constexpr auto make_stateio()
-	{
-		return StateIO{stateio_action_t{}};
-	}
-	constexpr auto operator()([[maybe_unused]] auto &&... unused) const
-	{
-		return make_stateio();
-	}
 };
 
 constexpr auto pure(auto && value)
