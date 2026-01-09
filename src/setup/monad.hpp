@@ -1005,7 +1005,7 @@ struct create_surface_t
 		{
 			types::SDLWindowPtr window;
 			types::VulkanInstancePtr instance;
-			auto operator()(this auto&& self)
+			auto operator()(this auto && self)
 			{
 				// NOLINTNEXTLINE(bugprone-use-after-move)
 				return setup::create_surface(FW(self).window, FW(self).instance);
@@ -1058,9 +1058,10 @@ struct create_debug_messenger_t
 		{
 			LoggerPtr logger;
 			types::VulkanInstancePtr instance;
-			auto operator()() const
+			constexpr auto operator()(this auto && self)
 			{
-				return setup::create_debug_messenger(logger, instance);
+				// NOLINTNEXTLINE(bugprone-use-after-move)
+				return setup::create_debug_messenger(FW(self).logger, FW(self).instance);
 			}
 		};
 
@@ -1072,32 +1073,42 @@ struct create_debug_messenger_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
-		{
-			types::VulkanInstancePtr instance;
-
-			auto operator()(auto const & state) const
-			{
-				return io_factory_t{}(state.logger, instance).pair_with(state);
-			}
-		};
-
 		struct modify_state_t
 		{
-			auto operator()(types::VulkanDebugMessengerPtr messenger, auto && state) const
+			auto operator()(types::VulkanDebugMessengerPtr messenger, auto state) const
 			{
 				struct S : std::decay_t<decltype(state)>
 				{
 					types::VulkanDebugMessengerPtr messenger;
 				};
-				return S{state, messenger};
+				return S{std::move(state), std::move(messenger)};
 			}
 		};
 
-		constexpr auto operator()(types::VulkanInstancePtr instance) const
+		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
 		{
-			return StateIO{action_t{std::move(instance)}}.store(modify_state_t{});
+			using vulkandemo::monad::stateio::lift;
+			return lift(io_factory_t{}(std::move(logger), std::move(instance)))
+				.store(modify_state_t{});
 		}
+
+		struct from_state_t
+		{
+			constexpr auto operator()(auto && state) const
+			{
+				// NOLINTNEXTLINE(bugprone-use-after-move)
+				return stateio_factory_t{}(FW(state).logger, FW(state).instance);
+			}
+		};
+
+		struct using_state_t
+		{
+			constexpr auto operator()() const
+			{
+				using vulkandemo::monad::stateio::get_state;
+				return get_state().bind(from_state_t{});
+			}
+		};
 	};
 };
 
@@ -1184,42 +1195,65 @@ struct create_instance_t
 
 	struct stateio_factory_t
 	{
-		struct action_t
-		{
-			std::string name;
-			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
-			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
-
-			constexpr auto operator()(auto const & state) const
-			{
-				return io_factory_t{}(state.logger, name, layers_to_enable, extensions_to_enable)
-					.pair_with(state);
-			}
-		};
-
 		struct modify_state_t
 		{
-			constexpr auto operator()(types::VulkanInstancePtr instance, auto && state) const
+			constexpr auto operator()(types::VulkanInstancePtr instance, auto state) const
 			{
 				struct S : std::decay_t<decltype(state)>
 				{
 					types::VulkanInstancePtr instance;
 				};
-				return S{FW(state), std::move(instance)};
+				return S{std::move(state), std::move(instance)};
 			}
 		};
 
 		constexpr auto operator()(
+			LoggerPtr logger,
 			std::string name,
 			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
 			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
 		{
-			return StateIO{action_t{
-							   .name = std::move(name),
-							   .layers_to_enable = std::move(layers_to_enable),
-							   .extensions_to_enable = std::move(extensions_to_enable)}}
+			using vulkandemo::monad::stateio::lift;
+			return lift(
+					   io_factory_t{}(
+						   std::move(logger),
+						   std::move(name),
+						   std::move(layers_to_enable),
+						   std::move(extensions_to_enable)))
 				.store(modify_state_t{});
 		}
+
+		struct from_state_t
+		{
+			std::string name;
+			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
+
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return stateio_factory_t{}(
+					FW(state).logger,
+					FW(self).name,
+					FW(self).layers_to_enable,
+					FW(self).extensions_to_enable);
+			}
+		};
+
+		struct using_state_t
+		{
+			constexpr auto operator()(
+				std::string name,
+				std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+				std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+			{
+				using vulkandemo::monad::stateio::get_state;
+				return get_state().bind(
+					from_state_t{
+						.name = std::move(name),
+						.layers_to_enable = std::move(layers_to_enable),
+						.extensions_to_enable = std::move(extensions_to_enable)});
+			}
+		};
 	};
 };
 

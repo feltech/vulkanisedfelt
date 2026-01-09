@@ -20,7 +20,6 @@
 #include <boost/hana/ext/std/tuple.hpp>
 #include <boost/hana/fwd/core/to.hpp>
 #include <boost/hana/fwd/transform.hpp>
-#include <boost/hana/fwd/tuple.hpp>
 
 #include "hof.hpp"
 #include "macros.hpp"
@@ -437,7 +436,7 @@ namespace vulkandemo::monad
 namespace io
 {
 
-constexpr auto lift(auto && value)
+constexpr auto pure(auto && value)
 {
 	return boost::hana::lift<io_tag_t>(FW(value));
 }
@@ -461,9 +460,9 @@ struct traverse_t
 	struct with_element_lifter_t
 	{
 		ElementLifter element_lifter;
-		constexpr auto operator()(std::ranges::range auto && values) const
+		constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 		{
-			return make_io(FW(values), element_lifter);
+			return make_io(FW(values), FW(self).element_lifter);
 		}
 	};
 };
@@ -479,9 +478,9 @@ struct filter_t
 	struct with_element_lifter_t
 	{
 		ElementLifter element_lifter;
-		constexpr auto operator()(std::ranges::range auto && values) const
+		constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 		{
-			return make_io(FW(values), element_lifter);
+			return make_io(FW(values), FW(self).element_lifter);
 		}
 	};
 
@@ -490,11 +489,11 @@ struct filter_t
 	{
 		Values values;
 		ElementLifter element_lifter;
-		constexpr auto operator()() const
+		constexpr auto operator()(this auto && self)
 		{
-			auto new_range = values;
+			auto new_range = FW(self).values;
 			std::ranges::remove_if(
-				new_range, [](auto && iom) { return FW(iom)(); }, element_lifter);
+				new_range, [](auto && iom) { return FW(iom)(); }, FW(self).element_lifter);
 			return new_range;
 		}
 	};
@@ -506,9 +505,9 @@ struct IO
 	Act action;
 	using Ret = decltype(action());
 
-	decltype(auto) operator()() const  // NOLINT(*-overloaded-operator)
+	decltype(auto) operator()(this auto && self)
 	{
-		return action();
+		return FW(self).action();
 	}
 
 	[[nodiscard]] auto bind(this auto && self, Lifter<IO> auto && lifter)
@@ -519,22 +518,6 @@ struct IO
 	[[nodiscard]] auto fmap(this auto && self, Transformer auto && transformer)
 	{
 		return boost::hana::transform(FW(self), FW(transformer));
-	}
-
-	template <typename OtherAction>
-	[[nodiscard]] auto zip(IO<OtherAction> rhs_io)
-	{
-		return bind(
-			[rhs_io = std::move(rhs_io)](Ret lhs_value)
-			{
-				return rhs_io.fmap(
-					[lhs_value = std::move(lhs_value)](typename IO<OtherAction>::Ret rhs_value)
-					{
-						return std::tuple_cat(
-							detail::ensure_tuple(lhs_value),
-							detail::ensure_tuple(std::move(rhs_value)));
-					});
-			});
 	}
 
 	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
@@ -548,11 +531,6 @@ struct IO
 		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e. where
 		// the action type is homogenous, so the IO type as a whole is the same for all elements.
 		return bind(filter_t::with_element_lifter_t{element_lifter});
-	}
-
-	[[nodiscard]] auto pair_with(auto && second) const
-	{
-		return fmap(hof::transform_pair_with_t{FW(second)});
 	}
 };
 
@@ -705,14 +683,15 @@ struct StateIO
 	Act action;
 	// using Ret = typename detail::FnTraits<Act>::return_value;
 
-	decltype(auto) operator()(auto && state) const
+	decltype(auto) operator()(this auto && self, auto && state)
 	{
 		// Must return an IO monad that itself returns a pair.
 		static_assert(
 			detail::SpecialisationOf<decltype(action(state)), io::IO> &&
 				detail::SpecialisationOf<decltype(action(state)()), std::pair>,
 			"StateIO action must return IO<pair<value, state>>");
-		return action(FW(state));
+
+		return FW(self).action(FW(state));
 	}
 
 	auto bind(this auto && self, auto && lifter)
@@ -725,88 +704,15 @@ struct StateIO
 		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
-	auto then(detail::SpecialisationOf<StateIO> auto && stateiom) const
+	auto then(this auto && self, detail::SpecialisationOf<StateIO> auto && stateiom)
 	{
-		return this->bind([stateiom = FW(stateiom)]([[maybe_unused]] auto &&... unused)
-						  { return stateiom; });
-	}
-	auto with_state(auto && io_from_state) const &
-	{
-		auto next = [prev = action, io_from_state = FW(io_from_state)](
-						auto && state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			return prev(FW(state)).bind(
-				[io_from_state](auto && value_and_state)
-				{
-					auto [value, new_state] = value_and_state;
-
-					return io_from_state(new_state).fmap(
-						[new_state](auto && new_value)
-						{ return std::pair{FW(new_value), new_state}; });
-				});
-		};
-		return StateIO<decltype(next)>(std::move(next));
-	}
-
-	auto with_state(auto && io_from_state) &&
-	{
-		auto next = [prev = std::move(action), io_from_state = FW(io_from_state)](
-						auto && prev_state) -> decltype(auto)  // NOLINT(*-trailing-return)
-		{
-			return prev(FW(prev_state))
-				.bind(
-					[io_from_state](auto && value_and_state)
-					{
-						auto [value, new_state] = value_and_state;
-
-						return io_from_state(new_state).fmap(
-							[new_state](auto && new_value)
-							{ return std::pair{FW(new_value), new_state}; });
-					});
-		};
-		return StateIO<decltype(next)>(std::move(next));
+		return FW(self).bind([stateiom = FW(stateiom)]([[maybe_unused]] auto &&... unused)
+							 { return stateiom; });
 	}
 
 	auto store(this auto && self, auto && fn)
 	{
 		return FW(self).bind(modify_t::stateio_factory_t::with_mutator_t{FW(fn)});
-	}
-
-	// constexpr auto store(this auto&& self, detail::SpecialisationOf<io::IO> auto&& iom, auto&&
-	// inserter_fn)
-	// {
-	// 	return FW(self).bind(modify_t::stateio::with_fn_t{FW(fn)});
-	// }
-
-	template <typename A, typename L, typename S>
-	static constexpr bool assert_valid_bind()
-	{
-		static_assert(
-			requires(A action, S state) {
-				{
-					action(state)
-				} -> detail::SpecialisationOf<io::IO>;
-			},
-			"StateIO action must return an IO");
-		static_assert(
-			requires(A action, S state) {
-				{
-					action(state)()
-				} -> detail::SpecialisationOf<std::pair>;
-			},
-			"StateIO's IO action must return a pair");
-		// static_assert(
-		// 	requires(A action, S state, L lifter) { {lifter(action(state)().first)}; },
-		// 	"StateIO lifter function has incorrect arguments");
-		// static_assert(
-		// 	requires(A action, S state, L lifter) {
-		// 		{
-		// 			lifter(action(state)().first)
-		// 		} -> detail::SpecialisationOf<StateIO>;
-		// 	},
-		// 	"StateIO lifter function must return a StateIO");
-
-		return true;
 	}
 };
 }  // namespace stateio
@@ -828,7 +734,6 @@ struct tag_of<stateio::StateIO<A>>
 template <>
 struct lift_impl<stateio::stateio_tag_t>
 {
-	// TODO(DF): Perhaps can be removed, depending how clever hana::lift<io_tag_t> is.
 	static auto apply(SpecialisationOf<io::IO> auto && iom)
 	{
 		return stateio::StateIO{action_t{FW(iom)}};
@@ -846,7 +751,7 @@ struct lift_impl<stateio::stateio_tag_t>
 
 		constexpr auto operator()(auto && state) const
 		{
-			return iom.pair_with(FW(state));
+			return iom.fmap(vulkandemo::hof::pair_with_t{FW(state)});
 		}
 	};
 };
@@ -994,12 +899,6 @@ namespace vulkandemo::monad
 namespace stateio
 {
 
-auto with_state(auto && io_cont_from_state)
-{
-	return StateIO{[io_cont_from_state = FW(io_cont_from_state)](auto && state)
-				   { return io_cont_from_state(state).pair_with(FW(state)); }};
-}
-
 struct get_state_t
 {
 	struct io_factory_t
@@ -1037,13 +936,17 @@ struct get_state_t
 	};
 };
 
+constexpr auto get_state()
+{
+	return get_state_t::stateio_factory_t{}();
+}
+
 constexpr auto pure(auto && value)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(value));
 }
 
-template <class Act>
-constexpr auto lift(io::IO<Act> && iom)
+constexpr auto lift(detail::SpecialisationOf<io::IO> auto && iom)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }

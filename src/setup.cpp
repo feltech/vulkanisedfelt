@@ -493,7 +493,7 @@ struct query_layers_and_extensions_and_create_instance_t
 			LoggerPtr logger;
 			constexpr auto operator()(types::SDLWindowPtr const & window) const
 			{
-				return io_factory_t{}(logger, std::move(window));
+				return io_factory_t{}(logger, window);
 			}
 		};
 	};
@@ -635,26 +635,48 @@ struct query_instance_args_for_window_t
 {
 	struct io_factory_t
 	{
-		constexpr auto operator()(
-			LoggerPtr const & logger, types::SDLWindowPtr const & window) const
+		constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window) const
 		{
+			// Explicit copies to then move out of, to avoid thinking about std::move precedence
+			// below.
+			auto logger_copy = logger;
+			auto window_copy = window;
+
 			return sequence(
 				// Get title of window to use as app/engine name in vulkan.
-				monad::query_window_title_t::io_factory_t{}(window),
+				monad::query_window_title_t::io_factory_t{}(std::move(window)),
 				// Fetch and filter layer names.
-				query_validation_layer_names_t::io_factory_t{}(logger),
+				query_validation_layer_names_t::io_factory_t{}(std::move(logger)),
 				// Fetch and filter extension names (SDL + desired).
-				query_sdl_and_desired_instance_extensions_t::io_factory_t{}(logger, window));
+				query_sdl_and_desired_instance_extensions_t::io_factory_t{}(
+					std::move(logger_copy), std::move(window_copy)));
 		}
 	};
 
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(auto const & state) const
+		constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window) const
 		{
 			using vulkandemo::monad::stateio::lift;
-			return lift(io_factory_t{}(state.logger, state.window));
+			return lift(io_factory_t{}(std::move(logger), std::move(window)));
 		}
+
+		struct from_state_t
+		{
+			constexpr auto operator()(auto && state) const
+			{
+				return stateio_factory_t{}(FW(state).logger, FW(state).window);
+			}
+		};
+
+		struct using_state_t
+		{
+			constexpr auto operator()() const
+			{
+				using vulkandemo::monad::stateio::get_state;
+				return get_state().bind(from_state_t{});
+			}
+		};
 	};
 };
 
@@ -666,19 +688,17 @@ struct create_default_instance_t
 		{
 			using monad::create_debug_messenger_t;
 			using monad::create_instance_t;
-			using vulkandemo::monad::stateio::get_state_t;
-			using vulkandemo::monad::stateio::sequence;
+			using vulkandemo::monad::stateio::get_state;
 			// Create application window.
 			return monad::create_window_t::stateio_factory_t{}("", 0, 0)
 				// Gather arguments for constructing a vulkan instance.
-				.then(get_state_t::stateio_factory_t{}())
-				.bind(query_instance_args_for_window_t::stateio_factory_t{})
+				.then(query_instance_args_for_window_t::stateio_factory_t::using_state_t{}())
 				// Create/store Vulkan instance
-				.bind(create_instance_t::stateio_factory_t{})
+				.bind(create_instance_t::stateio_factory_t::using_state_t{})
 				// Create/store debug messenger callback closure.
-				.bind(create_debug_messenger_t::stateio_factory_t{})
+				.then(create_debug_messenger_t::stateio_factory_t::using_state_t{}())
 				// Replace arg with state, in case useful for subsequent bind()/fmap() calls.
-				.then(get_state_t::stateio_factory_t{}());
+				.then(get_state());
 		}
 	};
 };

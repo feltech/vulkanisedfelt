@@ -50,7 +50,7 @@ struct transform_concat_t
 
 struct transform_range_to_check_non_empty_t
 {
-	constexpr auto operator()(std::ranges::range auto&& values) const
+	constexpr auto operator()(std::ranges::range auto && values) const
 	{
 		return !std::ranges::empty(FW(values));
 	}
@@ -61,18 +61,20 @@ struct transform_maybes_to_values_t
 	template <std::ranges::range InputContainer>
 	constexpr auto operator()(InputContainer && values) const
 	{
-		return FW(values) |
-			std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
+		return FW(values) | std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
 			std::views::transform([](auto && elem) { return *FW(elem); }) |
 			ranges::to<unspecialise_t<InputContainer>::template specialise_t>;
 	}
 };
 
 template <class Second>
-struct transform_pair_with_t
+struct pair_with_t
 {
 	Second second;
-	constexpr auto operator()(auto && first) const { return std::pair{FW(first), second}; }
+	constexpr auto operator()(this auto && self, auto && first)
+	{
+		return std::pair{FW(first), FW(self).second};
+	}
 };
 
 namespace mem_fn
