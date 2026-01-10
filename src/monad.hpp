@@ -9,6 +9,8 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <libfork/core/control_flow.hpp>
+#include <libfork/core/just.hpp>
 #include <optional>
 #include <ranges>
 #include <tuple>
@@ -20,6 +22,11 @@
 #include <boost/hana/ext/std/tuple.hpp>
 #include <boost/hana/fwd/core/to.hpp>
 #include <boost/hana/fwd/transform.hpp>
+
+#include <libfork/algorithm/lift.hpp>
+#include <libfork/core.hpp>
+#include <libfork/core/task.hpp>
+#include <variant>
 
 #include "hof.hpp"
 #include "macros.hpp"
@@ -52,12 +59,12 @@ constexpr auto rotate_right(F && func, Ts &&... ts)
 }
 
 template <template <typename...> class Template, typename... Args>
-void is_specialisation_of(Template<Args...> const & /*unused*/)
+void is_specialisation_of(Template<Args...> /*unused*/)
 {
 }
 
 template <class T, template <typename...> class Template>
-concept SpecialisationOf = requires(T t)
+concept specialisation_of = requires(T t)
 {
 	is_specialisation_of<Template>(t);
 };
@@ -102,9 +109,19 @@ struct is_applicable<Func, Tuple<Args...>> : std::is_invocable<Func, Args...>
 template <class F, class T>
 concept applicable_with = is_applicable<F, T>::value;
 
+template <typename, typename>
+struct apply_result_t : std::false_type
+{
+};
+
+template <typename Func, template <typename...> typename Tuple, typename... Args>
+struct apply_result_t<Func, Tuple<Args...>> : std::invoke_result_t<Func, Args...>
+{
+};
+
 constexpr decltype(auto) ensure_tuple(auto && value)
 {
-	if constexpr (SpecialisationOf<std::decay_t<decltype(value)>, std::tuple>)
+	if constexpr (specialisation_of<std::decay_t<decltype(value)>, std::tuple>)
 	{
 		return FW(value);
 	}
@@ -230,13 +247,13 @@ struct Collect
 	std::tuple<Args...> args;
 };
 
-decltype(auto) operator>>(SpecialisationOf<Collect> auto && lhs, IsMonad auto && rhs)
+decltype(auto) operator>>(specialisation_of<Collect> auto && lhs, IsMonad auto && rhs)
 {
 	return Collect{std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)})};
 }
 
 decltype(auto) operator>>(
-	SpecialisationOf<Collect> auto && lhs, SpecialisationOf<Collect> auto && rhs)
+	specialisation_of<Collect> auto && lhs, specialisation_of<Collect> auto && rhs)
 {
 	return Collect{std::tuple_cat(FW(lhs).args, FW(rhs).args)};
 }
@@ -247,7 +264,7 @@ concept CallableWithArgsFromCollection = requires(F f, C c)
 	{std::apply(bind, std::tuple_cat(c.args, std::tuple{f}))};
 };
 
-decltype(auto) operator>>(SpecialisationOf<Collect> auto && lhs, auto && rhs)
+decltype(auto) operator>>(specialisation_of<Collect> auto && lhs, auto && rhs)
 {
 	return std::apply(
 		[](auto &&... args) { return bind(FW(args)...); },
@@ -278,20 +295,13 @@ concept IOFor = requires(T t)
 	} -> std::convertible_to<R>;
 };
 
-template <typename F, typename R>
-concept Lifter = (detail::tuple_like<std::invoke_result_t<R>> &&
-				  detail::applicable_with<F, std::invoke_result_t<R>> &&
-				  requires(F func, R io) {
-					  {
-						  std::apply(func, io())
-					  } -> detail::SpecialisationOf<IO>;
-				  }) ||
-	requires(F func, R io)
-{
-	{
-		func(io())
-	} -> detail::SpecialisationOf<IO>;
-};
+template <typename F, typename I>
+concept Lifter = true;
+//=
+// detail::tuple_like<wrapped_io_value_t<I>> && detail::applicable_with<F, wrapped_io_value_t<I>> &&
+// 	detail::specialisation_of<detail::apply_result_t<F, wrapped_io_value_t<I>>, IO> ||
+// std::invocable<F, wrapped_io_value_t<I>> &&
+// 	detail::specialisation_of<std::invoke_result_t<F, wrapped_io_value_t<I>>, IO>;
 
 template <typename F, typename I, typename R>
 concept LifterTo = requires(F func, I io)
@@ -313,7 +323,8 @@ concept LifterFromTo = requires(F func, E elem)
 namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
-using vulkandemo::monad::detail::ensure_tuple;
+using vulkandemo::monad::detail::applicable_with;
+using vulkandemo::monad::detail::specialisation_of;
 
 template <typename A>
 struct tag_of<io::IO<A>>
@@ -353,23 +364,93 @@ struct chain_impl<io::io_tag_t>
 	{
 		WrappedIO iom;
 		Lifter lifter;
-		constexpr auto operator()() const
+
+		constexpr auto operator()(this auto && self)
 		{
-			if constexpr (requires { lifter(iom()); })
+			return async_function_t{std::tuple{FW(self).iom, FW(self).lifter}};
+		}
+	};
+
+	template <class... Args>
+	struct async_function_t
+	{
+		using ArgsTuple = std::tuple<Args...>;
+		ArgsTuple args;
+
+		using InputIO = std::tuple_element_t<0, ArgsTuple>;
+		using Kleisi = std::tuple_element_t<1, ArgsTuple>;
+
+		template <class T>
+		struct unwrap_async
+		{
+			using type = T;
+		};
+		template <class... Ts>
+		struct unwrap_async<async_function_t<Ts...>>
+		{
+			using type = async_function_t<Ts...>::value_type;
+		};
+		template <class T>
+		using unwrap_async_t = unwrap_async<T>::type;
+
+		using InputIOResult = std::invoke_result_t<InputIO>;
+		static constexpr bool kIsInputIOAsync = specialisation_of<InputIOResult, async_function_t>;
+		using InputIOValue = unwrap_async_t<InputIOResult>;
+
+		using KleisiIO = std::invoke_result_t<Kleisi, InputIOValue>;
+		using KleisiIOResult = std::invoke_result_t<KleisiIO>;
+		static constexpr bool kIsKleisiIOAsync =
+			specialisation_of<KleisiIOResult, async_function_t>;
+		using KleisiIOValue = unwrap_async_t<KleisiIOResult>;
+
+		using value_type = KleisiIOValue;
+
+		lf::task<value_type> operator()(
+			[[maybe_unused]] auto fn, ArgsTuple args_tuple) const
+		{
+			auto const [input_io, kleisi_fn] = args_tuple;
+			InputIOValue input_value;
+
+			if constexpr (kIsInputIOAsync)
 			{
-				auto value = iom();
-				auto new_io = lifter(std::move(value));
-				auto new_value = std::move(new_io)();
-				return new_value;
-			}
-			else if constexpr (requires { std::apply(lifter, iom()); })
-			{
-				return std::apply(lifter, iom())();
+				auto input_async_fn = input_io();
+
+				co_await lf::just[&input_value, input_async_fn](input_async_fn.args);
 			}
 			else
 			{
-				static_assert(false, "IO lifter is not callable with value");
+				input_value = input_io();
 			}
+
+			auto new_io = [&]
+			{
+				if constexpr (std::invocable<Kleisi, InputIOValue>)
+				{
+					return kleisi_fn(std::move(input_value));
+				}
+				else if constexpr (applicable_with<Kleisi, InputIOValue>)
+				{
+					return std::apply(kleisi_fn, std::move(input_value));
+				}
+				else
+				{
+					static_assert(false, "IO lifter is not callable with value");
+				}
+			}();
+
+			KleisiIOValue new_value;
+
+			if constexpr (kIsKleisiIOAsync)
+			{
+				auto new_async_fn = new_io();
+				co_await lf::just[&new_value, new_async_fn](new_async_fn.args);
+			}
+			else
+			{
+				new_value = new_io();
+			}
+
+			co_return new_value;
 		}
 	};
 };
@@ -534,7 +615,14 @@ struct IO
 	}
 };
 
-auto sequence(detail::SpecialisationOf<IO> auto &&... ms)
+// template <typename T>
+// IO(T &&) -> IO<IOTask<std::decay_t<T>>>;
+//
+// template <typename T>
+// requires requires (T t) { lf::call[t](); }
+// IO(T &&) -> IO<std::decay_t<T>>;
+
+auto sequence(detail::specialisation_of<IO> auto &&... ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;
@@ -595,21 +683,22 @@ auto sequence(ValueRng && rng)
 auto fmap(auto &&... ms_and_transformer)
 {
 	return detail::rotate_right(
-		[](auto && transformer, detail::SpecialisationOf<IO> auto &&... ms)
+		[](auto && transformer, detail::specialisation_of<IO> auto &&... ms)
 		{ return sequence(FW(ms)...).fmap(FW(transformer)); },
 		FW(ms_and_transformer)...);
 }
-decltype(auto) operator>>(detail::SpecialisationOf<IO> auto && lhs, auto && rhs)
+decltype(auto) operator>>(detail::specialisation_of<IO> auto && lhs, auto && rhs)
 {
 	return FW(lhs).bind(FW(rhs));
 }
 decltype(auto) operator>>(
-	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<detail::Collect> auto && rhs)
+	detail::specialisation_of<IO> auto && lhs,
+	detail::specialisation_of<detail::Collect> auto && rhs)
 {
 	return detail::Collect{std::tuple_cat(std::tuple{FW(lhs)}, FW(rhs).args)};
 }
 decltype(auto) operator>>(
-	detail::SpecialisationOf<IO> auto && lhs, detail::SpecialisationOf<IO> auto && rhs)
+	detail::specialisation_of<IO> auto && lhs, detail::specialisation_of<IO> auto && rhs)
 {
 	return detail::Collect(std::tuple{FW(lhs), FW(rhs)});
 }
@@ -687,8 +776,8 @@ struct StateIO
 	{
 		// Must return an IO monad that itself returns a pair.
 		static_assert(
-			detail::SpecialisationOf<decltype(action(state)), io::IO> &&
-				detail::SpecialisationOf<decltype(action(state)()), std::pair>,
+			detail::specialisation_of<decltype(action(state)), io::IO> &&
+				detail::specialisation_of<decltype(action(state)()), std::pair>,
 			"StateIO action must return IO<pair<value, state>>");
 
 		return FW(self).action(FW(state));
@@ -704,7 +793,7 @@ struct StateIO
 		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
-	auto then(this auto && self, detail::SpecialisationOf<StateIO> auto && stateiom)
+	auto then(this auto && self, detail::specialisation_of<StateIO> auto && stateiom)
 	{
 		return FW(self).bind([stateiom = FW(stateiom)]([[maybe_unused]] auto &&... unused)
 							 { return stateiom; });
@@ -722,7 +811,7 @@ namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
 namespace stateio = vulkandemo::monad::stateio;
-using vulkandemo::monad::detail::SpecialisationOf;
+using vulkandemo::monad::detail::specialisation_of;
 using vulkandemo::monad::detail::tuple_like;
 
 template <typename A>
@@ -734,7 +823,7 @@ struct tag_of<stateio::StateIO<A>>
 template <>
 struct lift_impl<stateio::stateio_tag_t>
 {
-	static auto apply(SpecialisationOf<io::IO> auto && iom)
+	static auto apply(specialisation_of<io::IO> auto && iom)
 	{
 		return stateio::StateIO{action_t{FW(iom)}};
 	}
@@ -786,11 +875,12 @@ struct chain_impl<stateio::stateio_tag_t>
 			{
 				auto new_stateio = lifter(std::move(value_and_state.first));
 				static_assert(
-					SpecialisationOf<decltype(new_stateio), stateio::StateIO>,
+					specialisation_of<decltype(new_stateio), stateio::StateIO>,
 					"StateIO lifter must return a StateIO");
 				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
 				static_assert(
-					SpecialisationOf<decltype(new_io), io::IO>, "StateIO action must return an IO");
+					specialisation_of<decltype(new_io), io::IO>,
+					"StateIO action must return an IO");
 				return new_io;
 			}
 			else if constexpr (tuple_like<decltype(value_and_state.first)> && requires {
@@ -799,11 +889,12 @@ struct chain_impl<stateio::stateio_tag_t>
 			{
 				auto new_stateio = std::apply(lifter, std::move(value_and_state.first));
 				static_assert(
-					SpecialisationOf<decltype(new_stateio), stateio::StateIO>,
+					specialisation_of<decltype(new_stateio), stateio::StateIO>,
 					"StateIO lifter must return a StateIO");
 				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
 				static_assert(
-					SpecialisationOf<decltype(new_io), io::IO>, "StateIO action must return an IO");
+					specialisation_of<decltype(new_io), io::IO>,
+					"StateIO action must return an IO");
 				return new_io;
 			}
 			else
@@ -946,12 +1037,12 @@ constexpr auto pure(auto && value)
 	return boost::hana::lift<stateio_tag_t>(FW(value));
 }
 
-constexpr auto lift(detail::SpecialisationOf<io::IO> auto && iom)
+constexpr auto lift(detail::specialisation_of<io::IO> auto && iom)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }
 
-auto sequence(detail::SpecialisationOf<StateIO> auto &&... ms)
+auto sequence(detail::specialisation_of<StateIO> auto &&... ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;

@@ -16,7 +16,7 @@
         default = pkgs.mkShell.override
           {
             # Override stdenv in order to change compiler:
-             stdenv = pkgs.gcc14Stdenv;
+             stdenv = pkgs.gcc15Stdenv;
           }
           {
 
@@ -31,7 +31,7 @@
               vulkan-validation-layers
               vulkan-utility-libraries
               # For clang-tidy
-              llvmPackages_19.clang-tools
+              clang-tools
               # For conan */system packages. Hint: nix-locate --whole-name dependency_name.pc | grep -v "^("
               pkg-config
               # For Conan egl/system

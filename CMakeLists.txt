@@ -29,6 +29,7 @@ find_package(Boost REQUIRED COMPONENTS headers)
 add_subdirectory(vendor/lift)
 add_library(rollbear::lift ALIAS lift)
 find_package(immer)
+find_package(libfork)
 
 
 ####################################################################################################
@@ -80,12 +81,19 @@ target_link_libraries(
     reflect-cpp::reflect-cpp
     immer::immer
     Boost::headers
+    libfork::libfork
 )
 
 target_compile_definitions(
     ${_exe_target}
     PRIVATE
     SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_DEBUG,SPDLOG_LEVEL_INFO>
+)
+
+target_compile_options(
+    ${_exe_target}
+    PUBLIC
+    -Wno-comma-subscript   # Warns on C++23 var[a, b], which is used by libfork.
 )
 
 if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
