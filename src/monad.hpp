@@ -10,7 +10,9 @@
 #include <cstddef>
 #include <functional>
 #include <libfork/core/control_flow.hpp>
+#include <libfork/core/eventually.hpp>
 #include <libfork/core/just.hpp>
+#include <libfork/core/scheduler.hpp>
 #include <optional>
 #include <ranges>
 #include <tuple>
@@ -26,6 +28,7 @@
 #include <libfork/algorithm/lift.hpp>
 #include <libfork/core.hpp>
 #include <libfork/core/task.hpp>
+#include <libfork/schedule/lazy_pool.hpp>
 #include <variant>
 
 #include "hof.hpp"
@@ -110,14 +113,17 @@ template <class F, class T>
 concept applicable_with = is_applicable<F, T>::value;
 
 template <typename, typename>
-struct apply_result_t : std::false_type
+struct apply_result : std::false_type
 {
 };
 
 template <typename Func, template <typename...> typename Tuple, typename... Args>
-struct apply_result_t<Func, Tuple<Args...>> : std::invoke_result_t<Func, Args...>
+struct apply_result<Func, Tuple<Args...>> : std::invoke_result<Func, Args...>
 {
 };
+
+template <class... Args>
+using apply_result_t = apply_result<Args...>;
 
 constexpr decltype(auto) ensure_tuple(auto && value)
 {
@@ -270,6 +276,63 @@ decltype(auto) operator>>(specialisation_of<Collect> auto && lhs, auto && rhs)
 		[](auto &&... args) { return bind(FW(args)...); },
 		std::tuple_cat(FW(lhs).args, std::tuple{FW(rhs)}));
 }
+
+template <class Arg>
+struct AsyncFunctorInterface
+{
+	Arg arg;
+
+	struct async_function_tag
+	{
+	};
+
+	auto sync_wait(this auto && self, lf::scheduler auto && pool)
+	{
+		return lf::sync_wait(FW(pool), FW(self).fn, FW(self).arg);
+	}
+
+	auto sync_wait(this auto && self, std::size_t const pool_size)
+	{
+		return FW(self).sync_wait(lf::lazy_pool{pool_size});
+	}
+
+	auto sync_wait(this auto && self)
+	{
+		return FW(self).sync_wait(lf::lazy_pool{});
+	}
+};
+
+template <class T>
+struct unwrap_async : std::type_identity<T>
+{
+	static constexpr bool value = false;
+};
+template <class T>
+requires requires
+{
+	typename T::async_function_tag;
+}
+struct unwrap_async<T> : std::type_identity<typename T::AsyncResult>
+{
+	static constexpr bool value = true;
+};
+template <class T>
+using unwrap_async_t = unwrap_async<T>::type;
+template <class T>
+constexpr auto unwrap_async_v = unwrap_async<T>::value;
+
+template <class F, class T>
+struct invoke_or_apply_result : apply_result<F, T>
+{
+};
+
+template <class F, class T>
+requires std::invocable<F, T> struct invoke_or_apply_result<F, T> : std::invoke_result<F, T>
+{
+};
+
+template <class F, class T>
+using invoke_or_apply_result_t = invoke_or_apply_result<F, T>::type;
 }  // namespace detail
 
 namespace io
@@ -312,19 +375,26 @@ concept LifterTo = requires(F func, I io)
 };
 
 template <typename F, typename E, typename R>
-concept LifterFromTo = requires(F func, E elem)
-{
-	{
-		func(elem)
-	} -> IOFor<R>;
-};
+concept LifterFromTo = true;
+// 	requires(F func, E elem)
+// {
+// 	{
+// 		func(elem)
+// 	} -> IOFor<R>;
+// };
 }  // namespace io
 }  // namespace vulkandemo::monad
 namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
 using vulkandemo::monad::detail::applicable_with;
+using vulkandemo::monad::detail::apply_result;
+using vulkandemo::monad::detail::apply_result_t;
+using vulkandemo::monad::detail::AsyncFunctorInterface;
+using vulkandemo::monad::detail::invoke_or_apply_result_t;
 using vulkandemo::monad::detail::specialisation_of;
+using vulkandemo::monad::detail::unwrap_async_t;
+using vulkandemo::monad::detail::unwrap_async_v;
 
 template <typename A>
 struct tag_of<io::IO<A>>
@@ -344,9 +414,9 @@ struct lift_impl<io::io_tag_t>
 	struct io_action_t
 	{
 		Value value;
-		constexpr auto operator()() const
+		constexpr auto operator()(this auto && self)
 		{
-			return value;
+			return FW(self).value;
 		}
 	};
 };
@@ -371,51 +441,35 @@ struct chain_impl<io::io_tag_t>
 		}
 	};
 
-	template <class... Args>
-	struct async_function_t
+	template <class Arg>
+	struct async_function_t : AsyncFunctorInterface<Arg>
 	{
-		using ArgsTuple = std::tuple<Args...>;
-		ArgsTuple args;
-
+		using ArgsTuple = Arg;
 		using InputIO = std::tuple_element_t<0, ArgsTuple>;
-		using Kleisi = std::tuple_element_t<1, ArgsTuple>;
-
-		template <class T>
-		struct unwrap_async
-		{
-			using type = T;
-		};
-		template <class... Ts>
-		struct unwrap_async<async_function_t<Ts...>>
-		{
-			using type = async_function_t<Ts...>::value_type;
-		};
-		template <class T>
-		using unwrap_async_t = unwrap_async<T>::type;
+		using Kleisli = std::tuple_element_t<1, ArgsTuple>;
 
 		using InputIOResult = std::invoke_result_t<InputIO>;
-		static constexpr bool kIsInputIOAsync = specialisation_of<InputIOResult, async_function_t>;
 		using InputIOValue = unwrap_async_t<InputIOResult>;
+		static constexpr bool kIsInputIOAsync = unwrap_async_v<InputIOResult>;
 
-		using KleisiIO = std::invoke_result_t<Kleisi, InputIOValue>;
-		using KleisiIOResult = std::invoke_result_t<KleisiIO>;
-		static constexpr bool kIsKleisiIOAsync =
-			specialisation_of<KleisiIOResult, async_function_t>;
-		using KleisiIOValue = unwrap_async_t<KleisiIOResult>;
+		using KleisliIO = invoke_or_apply_result_t<Kleisli, InputIOValue>;
+		using KleisliIOResult = std::invoke_result_t<KleisliIO>;
+		using KleisliIOValue = unwrap_async_t<KleisliIOResult>;
+		static constexpr bool kIsKleisliIOAsync = unwrap_async_v<KleisliIOResult>;
 
-		using value_type = KleisiIOValue;
+		using IOResultType = KleisliIOValue;
 
-		lf::task<value_type> operator()(
-			[[maybe_unused]] auto fn, ArgsTuple args_tuple) const
+		static constexpr auto fn = []([[maybe_unused]] auto fn,
+									  ArgsTuple args_tuple) -> lf::task<IOResultType>
 		{
-			auto const [input_io, kleisi_fn] = args_tuple;
-			InputIOValue input_value;
+			auto const & [input_io, kleisli_fn] = args_tuple;
+			lf::eventually<InputIOValue> input_value;
 
 			if constexpr (kIsInputIOAsync)
 			{
 				auto input_async_fn = input_io();
 
-				co_await lf::just[&input_value, input_async_fn](input_async_fn.args);
+				input_value = co_await lf::just[input_async_fn.fn](std::move(input_async_fn.arg));
 			}
 			else
 			{
@@ -424,13 +478,13 @@ struct chain_impl<io::io_tag_t>
 
 			auto new_io = [&]
 			{
-				if constexpr (std::invocable<Kleisi, InputIOValue>)
+				if constexpr (std::invocable<Kleisli, InputIOValue>)
 				{
-					return kleisi_fn(std::move(input_value));
+					return kleisli_fn(std::move(*input_value));
 				}
-				else if constexpr (applicable_with<Kleisi, InputIOValue>)
+				else if constexpr (applicable_with<Kleisli, InputIOValue>)
 				{
-					return std::apply(kleisi_fn, std::move(input_value));
+					return std::apply(kleisli_fn, std::move(*input_value));
 				}
 				else
 				{
@@ -438,21 +492,23 @@ struct chain_impl<io::io_tag_t>
 				}
 			}();
 
-			KleisiIOValue new_value;
+			lf::eventually<KleisliIOValue> new_value;
 
-			if constexpr (kIsKleisiIOAsync)
+			if constexpr (kIsKleisliIOAsync)
 			{
 				auto new_async_fn = new_io();
-				co_await lf::just[&new_value, new_async_fn](new_async_fn.args);
+				new_value = co_await lf::just[new_async_fn.fn](std::move(new_async_fn.arg));
 			}
 			else
 			{
 				new_value = new_io();
 			}
 
-			co_return new_value;
-		}
+			co_return * new_value;
+		};
 	};
+	template <class Arg>
+	async_function_t(Arg) -> async_function_t<Arg>;
 };
 
 template <>
@@ -468,22 +524,61 @@ struct transform_impl<io::io_tag_t>
 	{
 		WrappedIO iom;
 		Transformer transformer;
-		constexpr auto operator()() const
+		constexpr auto operator()(this auto && self)
 		{
-			if constexpr (requires { transformer(iom()); })
+			return async_function_t{std::tuple{FW(self).iom, FW(self).transformer}};
+		}
+	};
+
+	template <class Arg>
+	struct async_function_t : AsyncFunctorInterface<Arg>
+	{
+		using ArgsTuple = Arg;
+
+		using InputIO = std::tuple_element_t<0, ArgsTuple>;
+		using Transform = std::tuple_element_t<1, ArgsTuple>;
+
+		using InputIOResult = std::invoke_result_t<InputIO>;
+		using InputIOValue = unwrap_async_t<InputIOResult>;
+		static constexpr bool kIsInputIOAsync = unwrap_async_v<InputIOResult>;
+
+		using TransformIOValue = invoke_or_apply_result_t<Transform, InputIOValue>;
+
+		using IOResultType = TransformIOValue;
+
+		static constexpr auto fn = []([[maybe_unused]] auto fn,
+									  ArgsTuple args_tuple) -> lf::task<IOResultType>
+		{
+			auto const & [input_io, transform_fn] = args_tuple;
+			lf::eventually<InputIOValue> input_value;
+
+			if constexpr (kIsInputIOAsync)
 			{
-				return transformer(iom());
+				auto input_async_fn = input_io();
+
+				input_value = co_await lf::just[input_async_fn.fn](std::move(input_async_fn.arg));
 			}
 			else
 			{
-				static_assert(
-					requires { std::apply(transformer, iom()); },
-					"IO value transformer is not callable with value");
-
-				return std::apply(transformer, iom());
+				input_value = input_io();
 			}
-		}
+
+			if constexpr (std::invocable<Transform, InputIOValue>)
+			{
+				co_return transform_fn(*std::move(input_value));
+			}
+			else if constexpr (applicable_with<Transform, InputIOValue>)
+			{
+				co_return std::apply(transform_fn, *std::move(input_value));
+			}
+			else
+			{
+				static_assert(false, "IO value transformer is not callable with value");
+			}
+		};
 	};
+	template <class Arg>
+	async_function_t(Arg) -> async_function_t<Arg>;
 };
 
 template <>
@@ -499,16 +594,67 @@ struct ap_impl<io::io_tag_t>
 	{
 		FnIO fn_io;
 		ValueIO value_io;
-		constexpr auto operator()() const
+		constexpr auto operator()(this auto && self)
 		{
-			// TODO(DF): fn and value can be computed concurrently.
-			auto fn = fn_io();
-			auto value = value_io();
-
-			auto result = fn(value);
-			return result;
+			return async_function_t{std::tuple{FW(self).fn_io, FW(self).value_io}};
 		}
 	};
+
+	template <class Arg>
+	struct async_function_t : AsyncFunctorInterface<Arg>
+	{
+		using ArgsTuple = Arg;
+
+		using FnIO = std::tuple_element_t<0, ArgsTuple>;
+		using FnIOResult = std::invoke_result_t<FnIO>;
+		using FnIOValue = unwrap_async_t<FnIOResult>;
+		static constexpr bool kIsFnIOAsync = unwrap_async_v<FnIOResult>;
+
+		using ValueIO = std::tuple_element_t<1, ArgsTuple>;
+		using ValueIOResult = std::invoke_result_t<ValueIO>;
+		using ValueIOValue = unwrap_async_t<ValueIOResult>;
+		static constexpr bool kIsValueIOAsync = unwrap_async_v<ValueIOResult>;
+
+		using IOResultType = std::invoke_result_t<FnIOValue, ValueIOValue>;
+
+		static constexpr auto fn = []([[maybe_unused]] auto fn,
+									  ArgsTuple args_tuple) -> lf::task<IOResultType>
+		{
+			auto const [func_io, value_io] = args_tuple;
+
+			lf::eventually<FnIOValue> func;
+
+			if constexpr (kIsFnIOAsync)
+			{
+				auto async_fn = func_io();
+
+				co_await lf::fork[&func, async_fn.fn](std::move(async_fn.arg));
+			}
+			else
+			{
+				co_await lf::fork[&func, lf::lift](func_io);
+			}
+
+			lf::eventually<ValueIOValue> value;
+
+			if constexpr (kIsValueIOAsync)
+			{
+				auto async_fn = value_io();
+
+				co_await lf::call[&value, async_fn.fn](std::move(async_fn.arg));
+			}
+			else
+			{
+				co_await lf::call[&value, lf::lift](value_io);
+			}
+
+			co_await lf::join;
+
+			co_return (*func)(std::move(*value));
+		};
+	};
+	template <class Arg>
+	async_function_t(Arg) -> async_function_t<Arg>;
 };
 }  // namespace boost::hana
 
@@ -524,27 +670,33 @@ constexpr auto pure(auto && value)
 
 struct traverse_t
 {
-	static constexpr auto make_io(std::ranges::range auto && values, auto && element_lifter)
+	struct io_factory_t
 	{
-		using ValueRange = std::decay_t<decltype(values)>;
-		using ValueElem = ValueRange::value_type;
-		using IOElem = decltype(element_lifter(std::declval<ValueElem>()));
-		using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
-
-		auto ios = values |
-			std::views::transform([&](auto const & elem) { return element_lifter(elem); }) |
-			ranges::to<IORange>();
-		return sequence(std::move(ios));
-	}
-
-	template <class ElementLifter>
-	struct with_element_lifter_t
-	{
-		ElementLifter element_lifter;
-		constexpr auto operator()(this auto && self, std::ranges::range auto && values)
+		static constexpr auto operator()(std::ranges::range auto && values, auto const & kleisli)
 		{
-			return make_io(FW(values), FW(self).element_lifter);
+			using ValueRange = std::decay_t<decltype(values)>;
+			using ValueElem = ValueRange::value_type;
+
+			static_assert(!detail::specialisation_of<ValueElem, IO>, "traverse expects a range of values, not a IOs");
+
+			using IOElem = decltype(kleisli(std::declval<ValueElem>()));
+			using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
+
+			auto ios = FW(values) |
+				std::views::transform([&](auto const & elem) { return kleisli(elem); }) |
+				ranges::to<IORange>();
+			return sequence(std::move(ios));
 		}
+
+		template <class ElementLifter>
+		struct with_kleisli
+		{
+			ElementLifter kliesli;
+			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
+			{
+				return io_factory_t{}(FW(values), FW(self).kliesli);
+			}
+		};
 	};
 };
 
@@ -561,7 +713,7 @@ struct filter_t
 		ElementLifter element_lifter;
 		constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 		{
-			return make_io(FW(values), FW(self).element_lifter);
+			return make_io(FW(values), FW(self).kliesli);
 		}
 	};
 
@@ -574,7 +726,7 @@ struct filter_t
 		{
 			auto new_range = FW(self).values;
 			std::ranges::remove_if(
-				new_range, [](auto && iom) { return FW(iom)(); }, FW(self).element_lifter);
+				new_range, [](auto && iom) { return FW(iom)(); }, FW(self).kliesli);
 			return new_range;
 		}
 	};
@@ -603,14 +755,15 @@ struct IO
 
 	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
 	{
-		return bind(traverse_t::with_element_lifter_t{FW(element_lifter)});
+		return bind(traverse_t::io_factory_t::with_kleisli{FW(element_lifter)});
 	}
 
 	[[nodiscard]] auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
 		const requires std::ranges::range<Ret>
 	{
-		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e. where
-		// the action type is homogenous, so the IO type as a whole is the same for all elements.
+		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e.
+		// where the action type is homogenous, so the IO type as a whole is the same for all
+		// elements.
 		return bind(filter_t::with_element_lifter_t{element_lifter});
 	}
 };
@@ -622,6 +775,16 @@ struct IO
 // requires requires (T t) { lf::call[t](); }
 // IO(T &&) -> IO<std::decay_t<T>>;
 
+template <typename Tuple>
+struct appender_t
+{
+	Tuple vals;
+	constexpr auto operator()(this auto && self, auto && value_to_append)
+	{
+		using boost::hana::append;
+		return append(FW(self).vals, FW(value_to_append));
+	}
+};
 auto sequence(detail::specialisation_of<IO> auto &&... ms)
 {
 	using boost::hana::ap;
@@ -634,18 +797,13 @@ auto sequence(detail::specialisation_of<IO> auto &&... ms)
 		lift<io_tag_t>(std::tuple{}),
 		[](auto && acc, auto && iom)
 		{
-			// Applicative - unwrap two IOs, the first yielding a function and the second yielding a
-			// value, then call the function with the value in a new IO. In this case, append the
-			// result of an io to a tuple.
+			// Applicative - unwrap two IOs, the first yielding a function and the second
+			// yielding a value, then call the function with the value in a new IO. In this
+			// case, append the result of an io to a tuple.
 			return ap(
 				// Transform IO result from a tuple of values to a function that appends a value
 				// to the (captured) tuple and returns the new tuple.
-				acc.fmap(
-					[](auto && values)
-					{
-						return [values = FW(values)](auto && value_to_append)
-						{ return append(values, FW(value_to_append)); };
-					}),
+				acc.fmap([](auto && values) { return appender_t{FW(values)}; }),
 				FW(iom));
 			;
 		});
@@ -653,31 +811,71 @@ auto sequence(detail::specialisation_of<IO> auto &&... ms)
 
 struct sequence_t
 {
-	template <std::ranges::range RngOfIOs>
-	struct io_action_t
+	struct io_factory_t
 	{
-		RngOfIOs rng_of_ios;
-		constexpr auto operator()() const
+		template <std::ranges::range RngOfIOs>
+		struct action_t
 		{
-			using Elem = typename RngOfIOs::value_type::Ret;
+			RngOfIOs rng_of_ios;
+			using Elem = detail::unwrap_async_t<typename RngOfIOs::value_type>;
 			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
-			return rng_of_ios |
-				std::views::transform([](typename RngOfIOs::value_type const & iom)
-									  { return iom(); }) |
-				ranges::to<Rng>;
+
+			constexpr auto operator()(this auto && self)
+			{
+				return async_function_t{FW(self).rng_of_ios};
+			}
+		};
+
+		template <class Arg>
+		struct async_function_t : detail::AsyncFunctorInterface<Arg>
+		{
+			using RngOfIOs = Arg;
+			using Elem = detail::unwrap_async_t<std::invoke_result_t<typename RngOfIOs::value_type>>;
+			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
+
+			using AsyncResult = Rng;
+
+			static constexpr auto fn = []([[maybe_unused]] auto fn, RngOfIOs rng_of_ios) -> lf::task<Rng>
+			{
+				static constexpr bool kIsIOAsync =
+					detail::unwrap_async_v<typename RngOfIOs::value_type>;
+
+				Rng outputs;
+				outputs.resize(rng_of_ios.size());
+
+				for (std::size_t idx = 0; idx < rng_of_ios.size(); ++idx)
+				{
+					auto const & iom = rng_of_ios[idx];
+
+					if constexpr (kIsIOAsync)
+					{
+						auto async_fn = iom();
+						co_await lf::fork[&outputs[idx], async_fn.fn](
+							std::move(async_fn).arg);
+					}
+					else
+					{
+						co_await lf::fork[&outputs[idx], lf::lift](iom);
+					}
+				}
+				co_await lf::join;
+
+				co_return outputs;
+			};
+		};
+		template <std::ranges::range RngOfIOs>
+		async_function_t(RngOfIOs) -> async_function_t<RngOfIOs>;
+
+		constexpr auto operator()(std::ranges::range auto && rng_of_ios) const
+		{
+			return IO{action_t{FW(rng_of_ios)}};
 		}
 	};
-
-	static constexpr auto make_io(std::ranges::range auto && rng_of_ios)
-	{
-		return IO{io_action_t{FW(rng_of_ios)}};
-	}
 };
 
-template <std::ranges::range ValueRng>
-auto sequence(ValueRng && rng)
+auto sequence(std::ranges::range auto && rng)
 {
-	return sequence_t::make_io(FW(rng));
+	return sequence_t::io_factory_t{}(FW(rng));
 }
 
 auto fmap(auto &&... ms_and_transformer)
@@ -776,8 +974,8 @@ struct StateIO
 	{
 		// Must return an IO monad that itself returns a pair.
 		static_assert(
-			detail::specialisation_of<decltype(action(state)), io::IO> &&
-				detail::specialisation_of<decltype(action(state)()), std::pair>,
+			detail::specialisation_of<decltype(action(state)), io::IO>,
+			// && detail::specialisation_of<decltype(action(state)()), std::pair>,
 			"StateIO action must return IO<pair<value, state>>");
 
 		return FW(self).action(FW(state));

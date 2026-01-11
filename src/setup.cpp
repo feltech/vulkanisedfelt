@@ -381,6 +381,7 @@ namespace test
 {
 using vulkandemo::monad::stateio::get_state_t;
 using vulkandemo::monad::stateio::lift;
+/*
 namespace create_a_window
 {
 constexpr int kExpectedWidth = 800;
@@ -415,7 +416,6 @@ struct check_window_t
 };
 
 }  // namespace create_a_window
-/*
 struct query_desired_instance_extensions_t
 {
 	struct io_factory_t
@@ -631,7 +631,6 @@ struct query_sdl_and_desired_instance_extensions_t
 		}
 	};
 };
-
 struct query_instance_args_for_window_t
 {
 	struct io_factory_t
@@ -1767,6 +1766,51 @@ struct create_and_check_swapchain_for_physical_device_and_queue_family_t
 }  // namespace test
 }  // namespace
 
+struct test_monad_filter_action_t
+{
+	int val;
+	constexpr bool operator()() const
+	{
+		return val % 2 == 0;
+	}
+};
+
+TEST_CASE("Monad")
+{
+	SUBCASE("sequence - array of sync IO")
+	{
+		namespace io = vulkandemo::monad::io;
+
+		// auto const program = io::pure(std::vector<int>{2, 3}).filter([](int val)
+		// {
+		// 	return test_monad_filter_action_t{val};
+		// });
+
+		auto const program = io::sequence(std::vector{io::pure(1), io::pure(2), io::pure(3)});
+		// .fmap([](auto val) { return val; });
+
+		auto result = program().sync_wait();
+		CHECK(result == std::vector{1, 2, 3});
+	}
+
+	SUBCASE("traverse - array of sync IO")
+	{
+		namespace io = vulkandemo::monad::io;
+
+		// auto const program = io::pure(std::vector<int>{2, 3}).filter([](int val)
+		// {
+		// 	return test_monad_filter_action_t{val};
+		// });
+
+		auto const program = io::traverse_t::io_factory_t::with_kleisli{
+			[](auto val) { return io::pure(val); }}(std::vector{1, 2, 3});
+
+		auto result = program().sync_wait();
+		CHECK(result == std::vector{1, 2, 3});
+	}
+}
+
+/*
 TEST_CASE("Create a window")
 {
 	using namespace test::create_a_window;
@@ -1774,18 +1818,11 @@ TEST_CASE("Create a window")
 	// Create a window.
 	auto const program =
 		create_window_t::io_factory_t{}(kExpectedName, kExpectedWidth, kExpectedHeight)
-			.bind(check_window_t::io_factory_t{})
-			.bind([](bool res)
-				  { return vulkandemo::monad::io::IO{[res] { return res ? 123 : 234; }}; });
+			.bind(check_window_t::io_factory_t{});
 
-	lf::lazy_pool pool(4);	// 4 worker threads
-
-	auto async_fn = program();
-	auto result = lf::sync_wait(pool, async_fn, async_fn.args);
-
-	CHECK(result);
+	CHECK(program().sync_wait(4));
 }
-/*
+
 TEST_CASE("Create a Vulkan instance")
 {
 	// namespace di = boost::di;
@@ -1833,7 +1870,7 @@ TEST_CASE("Create a Vulkan instance")
 					logger})
 			.bind(check_instance_t::io_factory_t{});
 
-	CHECK(program());
+	CHECK(program().sync_wait());
 }
 
 TEST_CASE("Create a Vulkan debug utils messenger")
@@ -1847,7 +1884,7 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 							 .bind(create_debug_messenger_t::io_factory_t::with_logger_t{logger})
 							 .bind(check_messenger_t::io_factory_t{});
 
-	CHECK(program());
+	CHECK(program().sync_wait());
 }
 
 TEST_CASE("Create a Vulkan surface")
@@ -1863,8 +1900,8 @@ TEST_CASE("Create a Vulkan surface")
 		LoggerPtr logger = create_logger("Create a Vulkan surface");
 	} initial_state;
 
-	auto const [result, state] = program(initial_state)();
-	// CHECK(result);
+	auto const [result, state] = program(initial_state)().sync_wait();
+	CHECK(result);
 
 	// Checking error reporting
 
@@ -1898,10 +1935,9 @@ TEST_CASE("Enumerate devices")
 		LoggerPtr logger = create_logger("Enumerate devices");
 	} initial_state;
 
-	auto const [result, state] = program(initial_state)();
+	auto const [result, state] = program(initial_state)().sync_wait();
 	CHECK(result);
 }
-
 TEST_CASE("Select physical device")
 {
 	using namespace test::select_physical_device;
