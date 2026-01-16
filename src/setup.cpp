@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <libfork/core/sync_wait.hpp>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <span>
@@ -1763,28 +1764,34 @@ struct create_and_check_swapchain_for_physical_device_and_queue_family_t
 };
 }  // namespace create_swapchain
 */
+
+struct evens_filter_t
+{
+	struct io_factory_t
+	{
+		struct action_t
+		{
+			int val;
+			constexpr std::optional<int> operator()() const
+			{
+				return ((val % 2) != 0) ? std::optional{val} : std::nullopt;
+			}
+		};
+
+		static constexpr auto operator()(int val)
+		{
+			return IO{action_t{val}};
+		}
+	};
+};
 }  // namespace test
 }  // namespace
-
-struct test_monad_filter_action_t
-{
-	int val;
-	constexpr bool operator()() const
-	{
-		return val % 2 == 0;
-	}
-};
 
 TEST_CASE("Monad")
 {
 	SUBCASE("sequence - array of sync IO")
 	{
 		namespace io = vulkandemo::monad::io;
-
-		// auto const program = io::pure(std::vector<int>{2, 3}).filter([](int val)
-		// {
-		// 	return test_monad_filter_action_t{val};
-		// });
 
 		auto const program = io::sequence(std::vector{io::pure(1), io::pure(2), io::pure(3)});
 		// .fmap([](auto val) { return val; });
@@ -1797,16 +1804,22 @@ TEST_CASE("Monad")
 	{
 		namespace io = vulkandemo::monad::io;
 
-		// auto const program = io::pure(std::vector<int>{2, 3}).filter([](int val)
-		// {
-		// 	return test_monad_filter_action_t{val};
-		// });
-
 		auto const program = io::traverse_t::io_factory_t::with_kleisli_t{
 			[](auto val) { return io::pure(val); }}(std::vector{1, 2, 3});
 
 		auto result = program().sync_wait();
 		CHECK(result == std::vector{1, 2, 3});
+	}
+
+	SUBCASE("filter by IO")
+	{
+		namespace io = vulkandemo::monad::io;
+
+		auto const program =
+			io::pure(std::vector<int>{2, 3, 4}).filter(test::evens_filter_t::io_factory_t{});
+
+		auto result = program().sync_wait();
+		CHECK(result == std::vector{3});
 	}
 }
 

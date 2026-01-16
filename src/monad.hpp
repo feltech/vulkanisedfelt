@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <ranges>
@@ -315,7 +316,7 @@ requires requires
 {
 	typename T::async_function_tag;
 }
-struct unwrap_async<T> : std::type_identity<typename T::AsyncResult>
+struct unwrap_async<T> : std::type_identity<typename T::IOResultType>
 {
 	static constexpr bool value = true;
 };
@@ -705,48 +706,21 @@ struct filter_t
 {
 	struct io_factory_t
 	{
-		template <class Values, class ElementLifter>
-		struct action_t
-		{
-			Values values;
-			ElementLifter kleisli;
-			constexpr auto operator()(this auto && self)
-			{
-				Values new_range = FW(self).values;
-				std::ranges::remove_if(
-					new_range, [](auto && iom) { return FW(iom)(); }, FW(self).kliesli);
-				return new_range;
-			}
-		};
-
-		template <class Values>
-		struct filter_by_bool_t
-		{
-			Values values;
-			constexpr auto operator()(this auto && self, auto const& values_to_keep)
-			{
-				Values filtered_values = FW(self).values;
-
-				for (std::size_t idx = std::size(self.values); idx-- > 0;)
-				{
-					if (values_to_keep[idx])
-
-				}
-			}
-		};
-
 		static constexpr auto operator()(auto && values, auto && kleisli)
 		{
 			using Rng = std::decay_t<decltype(values)>;
 			using Elem = Rng::value_type;
-			using IOElem = decltype(kleisli(std::declval<Elem>()));
+			using IOElem = std::decay_t<decltype(kleisli(std::declval<Elem>()))>;
+			using IOElemResult = std::invoke_result_t<IOElem>;
+			using IOElemValue = detail::unwrap_async_t<IOElemResult>;
 			static_assert(
-				std::is_same_v<IOElem, bool>,
-				"filter expects a kleisli that returns an IO whose effect is a bool");
+				std::is_same_v<IOElemValue, std::optional<Elem>>,
+				"filter expects a kleisli that returns an IO whose effect is a std::optional of "
+				"the input element");
 
-			Rng filtered_values = values;
+			Rng filterable_values = values;
 			return traverse_t::io_factory_t{}(FW(values), FW(kleisli))
-				.fmap(filter_by_bool_t{std::move(filtered_values)});
+				.fmap(hof::transform_maybes_to_values_t{});
 		}
 
 		template <class ElementLifter>
@@ -755,7 +729,7 @@ struct filter_t
 			ElementLifter kleisli;
 			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 			{
-				return io_factory_t{}(FW(values), FW(self).kliesli);
+				return io_factory_t{}(FW(values), FW(self).kleisli);
 			}
 		};
 	};
@@ -793,7 +767,7 @@ struct IO
 		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e.
 		// where the action type is homogenous, so the IO type as a whole is the same for all
 		// elements.
-		return bind(filter_t::with_kleisli_t{element_lifter});
+		return bind(filter_t::io_factory_t::with_kleisli_t{element_lifter});
 	}
 };
 
@@ -842,34 +816,24 @@ struct sequence_t
 {
 	struct io_factory_t
 	{
-		template <std::ranges::range RngOfIOs>
-		struct action_t
-		{
-			RngOfIOs rng_of_ios;
-			using Elem = detail::unwrap_async_t<typename RngOfIOs::value_type>;
-			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
-
-			constexpr auto operator()(this auto && self)
-			{
-				return async_function_t{FW(self).rng_of_ios};
-			}
-		};
 
 		template <class Arg>
 		struct async_function_t : detail::AsyncFunctorInterface<Arg>
 		{
 			using RngOfIOs = Arg;
-			using Elem =
-				detail::unwrap_async_t<std::invoke_result_t<typename RngOfIOs::value_type>>;
-			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
+			using IOElem = RngOfIOs::value_type;
+			using IOElemResult = std::invoke_result_t<IOElem>;
+			using IOElemValue = detail::unwrap_async_t<IOElemResult>;
+			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<IOElemValue>;
 
-			using AsyncResult = Rng;
+			static_assert(!detail::specialisation_of<IOElemValue, IO>, "IO effect/return is IO");
+
+			using IOResultType = Rng;
 
 			static constexpr auto fn = []([[maybe_unused]] auto fn,
 										  RngOfIOs rng_of_ios) -> lf::task<Rng>
 			{
-				static constexpr bool kIsIOAsync =
-					detail::unwrap_async_v<typename RngOfIOs::value_type>;
+				static constexpr bool kIsIOAsync = detail::unwrap_async_v<IOElemResult>;
 
 				Rng outputs;
 				outputs.resize(rng_of_ios.size());
@@ -895,6 +859,17 @@ struct sequence_t
 		};
 		template <std::ranges::range RngOfIOs>
 		async_function_t(RngOfIOs) -> async_function_t<RngOfIOs>;
+
+		template <std::ranges::range RngOfIOs>
+		struct action_t
+		{
+			RngOfIOs rng_of_ios;
+
+			constexpr auto operator()(this auto && self)
+			{
+				return async_function_t{FW(self).rng_of_ios};
+			}
+		};
 
 		constexpr auto operator()(std::ranges::range auto && rng_of_ios) const
 		{

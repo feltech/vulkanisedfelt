@@ -59,7 +59,7 @@ struct transform_range_to_check_non_empty_t
 struct transform_maybes_to_values_t
 {
 	template <std::ranges::range InputContainer>
-	constexpr auto operator()(InputContainer && values) const
+	static constexpr auto operator()(InputContainer && values)
 	{
 		return FW(values) | std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
 			std::views::transform([](auto && elem) { return *FW(elem); }) |
