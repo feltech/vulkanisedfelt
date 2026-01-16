@@ -1802,7 +1802,7 @@ TEST_CASE("Monad")
 		// 	return test_monad_filter_action_t{val};
 		// });
 
-		auto const program = io::traverse_t::io_factory_t::with_kleisli{
+		auto const program = io::traverse_t::io_factory_t::with_kleisli_t{
 			[](auto val) { return io::pure(val); }}(std::vector{1, 2, 3});
 
 		auto result = program().sync_wait();

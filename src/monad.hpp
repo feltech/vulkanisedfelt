@@ -1,23 +1,30 @@
 #pragma once
 #include <algorithm>
+#include <concepts>
+#include <cstddef>
+#include <functional>
+#include <optional>
+#include <ranges>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
+
 #include <boost/hana/core/tag_of.hpp>
 #include <boost/hana/fwd/ap.hpp>
 #include <boost/hana/fwd/append.hpp>
 #include <boost/hana/fwd/chain.hpp>
 #include <boost/hana/fwd/fold_left.hpp>
 #include <boost/hana/fwd/lift.hpp>
-#include <concepts>
-#include <cstddef>
-#include <functional>
+
+#include <libfork/algorithm/lift.hpp>
+#include <libfork/core.hpp>
 #include <libfork/core/control_flow.hpp>
 #include <libfork/core/eventually.hpp>
 #include <libfork/core/just.hpp>
 #include <libfork/core/scheduler.hpp>
-#include <optional>
-#include <ranges>
-#include <tuple>
-#include <type_traits>
-#include <utility>
+#include <libfork/core/task.hpp>
+#include <libfork/schedule/lazy_pool.hpp>
 
 #include <boost/hana.hpp>
 #include <boost/hana/ext/std/integer_sequence.hpp>
@@ -25,11 +32,9 @@
 #include <boost/hana/fwd/core/to.hpp>
 #include <boost/hana/fwd/transform.hpp>
 
-#include <libfork/algorithm/lift.hpp>
-#include <libfork/core.hpp>
-#include <libfork/core/task.hpp>
-#include <libfork/schedule/lazy_pool.hpp>
-#include <variant>
+#include <range/v3/view/filter.hpp>
+#include <range/v3/view/transform.hpp>
+#include <range/v3/view/zip.hpp>
 
 #include "hof.hpp"
 #include "macros.hpp"
@@ -167,9 +172,7 @@ concept IsMonad = requires(T t)
 template <class T, typename R>
 concept IOTo = requires(T io)
 {
-	{
-		io()
-	} -> std::convertible_to<R>;
+	{io()}->std::convertible_to<R>;
 };
 
 template <typename F, typename A>
@@ -353,9 +356,7 @@ struct IO;
 template <class T, class R>
 concept IOFor = requires(T t)
 {
-	{
-		t()
-	} -> std::convertible_to<R>;
+	{t()}->std::convertible_to<R>;
 };
 
 template <typename F, typename I>
@@ -369,9 +370,7 @@ concept Lifter = true;
 template <typename F, typename I, typename R>
 concept LifterTo = requires(F func, I io)
 {
-	{
-		func(io())
-	} -> IOFor<R>;
+	{func(io())}->IOFor<R>;
 };
 
 template <typename F, typename E, typename R>
@@ -677,19 +676,21 @@ struct traverse_t
 			using ValueRange = std::decay_t<decltype(values)>;
 			using ValueElem = ValueRange::value_type;
 
-			static_assert(!detail::specialisation_of<ValueElem, IO>, "traverse expects a range of values, not a IOs");
+			static_assert(
+				!detail::specialisation_of<ValueElem, IO>,
+				"traverse expects a range of values, not a IOs");
 
 			using IOElem = decltype(kleisli(std::declval<ValueElem>()));
 			using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
 
 			auto ios = FW(values) |
-				std::views::transform([&](auto const & elem) { return kleisli(elem); }) |
+				std::views::transform([&](auto && elem) { return kleisli(FW(elem)); }) |
 				ranges::to<IORange>();
 			return sequence(std::move(ios));
 		}
 
 		template <class ElementLifter>
-		struct with_kleisli
+		struct with_kleisli_t
 		{
 			ElementLifter kliesli;
 			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
@@ -702,33 +703,61 @@ struct traverse_t
 
 struct filter_t
 {
-	static constexpr auto make_io(auto && values, auto && element_lifter)
+	struct io_factory_t
 	{
-		return IO{io_action_t{FW(values), FW(element_lifter)}};
-	}
-
-	template <class ElementLifter>
-	struct with_element_lifter_t
-	{
-		ElementLifter element_lifter;
-		constexpr auto operator()(this auto && self, std::ranges::range auto && values)
+		template <class Values, class ElementLifter>
+		struct action_t
 		{
-			return make_io(FW(values), FW(self).kliesli);
-		}
-	};
+			Values values;
+			ElementLifter kleisli;
+			constexpr auto operator()(this auto && self)
+			{
+				Values new_range = FW(self).values;
+				std::ranges::remove_if(
+					new_range, [](auto && iom) { return FW(iom)(); }, FW(self).kliesli);
+				return new_range;
+			}
+		};
 
-	template <class Values, class ElementLifter>
-	struct io_action_t
-	{
-		Values values;
-		ElementLifter element_lifter;
-		constexpr auto operator()(this auto && self)
+		template <class Values>
+		struct filter_by_bool_t
 		{
-			auto new_range = FW(self).values;
-			std::ranges::remove_if(
-				new_range, [](auto && iom) { return FW(iom)(); }, FW(self).kliesli);
-			return new_range;
+			Values values;
+			constexpr auto operator()(this auto && self, auto const& values_to_keep)
+			{
+				Values filtered_values = FW(self).values;
+
+				for (std::size_t idx = std::size(self.values); idx-- > 0;)
+				{
+					if (values_to_keep[idx])
+
+				}
+			}
+		};
+
+		static constexpr auto operator()(auto && values, auto && kleisli)
+		{
+			using Rng = std::decay_t<decltype(values)>;
+			using Elem = Rng::value_type;
+			using IOElem = decltype(kleisli(std::declval<Elem>()));
+			static_assert(
+				std::is_same_v<IOElem, bool>,
+				"filter expects a kleisli that returns an IO whose effect is a bool");
+
+			Rng filtered_values = values;
+			return traverse_t::io_factory_t{}(FW(values), FW(kleisli))
+				.fmap(filter_by_bool_t{std::move(filtered_values)});
 		}
+
+		template <class ElementLifter>
+		struct with_kleisli_t
+		{
+			ElementLifter kleisli;
+			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
+			{
+				return io_factory_t{}(FW(values), FW(self).kliesli);
+			}
+		};
 	};
 };
 
@@ -755,7 +784,7 @@ struct IO
 
 	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
 	{
-		return bind(traverse_t::io_factory_t::with_kleisli{FW(element_lifter)});
+		return bind(traverse_t::io_factory_t::with_kleisli_t{FW(element_lifter)});
 	}
 
 	[[nodiscard]] auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
@@ -764,7 +793,7 @@ struct IO
 		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e.
 		// where the action type is homogenous, so the IO type as a whole is the same for all
 		// elements.
-		return bind(filter_t::with_element_lifter_t{element_lifter});
+		return bind(filter_t::with_kleisli_t{element_lifter});
 	}
 };
 
@@ -830,12 +859,14 @@ struct sequence_t
 		struct async_function_t : detail::AsyncFunctorInterface<Arg>
 		{
 			using RngOfIOs = Arg;
-			using Elem = detail::unwrap_async_t<std::invoke_result_t<typename RngOfIOs::value_type>>;
+			using Elem =
+				detail::unwrap_async_t<std::invoke_result_t<typename RngOfIOs::value_type>>;
 			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<Elem>;
 
 			using AsyncResult = Rng;
 
-			static constexpr auto fn = []([[maybe_unused]] auto fn, RngOfIOs rng_of_ios) -> lf::task<Rng>
+			static constexpr auto fn = []([[maybe_unused]] auto fn,
+										  RngOfIOs rng_of_ios) -> lf::task<Rng>
 			{
 				static constexpr bool kIsIOAsync =
 					detail::unwrap_async_v<typename RngOfIOs::value_type>;
@@ -850,8 +881,7 @@ struct sequence_t
 					if constexpr (kIsIOAsync)
 					{
 						auto async_fn = iom();
-						co_await lf::fork[&outputs[idx], async_fn.fn](
-							std::move(async_fn).arg);
+						co_await lf::fork[&outputs[idx], async_fn.fn](std::move(async_fn).arg);
 					}
 					else
 					{
