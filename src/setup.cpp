@@ -41,6 +41,8 @@
 
 #include <libfork/schedule/lazy_pool.hpp>
 
+#include <immer/vector.hpp>
+
 #include "Logger.hpp"
 #include "hof.hpp"
 #include "macros.hpp"
@@ -1793,11 +1795,11 @@ TEST_CASE("Monad")
 	{
 		namespace io = vulkandemo::monad::io;
 
-		auto const program = io::sequence(std::vector{io::pure(1), io::pure(2), io::pure(3)});
+		auto const program = io::sequence(immer::vector{{io::pure(1), io::pure(2), io::pure(3)}});
 		// .fmap([](auto val) { return val; });
 
 		auto result = program().sync_wait();
-		CHECK(result == std::vector{1, 2, 3});
+		CHECK(result == immer::vector{{1, 2, 3}});
 	}
 
 	SUBCASE("traverse - array of sync IO")
@@ -1805,10 +1807,10 @@ TEST_CASE("Monad")
 		namespace io = vulkandemo::monad::io;
 
 		auto const program = io::traverse_t::io_factory_t::with_kleisli_t{
-			[](auto val) { return io::pure(val); }}(std::vector{1, 2, 3});
+			[](auto val) { return io::pure(val); }}(immer::vector{{1, 2, 3}});
 
 		auto result = program().sync_wait();
-		CHECK(result == std::vector{1, 2, 3});
+		CHECK(result == immer::vector{{1, 2, 3}});
 	}
 
 	SUBCASE("filter by IO")
@@ -1816,10 +1818,10 @@ TEST_CASE("Monad")
 		namespace io = vulkandemo::monad::io;
 
 		auto const program =
-			io::pure(std::vector<int>{2, 3, 4}).filter(test::evens_filter_t::io_factory_t{});
+			io::pure(immer::vector{{2, 3, 4}}).filter(test::evens_filter_t::io_factory_t{});
 
 		auto result = program().sync_wait();
-		CHECK(result == std::vector{3});
+		CHECK(result == immer::vector{{3}});
 	}
 }
 

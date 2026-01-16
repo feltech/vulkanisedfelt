@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include <boost/hana/core/tag_of.hpp>
 #include <boost/hana/fwd/ap.hpp>
@@ -36,6 +37,9 @@
 #include <range/v3/view/filter.hpp>
 #include <range/v3/view/transform.hpp>
 #include <range/v3/view/zip.hpp>
+
+#include <immer/detail/rbts/bits.hpp>
+#include <immer/vector.hpp>
 
 #include "hof.hpp"
 #include "macros.hpp"
@@ -190,6 +194,17 @@ struct Unspecialise<Container<OldArgs...>>
 {
 	template <typename... Args>
 	using Specialise = Container<Args...>;
+};
+
+template <
+	typename T,
+	typename Policy,
+	immer::detail::rbts::bits_t B,
+	immer::detail::rbts::bits_t BL>
+struct Unspecialise<immer::vector<T, Policy, B, BL>>
+{
+	template <typename NewT>
+	using Specialise = immer::vector<NewT, Policy, B, BL>;
 };
 
 template <typename Container, typename NewType>
@@ -816,7 +831,6 @@ struct sequence_t
 {
 	struct io_factory_t
 	{
-
 		template <class Arg>
 		struct async_function_t : detail::AsyncFunctorInterface<Arg>
 		{
@@ -835,8 +849,7 @@ struct sequence_t
 			{
 				static constexpr bool kIsIOAsync = detail::unwrap_async_v<IOElemResult>;
 
-				Rng outputs;
-				outputs.resize(rng_of_ios.size());
+				std::vector<IOElemValue> outputs(rng_of_ios.size());
 
 				for (std::size_t idx = 0; idx < rng_of_ios.size(); ++idx)
 				{
@@ -854,7 +867,9 @@ struct sequence_t
 				}
 				co_await lf::join;
 
-				co_return outputs;
+				Rng ret(make_move_iterator(outputs.begin()), make_move_iterator(outputs.end()));
+
+				co_return ret;
 			};
 		};
 		template <std::ranges::range RngOfIOs>

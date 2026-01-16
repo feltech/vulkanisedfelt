@@ -6,6 +6,8 @@
 
 #include <range/v3/view/transform.hpp>
 
+#include <immer/vector.hpp>
+
 #include "macros.hpp"
 
 /**
@@ -21,6 +23,17 @@ struct unspecialise_t<Container<OldArgs...>>
 {
 	template <typename... Args>
 	using specialise_t = Container<Args...>;
+};
+
+template <
+	typename T,
+	typename Policy,
+	immer::detail::rbts::bits_t B,
+	immer::detail::rbts::bits_t BL>
+struct unspecialise_t<immer::vector<T, Policy, B, BL>>
+{
+	template <typename NewT>
+	using specialise_t = immer::vector<NewT, Policy, B, BL>;
 };
 
 /**
