@@ -160,7 +160,8 @@ using DesiredDeviceExtensionNameView = strong::type<
 	strong::regular,
 	strong::partially_ordered,
 	strong::formattable,
-	strong::convertible_to<AvailableDeviceExtensionNameView>>;
+	strong::convertible_to<AvailableDeviceExtensionNameView>,
+	strong::hashable>;
 
 using AvailableInstanceExtensionNameCstr = strong::type<
 	char const *,

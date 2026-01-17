@@ -371,8 +371,8 @@ struct create_device_t
 				queue_family_and_counts,
 			std::vector<types::AvailableDeviceExtensionNameView> device_extension_names) const
 		{
-			using vulkandemo::monad::stateio::lift;
-			return lift(
+			using vulkandemo::monad::stateio::liftIO;
+			return liftIO(
 					   io_factory_t{}(
 						   physical_device,
 						   std::move(queue_family_and_counts),
@@ -437,8 +437,8 @@ struct query_swapchain_images_t
 	{
 		constexpr auto operator()(auto const & state) const
 		{
-			using vulkandemo::monad::stateio::lift;
-			return lift(io_factory_t{}(state.device, state.swapchain));
+			using vulkandemo::monad::stateio::liftIO;
+			return liftIO(io_factory_t{}(state.device, state.swapchain));
 		}
 	};
 };
@@ -479,8 +479,8 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 			std::vector<VkImage> images;
 			constexpr auto operator()(auto const & state) const
 			{
-				using vulkandemo::monad::stateio::lift;
-				return lift(io_factory_t{}(state.device, surface_format, images));
+				using vulkandemo::monad::stateio::liftIO;
+				return liftIO(io_factory_t{}(state.device, surface_format, images));
 			}
 		};
 
@@ -558,7 +558,7 @@ struct select_physical_device_t
 		struct action_t
 		{
 			LoggerPtr logger;
-			std::vector<VkPhysicalDevice> physical_devices;
+			immer::array<VkPhysicalDevice> physical_devices;
 			std::set<types::DesiredDeviceExtensionNameView> required_device_extensions;
 			VkQueueFlagBits required_queue_capabilities{};
 			VkMemoryPropertyFlags required_memory_type{};
@@ -577,7 +577,7 @@ struct select_physical_device_t
 
 		constexpr auto operator()(
 			LoggerPtr logger,
-			std::vector<VkPhysicalDevice> physical_devices,
+			immer::array<VkPhysicalDevice> physical_devices,
 			std::set<types::DesiredDeviceExtensionNameView> required_device_extensions,
 			VkQueueFlagBits const required_queue_capabilities,
 			VkMemoryPropertyFlags const required_memory_type = 0,
@@ -601,8 +601,8 @@ struct query_available_device_extensions_t
 	{
 		struct action_t
 		{
-			VkPhysicalDevice physical_device{};
-			auto operator()() const
+			VkPhysicalDevice physical_device;
+			constexpr auto operator()() const
 			{
 				return setup::enumerate_physical_device_extension_properties(physical_device);
 			}
@@ -635,10 +635,10 @@ struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			VkPhysicalDevice physical_device,
 			types::VulkanSurfacePtr surface,
-			types::VulkanQueueFamilyIdx const queue_family_idx) const
+			types::VulkanQueueFamilyIdx const queue_family_idx)
 		{
 			return IO{action_t{
 				.physical_device = physical_device,
@@ -650,10 +650,10 @@ struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 		{
 			VkPhysicalDevice physical_device;
 			types::VulkanSurfacePtr surface;
-			constexpr auto operator()(types::VulkanQueueFamilyIdx const queue_family_idx) const
+			constexpr auto operator()(this auto&& self, types::VulkanQueueFamilyIdx const queue_family_idx)
 			{
 				return io_factory_t{}(
-					physical_device, types::VulkanSurfacePtr{surface}, queue_family_idx);
+					self.physical_device, FW(self).surface, queue_family_idx);
 			}
 		};
 	};
@@ -687,20 +687,22 @@ struct query_available_queue_family_properties_t
 		struct action_t
 		{
 			VkPhysicalDevice physical_device;
-			auto operator()() const
+			constexpr auto operator()() const
 			{
-				std::vector<VkQueueFamilyProperties> out;
 				uint32_t queue_family_count = 0;
 				vkGetPhysicalDeviceQueueFamilyProperties(
 					physical_device, &queue_family_count, nullptr);
-				out.resize(queue_family_count);
+
+				auto out = immer::array<VkQueueFamilyProperties>{queue_family_count}.transient();
+
 				vkGetPhysicalDeviceQueueFamilyProperties(
-					physical_device, &queue_family_count, out.data());
-				return out;
+					physical_device, &queue_family_count, out.data_mut());
+
+				return std::move(out).persistent();
 			}
 		};
 
-		constexpr auto operator()(VkPhysicalDevice physical_device) const
+		static constexpr auto operator()(VkPhysicalDevice physical_device)
 		{
 			return IO{action_t{physical_device}};
 		}
@@ -761,8 +763,8 @@ struct create_swapchain_t
 			VkSwapchainCreateInfoKHR create_info;
 			constexpr auto operator()(auto const & state) const
 			{
-				using vulkandemo::monad::stateio::lift;
-				return lift(io_factory_t{}(state.device, create_info));
+				using vulkandemo::monad::stateio::liftIO;
+				return liftIO(io_factory_t{}(state.device, create_info));
 			}
 		};
 
@@ -982,13 +984,13 @@ struct enumerate_physical_devices_t
 		{
 			LoggerPtr logger;
 			types::VulkanInstancePtr instance;
-			std::vector<VkPhysicalDevice> operator()() const
+			constexpr immer::array<VkPhysicalDevice> operator()() const
 			{
 				return setup::enumerate_physical_devices(logger, instance);
 			}
 		};
 
-		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
+		static constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance)
 		{
 			return IO{action_t{.logger = std::move(logger), .instance = std::move(instance)}};
 		}
@@ -996,9 +998,9 @@ struct enumerate_physical_devices_t
 		struct with_logger_t
 		{
 			LoggerPtr logger;
-			constexpr auto operator()(types::VulkanInstancePtr instance) const
+			constexpr auto operator()(this auto&& self, types::VulkanInstancePtr instance)
 			{
-				return io_factory_t{}(logger, std::move(instance));
+				return io_factory_t{}(FW(self).logger, std::move(instance));
 			}
 		};
 	};
@@ -1032,8 +1034,8 @@ struct create_surface_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				using vulkandemo::monad::stateio::lift;
-				return lift(io_factory_t{}(FW(state).window, FW(state).instance));
+				using vulkandemo::monad::stateio::liftIO;
+				return liftIO(io_factory_t{}(FW(state).window, FW(state).instance));
 			}
 		};
 
@@ -1094,8 +1096,8 @@ struct create_debug_messenger_t
 
 		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
 		{
-			using vulkandemo::monad::stateio::lift;
-			return lift(io_factory_t{}(std::move(logger), std::move(instance)))
+			using vulkandemo::monad::stateio::liftIO;
+			return liftIO(io_factory_t{}(std::move(logger), std::move(instance)))
 				.store(modify_state_t{});
 		}
 
@@ -1221,8 +1223,8 @@ struct create_instance_t
 			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
 			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
-			using vulkandemo::monad::stateio::lift;
-			return lift(
+			using vulkandemo::monad::stateio::liftIO;
+			return liftIO(
 					   io_factory_t{}(
 						   std::move(logger),
 						   std::move(name),
@@ -1434,10 +1436,10 @@ struct create_window_t
 		};
 		constexpr auto operator()(std::string title, int width, int height) const
 		{
-			using vulkandemo::monad::stateio::lift;
+			using vulkandemo::monad::stateio::liftIO;
 			using vulkandemo::monad::stateio::modify_t;
 
-			return lift(io_factory_t{}(std::move(title), width, height))
+			return liftIO(io_factory_t{}(std::move(title), width, height))
 				.bind(modify_t::stateio_factory_t::with_mutator_t{modify_state_t{}});
 		}
 	};

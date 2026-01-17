@@ -63,7 +63,7 @@ namespace vulkandemo::setup
  */
 [[deprecated]] std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device(
 	LoggerPtr const & logger,
-	std::vector<VkPhysicalDevice> const & physical_devices,
+	immer::array<VkPhysicalDevice> const & physical_devices,
 	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits required_queue_capabilities,
 	VkMemoryPropertyFlags required_memory_type = 0,

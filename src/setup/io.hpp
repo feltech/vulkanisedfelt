@@ -180,7 +180,7 @@ types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_a
  * @param instance
  * @return
  */
-std::vector<VkPhysicalDevice> enumerate_physical_devices(
+immer::array<VkPhysicalDevice> enumerate_physical_devices(
 	LoggerPtr const & logger, types::VulkanInstancePtr const & instance);
 
 /**
@@ -189,7 +189,7 @@ std::vector<VkPhysicalDevice> enumerate_physical_devices(
  * @param physical_device
  * @return
  */
-std::vector<VkExtensionProperties> enumerate_physical_device_extension_properties(
+immer::array<VkExtensionProperties> enumerate_physical_device_extension_properties(
 	VkPhysicalDevice physical_device);
 
 /**

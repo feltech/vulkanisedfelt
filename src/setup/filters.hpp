@@ -23,22 +23,22 @@ namespace vulkandemo::setup
 
 std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
 maybe_select_best_scoring_physical_device_and_queue_family_idx(
-	std::vector<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates);
+	immer::array<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates);
 
 std::optional<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
 maybe_score_physical_device_and_queue_family(
 	VkPhysicalDevice physical_device,
 	VkPhysicalDeviceProperties const & physical_device_properties,
-	std::vector<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs);
+	immer::array<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs);
 
 // Filters available device extensions by desired names and transforms to those present on the
 // device
-std::vector<types::AvailableDeviceExtensionNameView>
+immer::array<types::AvailableDeviceExtensionNameView>
 extension_properties_filter_by_and_transform_to_device_extension_name(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	std::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names,
-	std::vector<VkExtensionProperties> const & available_device_extensions);
+	immer::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names,
+	immer::array<VkExtensionProperties> const & available_device_extensions);
 
 struct extension_properties_filter_by_and_transform_to_device_extension_name_t
 {
@@ -46,9 +46,9 @@ struct extension_properties_filter_by_and_transform_to_device_extension_name_t
 	{
 		LoggerPtr logger;
 		VkPhysicalDevice physical_device;
-		std::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
-		constexpr std::vector<types::AvailableDeviceExtensionNameView> operator()(
-			std::vector<VkExtensionProperties> const & available_device_extensions) const
+		immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
+		constexpr immer::array<types::AvailableDeviceExtensionNameView> operator()(
+			immer::array<VkExtensionProperties> const & available_device_extensions) const
 		{
 			return extension_properties_filter_by_and_transform_to_device_extension_name(
 				logger,
@@ -59,10 +59,10 @@ struct extension_properties_filter_by_and_transform_to_device_extension_name_t
 	};
 };
 
-std::vector<types::VulkanQueueFamilyIdx>
+immer::array<types::VulkanQueueFamilyIdx>
 queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
 	VkQueueFlagBits desired_queue_capabilities,
-	std::vector<VkQueueFamilyProperties> const & queue_family_properties);
+	immer::array<VkQueueFamilyProperties> const & queue_family_properties);
 
 struct transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t
 {
@@ -70,8 +70,8 @@ struct transform_queue_family_properties_to_queue_family_idxs_filtered_by_capabi
 	{
 		VkQueueFlagBits desired_queue_capabilities;
 
-		constexpr std::vector<types::VulkanQueueFamilyIdx> operator()(
-			std::vector<VkQueueFamilyProperties> const & queue_family_properties) const
+		constexpr immer::array<types::VulkanQueueFamilyIdx> operator()(
+			immer::array<VkQueueFamilyProperties> const & queue_family_properties) const
 		{
 			return queue_family_properties_filter_by_capability_and_transform_to_queue_family_idx(
 				desired_queue_capabilities, queue_family_properties);
@@ -95,7 +95,7 @@ constexpr auto make_instance_extension_appender(
 }
 
 // Filters memory types by property flags and transforms to memory type indices
-std::vector<types::VulkanMemoryTypeIdx>
+immer::array<types::VulkanMemoryTypeIdx>
 memory_properties_filter_by_and_transform_to_memory_type_idx(
 	VkMemoryPropertyFlags memory_property_flags,
 	VkPhysicalDeviceMemoryProperties const & memory_properties);
@@ -106,7 +106,7 @@ struct memory_properties_filter_by_and_transform_to_memory_type_idx_t
 	{
 		VkMemoryPropertyFlags memory_property_flags;
 
-		constexpr std::vector<types::VulkanMemoryTypeIdx> operator()(
+		constexpr immer::array<types::VulkanMemoryTypeIdx> operator()(
 			VkPhysicalDeviceMemoryProperties const & memory_properties) const
 		{
 			return memory_properties_filter_by_and_transform_to_memory_type_idx(

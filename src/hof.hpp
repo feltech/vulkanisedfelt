@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <optional>
 #include <ranges>
 #include <utility>
 
+#include <range/v3/view/cache1.hpp>
+#include <range/v3/view/filter.hpp>
+#include <range/v3/view/move.hpp>
 #include <range/v3/view/transform.hpp>
 
-#include <immer/vector.hpp>
 #include <immer/array.hpp>
 #include <immer/array_transient.hpp>
+#include <immer/vector.hpp>
 
 #include "macros.hpp"
 
@@ -53,11 +57,11 @@ constexpr auto cast()
 	{ return static_cast<T>(std::forward<U>(obj)); };
 };
 
-template<class T>
-struct construct {
-	template<class... Args>
-	constexpr T operator()(Args&&... args) const
-		noexcept(noexcept(T{std::forward<Args>(args)...}))
+template <class T>
+struct construct_t
+{
+	template <class... Args>
+	constexpr T operator()(Args &&... args) const noexcept(noexcept(T{std::forward<Args>(args)...}))
 	{
 		return T{std::forward<Args>(args)...};
 	}
@@ -66,12 +70,11 @@ struct construct {
 struct transform_concat_t
 {
 	template <class... Args>
-	auto operator()(immer::array<Args...> first, immer::array<Args...>  second) const
+	auto operator()(immer::array<Args...> first, immer::array<Args...> second) const
 	{
 		auto out = std::move(first).transient();
 
-		for (auto&& elem : second)
-			out.push_back(std::move(elem));
+		for (auto && elem : second) out.push_back(std::move(elem));
 
 		return out.persistent();
 	};
@@ -86,7 +89,7 @@ struct transform_concat_t
 
 struct transform_range_to_check_non_empty_t
 {
-	constexpr auto operator()(std::ranges::range auto && values) const
+	static constexpr auto operator()(std::ranges::range auto && values)
 	{
 		return !std::ranges::empty(FW(values));
 	}
@@ -97,9 +100,31 @@ struct transform_maybes_to_values_t
 	template <std::ranges::range InputContainer>
 	static constexpr auto operator()(InputContainer && values)
 	{
-		return FW(values) | std::views::filter([](auto && elem) { return FW(elem).has_value(); }) |
-			std::views::transform([](auto && elem) { return *FW(elem); }) |
+		return values | ranges::views::move |
+			ranges::views::filter([](auto const & elem) { return elem.has_value(); }) |
+			ranges::views::transform(
+				   [](auto & elem) -> decltype(auto) { return std::move(*elem); }) |
 			ranges::to<unspecialise_t<InputContainer>::template specialise_t>;
+	}
+};
+
+struct transform_range_to_front_elem_t
+{
+	static constexpr auto operator()(auto && values)
+	{
+		static_assert(std::ranges::range<decltype(values)>, "Expected a range");
+
+		return FW(values).front();
+	}
+};
+
+template <class Value>
+struct transform_bool_to_optional_t
+{
+	Value value;
+	constexpr std::optional<Value> operator()(this auto && self, bool cond)
+	{
+		return cond ? std::optional{FW(self).value} : std::nullopt;
 	}
 };
 
@@ -135,6 +160,16 @@ constexpr auto second()
 	// NOLINTNEXTLINE(*-trailing-return)
 	return []<typename T>(T && obj) -> decltype(auto) { return std::forward<T>(obj).second; };
 }
+
+template <std::size_t I>
+struct get_nth_t
+{
+	static constexpr auto operator()(auto && tuple_like)
+	{
+		return std::get<I>(FW(tuple_like));
+	}
+};
+
 }  // namespace attr
 namespace views
 {

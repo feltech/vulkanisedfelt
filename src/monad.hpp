@@ -699,8 +699,7 @@ struct traverse_t
 			using IOElem = decltype(kleisli(std::declval<ValueElem>()));
 			using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
 
-			auto ios = FW(values) |
-				std::views::transform([&](auto && elem) { return kleisli(FW(elem)); }) |
+			auto ios = values | ranges::views::move | ranges::views::transform(kleisli) |
 				ranges::to<IORange>();
 			return sequence(std::move(ios));
 		}
@@ -772,14 +771,14 @@ struct IO
 		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
-	[[nodiscard]] auto traverse(this auto&& self, auto && element_lifter)
+	[[nodiscard]] auto traverse(this auto && self, auto && element_lifter)
 	{
 		static_assert(std::ranges::range<Value>, "Can only traverse effects that give a range");
 
 		return FW(self).bind(traverse_t::io_factory_t::with_kleisli_t{FW(element_lifter)});
 	}
 
-	[[nodiscard]] auto filter(this auto&& self, auto && kleisli)
+	[[nodiscard]] auto filter(this auto && self, auto && kleisli)
 	{
 		// Note: a good reason to eschew anonymous lambdas is so that we can have ranges of IOs -
 		// i.e. where the action type is homogenous, so the IO type as a whole is the same for all
@@ -1220,13 +1219,14 @@ struct get_state_t
 		struct action_t
 		{
 			State state;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self)
 			{
-				return std::pair{state, state};
+				auto value = self.state;
+				return std::pair{std::move(value), FW(self).state};
 			}
 		};
 
-		constexpr auto operator()(auto && state) const
+		static constexpr auto operator()(auto && state)
 		{
 			return io::IO{action_t{FW(state)}};
 		}
@@ -1236,13 +1236,13 @@ struct get_state_t
 	{
 		struct action_t
 		{
-			constexpr auto operator()(auto && state) const
+			static constexpr auto operator()(auto && state)
 			{
 				return io_factory_t{}(FW(state));
 			}
 		};
 
-		constexpr auto operator()() const
+		static constexpr auto operator()()
 		{
 			return StateIO{action_t{}};
 		}
@@ -1259,7 +1259,7 @@ constexpr auto pure(auto && value)
 	return boost::hana::lift<stateio_tag_t>(FW(value));
 }
 
-constexpr auto lift(detail::specialisation_of<io::IO> auto && iom)
+constexpr auto liftIO(detail::specialisation_of<io::IO> auto && iom)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }

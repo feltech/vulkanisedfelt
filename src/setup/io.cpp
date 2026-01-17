@@ -91,7 +91,8 @@ types::VulkanCommandBuffersPtr create_primary_command_buffers(
 	immer::array<VkCommandBuffer> buffers(count);
 	auto buffers_writeable = std::move(buffers).transient();
 	VK_CHECK(
-		vkAllocateCommandBuffers(device.get(), &command_buffer_allocate_info, buffers_writeable.data_mut()),
+		vkAllocateCommandBuffers(
+			device.get(), &command_buffer_allocate_info, buffers_writeable.data_mut()),
 		"Failed to allocate command buffers");
 
 	return types::make_command_buffers_ptr(
@@ -537,17 +538,16 @@ types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_a
 	return queues;
 }
 
-std::vector<VkPhysicalDevice> enumerate_physical_devices(
+immer::array<VkPhysicalDevice> enumerate_physical_devices(
 	LoggerPtr const & logger, types::VulkanInstancePtr const & instance)
 {
-	std::vector<VkPhysicalDevice> physical_devices;
 	uint32_t device_count = 0;
 	VK_CHECK(
 		vkEnumeratePhysicalDevices(instance.get(), &device_count, nullptr),
 		"Failed to enumerate physical devices");
-	physical_devices.resize(device_count);
+	auto physical_devices = immer::array<VkPhysicalDevice>{device_count}.transient();
 	VK_CHECK(
-		vkEnumeratePhysicalDevices(instance.get(), &device_count, physical_devices.data()),
+		vkEnumeratePhysicalDevices(instance.get(), &device_count, physical_devices.data_mut()),
 		"Failed to enumerate physical devices");
 
 	// Log device information.
@@ -563,22 +563,22 @@ std::vector<VkPhysicalDevice> enumerate_physical_devices(
 				"\tDevice Type: {}", string_VkPhysicalDeviceType(device_properties.deviceType));
 		}
 	}
-	return physical_devices;
+	return std::move(physical_devices).persistent();
 }
 
-std::vector<VkExtensionProperties> enumerate_physical_device_extension_properties(
+immer::array<VkExtensionProperties> enumerate_physical_device_extension_properties(
 	VkPhysicalDevice physical_device)
 {
 	uint32_t extension_count = 0;
 	VK_CHECK(
 		vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &extension_count, nullptr),
 		"Failed to get device extension count");
-	std::vector<VkExtensionProperties> out(extension_count);
+	auto out = immer::array<VkExtensionProperties>{extension_count}.transient();
 	VK_CHECK(
 		vkEnumerateDeviceExtensionProperties(
-			physical_device, nullptr, &extension_count, out.data()),
+			physical_device, nullptr, &extension_count, out.data_mut()),
 		"Failed to get device extensions");
-	return out;
+	return out.persistent();
 }
 
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device)
