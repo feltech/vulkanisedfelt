@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <immer/array.hpp>
+#include <immer/set.hpp>
+#include <iterator>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -15,6 +18,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <immer/array_transient.hpp>
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/set_algorithm.hpp>
 #include <spdlog/common.h>
@@ -138,11 +142,11 @@ memory_properties_filter_by_and_transform_to_memory_type_idx(
 		ranges::to<std::vector<types::VulkanMemoryTypeIdx>>();
 }
 
-std::vector<types::AvailableInstanceLayerNameCstr>
+immer::array<types::AvailableInstanceLayerNameCstr>
 layer_description_filter_by_and_transform_to_instance_layer_name(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
-	std::vector<VkLayerProperties> const & available_layer_descs)
+	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
+	immer::array<VkLayerProperties> const & available_layer_descs)
 {
 	auto const available_layer_names = available_layer_descs |
 		std::views::transform(&VkLayerProperties::layerName) |
@@ -151,18 +155,24 @@ layer_description_filter_by_and_transform_to_instance_layer_name(
 	log_layer_info(logger, desired_layer_names, available_layer_names, available_layer_descs);
 
 	// Get intersection of desired layers and available layers, converted to C strings.
-	return ranges::views::set_intersection(
-			   desired_layer_names | hof::views::value_of(),
-			   available_layer_names | hof::views::value_of()) |
-		std::views::transform(&std::string_view::data) |
-		ranges::to<std::vector<types::AvailableInstanceLayerNameCstr>>;
+	auto rng = ranges::views::set_intersection(
+		desired_layer_names | hof::views::value_of(),
+		available_layer_names | hof::views::value_of());
+
+	auto out = immer::array<types::AvailableInstanceLayerNameCstr>{}.transient();
+
+	for (std::string_view const& name : rng)
+		out.push_back(types::AvailableInstanceLayerNameCstr{name.data()});
+
+	return std::move(out).persistent();
+	;
 }
 
-std::vector<types::AvailableInstanceExtensionNameCstr>
+immer::array<types::AvailableInstanceExtensionNameCstr>
 extension_properties_filter_by_and_transform_to_instance_extension_name(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
-	std::vector<VkExtensionProperties> const & available_extensions)
+	immer::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
+	immer::array<VkExtensionProperties> const & available_extensions)
 {
 	std::set available_extension_names = available_extensions |
 		std::views::transform(&VkExtensionProperties::extensionName) |
@@ -172,11 +182,15 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 		logger, desired_extension_names, available_extension_names, available_extensions);
 
 	// Intersection of available extensions and desired extensions to return.
-	return ranges::views::set_intersection(
+	auto rng = ranges::views::set_intersection(
 			   desired_extension_names | hof::views::value_of(),
-			   available_extension_names | hof::views::value_of()) |
-		std::views::transform(&std::string_view::data) |
-		ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>;
+			   available_extension_names | hof::views::value_of());
+
+	auto out = immer::array<types::AvailableInstanceExtensionNameCstr>{}.transient();
+	for (std::string_view const& name : rng)
+		out.push_back(types::AvailableInstanceExtensionNameCstr{name.data()});
+
+	return std::move(out).persistent();
 }
 
 std::vector<VkSurfaceFormatKHR> filter_surface_formats(

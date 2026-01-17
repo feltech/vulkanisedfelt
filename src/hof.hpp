@@ -7,6 +7,8 @@
 #include <range/v3/view/transform.hpp>
 
 #include <immer/vector.hpp>
+#include <immer/array.hpp>
+#include <immer/array_transient.hpp>
 
 #include "macros.hpp"
 
@@ -51,8 +53,29 @@ constexpr auto cast()
 	{ return static_cast<T>(std::forward<U>(obj)); };
 };
 
+template<class T>
+struct construct {
+	template<class... Args>
+	constexpr T operator()(Args&&... args) const
+		noexcept(noexcept(T{std::forward<Args>(args)...}))
+	{
+		return T{std::forward<Args>(args)...};
+	}
+};
+
 struct transform_concat_t
 {
+	template <class... Args>
+	auto operator()(immer::array<Args...> first, immer::array<Args...>  second) const
+	{
+		auto out = std::move(first).transient();
+
+		for (auto&& elem : second)
+			out.push_back(std::move(elem));
+
+		return out.persistent();
+	};
+
 	auto operator()(std::ranges::range auto first, std::ranges::range auto second) const
 	{
 		first.insert(

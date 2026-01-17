@@ -3,6 +3,7 @@
 #pragma once
 #include <concepts>
 #include <cstdint>
+#include <immer/set.hpp>
 #include <range/v3/range/conversion.hpp>
 #include <range/v3/view/transform.hpp>
 #include <ranges>
@@ -118,7 +119,7 @@ filter_available_queue_families(
  */
 [[deprecated]] std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names);
+	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names);
 
 /**
  * Query available generic instance extensions vs. desired..

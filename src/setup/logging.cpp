@@ -2,6 +2,7 @@
 // Copyright 2025 David Feltell
 #include "logging.hpp"
 
+#include <immer/set.hpp>
 #include <set>
 #include <span>
 
@@ -17,7 +18,7 @@ namespace vulkandemo::setup
 
 void log_layer_info(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
+	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
 	std::set<types::AvailableInstanceLayerNameView> const & available_layer_names,
 	std::span<VkLayerProperties const> const available_layer_descs)
 {
@@ -59,7 +60,7 @@ void log_layer_info(
 
 void log_instance_extensions_info(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
+	immer::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
 	std::set<types::AvailableInstanceExtensionNameView> const & available_extension_names,
 	std::span<VkExtensionProperties const> const available_extension_properties)
 {

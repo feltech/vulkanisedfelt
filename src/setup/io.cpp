@@ -22,13 +22,21 @@
 #include <SDL_vulkan.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
+
 #include <frozen/unordered_map.h>
+
 #include <gsl/pointers>
+
 #include <range/v3/range/conversion.hpp>
+
 #include <spdlog/common.h>
 #include <spdlog/logger.h>	// NOLINT(*-include-cleaner)
+
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
+
+#include <immer/array.hpp>
+#include <immer/array_transient.hpp>
 
 #include "../Logger.hpp"
 #include "../hof.hpp"
@@ -80,12 +88,14 @@ types::VulkanCommandBuffersPtr create_primary_command_buffers(
 		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 		.commandBufferCount = count};
 
-	std::vector<VkCommandBuffer> buffers(count);
+	immer::array<VkCommandBuffer> buffers(count);
+	auto buffers_writeable = std::move(buffers).transient();
 	VK_CHECK(
-		vkAllocateCommandBuffers(device.get(), &command_buffer_allocate_info, buffers.data()),
+		vkAllocateCommandBuffers(device.get(), &command_buffer_allocate_info, buffers_writeable.data_mut()),
 		"Failed to allocate command buffers");
 
-	return types::make_command_buffers_ptr(std::move(device), std::move(pool), std::move(buffers));
+	return types::make_command_buffers_ptr(
+		std::move(device), std::move(pool), std::move(buffers_writeable).persistent());
 }
 
 types::VulkanCommandPoolPtr create_command_pool(
@@ -228,50 +238,49 @@ types::VulkanSwapchainPtr create_swapchain(
 }
 
 std::vector<VkImage> query_swapchain_images(
-    types::VulkanDevicePtr const& device,
-    types::VulkanSwapchainPtr const& swapchain)
+	types::VulkanDevicePtr const & device, types::VulkanSwapchainPtr const & swapchain)
 {
-    uint32_t count = 0;
-    VK_CHECK(
-        vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
-        "Failed to get swapchain image count");
+	uint32_t count = 0;
+	VK_CHECK(
+		vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
+		"Failed to get swapchain image count");
 
-    std::vector<VkImage> out(count);
-    VK_CHECK(
-        vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
-        "Failed to get swapchain images");
-    return out;
+	std::vector<VkImage> out(count);
+	VK_CHECK(
+		vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
+		"Failed to get swapchain images");
+	return out;
 }
 
 std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
-    types::VulkanDevicePtr const& device,
-    VkSurfaceFormatKHR surface_format,
-    std::span<VkImage const> images)
+	types::VulkanDevicePtr const & device,
+	VkSurfaceFormatKHR surface_format,
+	std::span<VkImage const> images)
 {
-    VkImageViewCreateInfo image_view_create_info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = nullptr,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = surface_format.format,
-        .components =
-            {VK_COMPONENT_SWIZZLE_IDENTITY,
-             VK_COMPONENT_SWIZZLE_IDENTITY,
-             VK_COMPONENT_SWIZZLE_IDENTITY,
-             VK_COMPONENT_SWIZZLE_IDENTITY},
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+	VkImageViewCreateInfo image_view_create_info{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image = nullptr,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format = surface_format.format,
+		.components =
+			{VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY,
+			 VK_COMPONENT_SWIZZLE_IDENTITY},
+		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
 
-    std::vector<types::VulkanImageViewPtr> result;
-    result.reserve(images.size());
-    for (VkImage image : images) {
-        image_view_create_info.image = image;
-        VkImageView image_view = nullptr;
-        VK_CHECK(
-            vkCreateImageView(
-                device.get(), &image_view_create_info, nullptr, &image_view),
-            "Failed to create image view");
-        result.push_back(types::make_image_view_ptr(device, image_view));
-    }
-    return result;
+	std::vector<types::VulkanImageViewPtr> result;
+	result.reserve(images.size());
+	for (VkImage image : images)
+	{
+		image_view_create_info.image = image;
+		VkImageView image_view = nullptr;
+		VK_CHECK(
+			vkCreateImageView(device.get(), &image_view_create_info, nullptr, &image_view),
+			"Failed to create image view");
+		result.push_back(types::make_image_view_ptr(device, image_view));
+	}
+	return result;
 }
 
 namespace
@@ -282,8 +291,8 @@ create_colour_aspect_single_mip_single_layer_swapchain_image_views(
 	VkSurfaceFormatKHR const surface_format,
 	types::VulkanSwapchainPtr const & swapchain)
 {
-    return create_colour_aspect_single_mip_single_layer_image_views(
-        device, surface_format, query_swapchain_images(device, swapchain));
+	return create_colour_aspect_single_mip_single_layer_image_views(
+		device, surface_format, query_swapchain_images(device, swapchain));
 }
 
 types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
@@ -516,14 +525,14 @@ types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_a
 	types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 	for (auto const & [queue_family_idx, queue_count] : queue_family_and_counts)
 	{
-		auto & queues_for_family = queues[queue_family_idx];
-		queues_for_family.reserve(queue_count);
+		immer::array<VkQueue> queues_for_family(queue_count);
 		for (types::VulkanQueueCount queue_idx{0}; queue_idx < queue_count; ++queue_idx)
 		{
 			VkQueue queue = nullptr;
 			vkGetDeviceQueue(device, queue_family_idx, queue_idx, &queue);
-			queues_for_family.push_back(queue);
+			queues_for_family = std::move(queues_for_family).set(queue_idx, queue);
 		}
+		queues = std::move(queues).set(queue_family_idx, std::move(queues_for_family));
 	}
 	return queues;
 }

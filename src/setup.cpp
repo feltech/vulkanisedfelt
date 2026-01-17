@@ -13,7 +13,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <libfork/core/sync_wait.hpp>
+#include <immer/array.hpp>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -39,8 +39,10 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
+#include <libfork/core/sync_wait.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
 
+#include <immer/set.hpp>
 #include <immer/vector.hpp>
 
 #include "Logger.hpp"
@@ -299,7 +301,7 @@ std::vector<types::VulkanMemoryTypeIdx> filter_available_memory_types(
 
 std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names)
+	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names)
 {
 	// Query available layers.
 	std::vector<VkLayerProperties> available_layer_descs = []
@@ -366,8 +368,8 @@ std::vector<types::AvailableInstanceExtensionNameCstr> filter_available_instance
 		std::views::transform(&std::string_view::data) |
 		ranges::to<std::vector<types::AvailableInstanceExtensionNameCstr>>;
 
-	log_instance_extensions_info(
-		logger, desired_extension_names, available_extension_names, available_extensions);
+	// log_instance_extensions_info(
+	// logger, desired_extension_names, available_extension_names, available_extensions);
 
 	return extensions_to_enable;
 }
@@ -384,7 +386,6 @@ namespace test
 {
 using vulkandemo::monad::stateio::get_state_t;
 using vulkandemo::monad::stateio::lift;
-/*
 namespace create_a_window
 {
 constexpr int kExpectedWidth = 800;
@@ -423,13 +424,13 @@ struct query_desired_instance_extensions_t
 {
 	struct io_factory_t
 	{
-		constexpr auto operator()(LoggerPtr logger) const
+		static constexpr auto operator()(LoggerPtr logger)
 		{
 			return monad::query_available_instance_extensions_t::io_factory_t{}().fmap(
 				transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
 					.logger = std::move(logger),
-					.desired_extension_names = std::set{types::DesiredInstanceExtensionNameView{
-						VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}});
+					.desired_extension_names = immer::set{{types::DesiredInstanceExtensionNameView{
+						VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}});
 		}
 	};
 };
@@ -441,7 +442,7 @@ struct query_sdl_and_desired_instance_extensions_t
 {
 	struct io_factory_t
 	{
-		constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window) const
+		static constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window)
 		{
 			return sequence(
 					   // Get SDL window vulkan extension names.
@@ -465,9 +466,9 @@ struct query_desired_instance_layer_names_t
 			return monad::query_available_instance_layers_t::io_factory_t{}().fmap(
 				transform_to_instance_layer_name_filtered_by_instance_layer_name_t{
 					.logger = std::move(logger),
-					.desired_layer_names = std::set{
-						types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
-						types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
+					.desired_layer_names = immer::set{
+						{types::DesiredInstanceLayerNameView{"some_unavailable_layer"},
+						 types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}}});
 		}
 	};
 };
@@ -531,24 +532,25 @@ struct create_instance_with_extensions_t
 {
 	struct io_factory_t
 	{
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
-			std::vector<types::AvailableInstanceExtensionNameCstr> available_extensions) const
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_extensions)
 		{
 			return monad::create_instance_t::io_factory_t{}(
 				std::move(logger), "test", {}, std::move(available_extensions));
 		}
-	};
 
-	struct with_logger_t
-	{
-		LoggerPtr logger;
-
-		constexpr auto operator()(
-			std::vector<types::AvailableInstanceExtensionNameCstr> available_extensions) const
+		struct with_logger_t
 		{
-			return io_factory_t{}(logger, std::move(available_extensions));
-		}
+			LoggerPtr logger;
+
+			constexpr auto operator()(
+				this auto && self,
+				immer::array<types::AvailableInstanceExtensionNameCstr> available_extensions)
+			{
+				return io_factory_t{}(FW(self).logger, std::move(available_extensions));
+			}
+		};
 	};
 };
 
@@ -605,8 +607,8 @@ struct query_validation_layer_names_t
 			return monad::query_available_instance_layers_t::io_factory_t{}().fmap(
 				transform_to_instance_layer_name_filtered_by_instance_layer_name_t{
 					.logger = std::move(logger),
-					.desired_layer_names = std::set{
-						types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
+					.desired_layer_names = immer::set{
+						{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}}});
 		}
 	};
 };
@@ -626,8 +628,8 @@ struct query_sdl_and_desired_instance_extensions_t
 						   transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
 							   .logger = std::move(logger),
 							   .desired_extension_names =
-								   std::set{types::DesiredInstanceExtensionNameView{
-									   VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}))
+								   immer::set{{types::DesiredInstanceExtensionNameView{
+									   VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}}))
 				.fmap(
 					// Concatenate SDL and optional extensions.
 					hof::transform_concat_t{});
@@ -658,7 +660,7 @@ struct query_instance_args_for_window_t
 
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window) const
+		static constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window)
 		{
 			using vulkandemo::monad::stateio::lift;
 			return lift(io_factory_t{}(std::move(logger), std::move(window)));
@@ -666,7 +668,7 @@ struct query_instance_args_for_window_t
 
 		struct from_state_t
 		{
-			constexpr auto operator()(auto && state) const
+			static constexpr auto operator()(auto && state)
 			{
 				return stateio_factory_t{}(FW(state).logger, FW(state).window);
 			}
@@ -674,7 +676,7 @@ struct query_instance_args_for_window_t
 
 		struct using_state_t
 		{
-			constexpr auto operator()() const
+			static constexpr auto operator()()
 			{
 				using vulkandemo::monad::stateio::get_state;
 				return get_state().bind(from_state_t{});
@@ -713,16 +715,26 @@ struct create_surface_t
 {
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(auto const & state) const
+		static constexpr auto operator()(
+			types::SDLWindowPtr window, types::VulkanInstancePtr instance)
 		{
-			return lift(monad::create_surface_t::io_factory_t{}(state.window, state.instance));
+			return lift(
+				monad::create_surface_t::io_factory_t{}(std::move(window), std::move(instance)));
 		}
+
+		struct from_state_t
+		{
+			static constexpr auto operator()(auto && state)
+			{
+				return StateIO{stateio_factory_t{}(FW(state).window, FW(state).instance)};
+			}
+		};
 	};
 };
 
 struct check_surface_t
 {
-	constexpr bool operator()(types::VulkanSurfacePtr const & surface) const
+	static constexpr bool operator()(types::VulkanSurfacePtr const & surface)
 	{
 		CHECK(surface);
 		return true;
@@ -790,9 +802,9 @@ struct query_supported_graphics_queue_families_t
 					transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t::
 						with_desired_queue_capabilities_t{VK_QUEUE_GRAPHICS_BIT})
 				.filter(
-					monad::query_is_queue_family_supported_by_physical_device_and_surface_t::
+					monad::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t::
 						io_factory_t::with_physical_device_and_surface_t{
-							physical_device, std::move(surface)});
+							.physical_device=physical_device, .surface=std::move(surface)});
 		}
 	};
 };
@@ -892,6 +904,7 @@ struct check_supported_extensions_and_memory_types_and_queue_families_t
 };
 
 }  // namespace enumerate_devices
+/*
 
 namespace select_physical_device
 {
@@ -1825,7 +1838,6 @@ TEST_CASE("Monad")
 	}
 }
 
-/*
 TEST_CASE("Create a window")
 {
 	using namespace test::create_a_window;
@@ -1894,10 +1906,11 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 
 	using namespace test::create_a_vulkan_debug_utils_messenger;
 
-	auto const program = test::query_desired_instance_extensions_t::io_factory_t{}(logger)
-							 .bind(create_instance_with_extensions_t::with_logger_t{logger})
-							 .bind(create_debug_messenger_t::io_factory_t::with_logger_t{logger})
-							 .bind(check_messenger_t::io_factory_t{});
+	auto const program =
+		test::query_desired_instance_extensions_t::io_factory_t{}(logger)
+			.bind(create_instance_with_extensions_t::io_factory_t::with_logger_t{logger})
+			.bind(create_debug_messenger_t::io_factory_t::with_logger_t{logger})
+			.bind(check_messenger_t::io_factory_t{});
 
 	CHECK(program().sync_wait());
 }
@@ -1907,7 +1920,7 @@ TEST_CASE("Create a Vulkan surface")
 	using namespace test::create_a_vulkan_surface;
 
 	auto const program = test::create_default_instance_t::stateio_factory_t{}()
-							 .bind(create_surface_t::stateio_factory_t{})
+							 .bind(create_surface_t::stateio_factory_t::from_state_t{})
 							 .fmap(check_surface_t{});
 
 	const struct
@@ -1935,6 +1948,7 @@ TEST_CASE("Create a Vulkan surface")
 	// 	std::filesystem::path{"/tmp/maps"},
 	// 	std::filesystem::copy_options::update_existing);
 }
+/*
 
 TEST_CASE("Enumerate devices")
 {

@@ -738,10 +738,10 @@ struct filter_t
 				.fmap(hof::transform_maybes_to_values_t{});
 		}
 
-		template <class ElementLifter>
+		template <class Kliesli>
 		struct with_kleisli_t
 		{
-			ElementLifter kleisli;
+			Kliesli kleisli;
 			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 			{
 				return io_factory_t{}(FW(values), FW(self).kleisli);
@@ -754,7 +754,8 @@ template <Action Act>
 struct IO
 {
 	Act action;
-	using Ret = decltype(action());
+	using Result = std::invoke_result_t<Act>;
+	using Value = detail::unwrap_async_t<Result>;
 
 	decltype(auto) operator()(this auto && self)
 	{
@@ -771,18 +772,21 @@ struct IO
 		return boost::hana::transform(FW(self), FW(transformer));
 	}
 
-	[[nodiscard]] auto traverse(auto && element_lifter) const requires std::ranges::range<Ret>
+	[[nodiscard]] auto traverse(this auto&& self, auto && element_lifter)
 	{
-		return bind(traverse_t::io_factory_t::with_kleisli_t{FW(element_lifter)});
+		static_assert(std::ranges::range<Value>, "Can only traverse effects that give a range");
+
+		return FW(self).bind(traverse_t::io_factory_t::with_kleisli_t{FW(element_lifter)});
 	}
 
-	[[nodiscard]] auto filter(LifterFromTo<typename Ret::value_type, bool> auto && element_lifter)
-		const requires std::ranges::range<Ret>
+	[[nodiscard]] auto filter(this auto&& self, auto && kleisli)
 	{
-		// Note: a good reason to eschew lambdas is so that we can have ranges of IOs - i.e.
-		// where the action type is homogenous, so the IO type as a whole is the same for all
+		// Note: a good reason to eschew anonymous lambdas is so that we can have ranges of IOs -
+		// i.e. where the action type is homogenous, so the IO type as a whole is the same for all
 		// elements.
-		return bind(filter_t::io_factory_t::with_kleisli_t{element_lifter});
+		static_assert(std::ranges::range<Value>, "Can only filter effects that give a range");
+
+		return FW(self).bind(filter_t::io_factory_t::with_kleisli_t{FW(kleisli)});
 	}
 };
 

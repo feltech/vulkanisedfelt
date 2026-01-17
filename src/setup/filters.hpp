@@ -11,6 +11,9 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <immer/array.hpp>
+#include <immer/set.hpp>
+
 #include "../Logger.hpp"
 #include "../macros.hpp"
 #include "../types.hpp"
@@ -113,19 +116,19 @@ struct memory_properties_filter_by_and_transform_to_memory_type_idx_t
 };
 
 // Filters available instance layers by desired names and transforms to C string pointers
-std::vector<types::AvailableInstanceLayerNameCstr>
+immer::array<types::AvailableInstanceLayerNameCstr>
 layer_description_filter_by_and_transform_to_instance_layer_name(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
-	std::vector<VkLayerProperties> const & available_layer_descs);
+	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
+	immer::array<VkLayerProperties> const & available_layer_descs);
 
 struct transform_to_instance_layer_name_filtered_by_instance_layer_name_t
 {
 	LoggerPtr logger;
-	std::set<types::DesiredInstanceLayerNameView> desired_layer_names;
+	immer::set<types::DesiredInstanceLayerNameView> desired_layer_names;
 
-	constexpr std::vector<types::AvailableInstanceLayerNameCstr> operator()(
-		std::vector<VkLayerProperties> const & available_layer_descs) const
+	constexpr immer::array<types::AvailableInstanceLayerNameCstr> operator()(
+		immer::array<VkLayerProperties> const & available_layer_descs) const
 	{
 		return layer_description_filter_by_and_transform_to_instance_layer_name(
 			logger, desired_layer_names, available_layer_descs);
@@ -146,22 +149,23 @@ constexpr auto make_layer_description_filter_by_and_transform_to_instance_layer_
 /**
  * Filters available instance extensions by desired names and transforms to C string pointers
  */
-std::vector<types::AvailableInstanceExtensionNameCstr>
+immer::array<types::AvailableInstanceExtensionNameCstr>
 extension_properties_filter_by_and_transform_to_instance_extension_name(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
-	std::vector<VkExtensionProperties> const & available_extensions);
+	immer::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names,
+	immer::array<VkExtensionProperties> const & available_extensions);
 
 struct transform_to_instance_extension_name_filtered_by_instance_extension_name_t
 {
 	LoggerPtr logger;
-	std::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
+	immer::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
 
-	constexpr std::vector<types::AvailableInstanceExtensionNameCstr> operator()(
-		std::vector<VkExtensionProperties> const & available_extensions) const
+	constexpr immer::array<types::AvailableInstanceExtensionNameCstr> operator()(
+		this auto&& self,
+		immer::array<VkExtensionProperties> const & available_extensions)
 	{
 		return extension_properties_filter_by_and_transform_to_instance_extension_name(
-			logger, desired_extension_names, available_extensions);
+			FW(self).logger, FW(self).desired_extension_names, available_extensions);
 	}
 };
 

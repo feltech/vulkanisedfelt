@@ -39,7 +39,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 
 	std::vector<types::AvailableInstanceLayerNameCstr> const optional_layers =
 		setup::filter_available_layers(
-			logger, {types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}});
+			logger, {{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}}});
 
 	std::vector<types::AvailableInstanceExtensionNameCstr> const optional_instance_extensions =
 		setup::filter_available_instance_extensions(

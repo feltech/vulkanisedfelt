@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024-2025 David Feltell
 #pragma once
-#include <SDL_video.h>
+#include <SDL_vulkan.h>
 #include <cstdint>
+#include <immer/array.hpp>
+#include <optional>
 #include <range/v3/range/conversion.hpp>
 #include <ranges>
 #include <set>
@@ -14,9 +16,15 @@
 #include <utility>
 #include <vector>
 
+#include <SDL_video.h>
+
 #include <spdlog/common.h>
+
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
+
+#include <immer/array.hpp>
+#include <immer/array_transient.hpp>
 
 #include "../Logger.hpp"
 #include "../hof.hpp"
@@ -607,24 +615,23 @@ struct query_available_device_extensions_t
 	};
 };
 
-// IO monad lifter for checking if a queue family supports a surface (bind-like)
-struct query_is_queue_family_supported_by_physical_device_and_surface_t
+struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 {
 	struct io_factory_t
 	{
 		struct action_t
 		{
-			VkPhysicalDevice physical_device{};
+			VkPhysicalDevice physical_device;
 			types::VulkanSurfacePtr surface;
-			types::VulkanQueueFamilyIdx queue_family_idx{};
-			auto operator()() const
+			types::VulkanQueueFamilyIdx queue_family_idx;
+			constexpr auto operator()() const
 			{
 				VkBool32 surface_supported = VK_FALSE;
 				VK_CHECK(
 					vkGetPhysicalDeviceSurfaceSupportKHR(
 						physical_device, queue_family_idx, surface.get(), &surface_supported),
 					"Failed to check surface support");
-				return surface_supported == VK_TRUE;
+				return (surface_supported == VK_TRUE) ? std::optional{queue_family_idx} : std::nullopt;
 			}
 		};
 
@@ -679,7 +686,7 @@ struct query_available_queue_family_properties_t
 	{
 		struct action_t
 		{
-			VkPhysicalDevice physical_device{};
+			VkPhysicalDevice physical_device;
 			auto operator()() const
 			{
 				std::vector<VkQueueFamilyProperties> out;
@@ -1005,15 +1012,15 @@ struct create_surface_t
 		{
 			types::SDLWindowPtr window;
 			types::VulkanInstancePtr instance;
-			auto operator()(this auto && self)
+			constexpr auto operator()(this auto && self)
 			{
 				// NOLINTNEXTLINE(bugprone-use-after-move)
 				return setup::create_surface(FW(self).window, FW(self).instance);
 			}
 		};
 
-		constexpr auto operator()(
-			types::SDLWindowPtr window, types::VulkanInstancePtr instance) const
+		static constexpr auto operator()(
+			types::SDLWindowPtr window, types::VulkanInstancePtr instance)
 		{
 			return IO{action_t{.window = std::move(window), .instance = std::move(instance)}};
 		}
@@ -1023,22 +1030,22 @@ struct create_surface_t
 	{
 		struct from_state_t
 		{
-			constexpr auto operator()(auto && state) const
+			static constexpr auto operator()(auto && state)
 			{
 				using vulkandemo::monad::stateio::lift;
-				return lift(io_factory_t{}(state.window, state.instance));
+				return lift(io_factory_t{}(FW(state).window, FW(state).instance));
 			}
 		};
 
 		struct modify_state_t
 		{
-			auto operator()(types::VulkanSurfacePtr surface, auto && state) const
+			static constexpr auto operator()(types::VulkanSurfacePtr surface, auto && state)
 			{
 				struct S : std::decay_t<decltype(state)>
 				{
 					types::VulkanSurfacePtr surface;
 				};
-				return S{state, surface};
+				return S{FW(state), std::move(surface)};
 			}
 		};
 
@@ -1121,8 +1128,8 @@ struct create_instance_t
 		{
 			LoggerPtr logger;
 			std::string name;
-			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
-			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
 
 			auto operator()() const
 			{
@@ -1163,11 +1170,11 @@ struct create_instance_t
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			std::string name,
-			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -1180,12 +1187,13 @@ struct create_instance_t
 		{
 			LoggerPtr logger;
 			constexpr auto operator()(
+				this auto && self,
 				std::string name,
-				std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-				std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+				immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 			{
 				return io_factory_t{}(
-					logger,
+					FW(self).logger,
 					std::move(name),
 					std::move(layers_to_enable),
 					std::move(extensions_to_enable));
@@ -1207,11 +1215,11 @@ struct create_instance_t
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			std::string name,
-			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
 			using vulkandemo::monad::stateio::lift;
 			return lift(
@@ -1226,8 +1234,8 @@ struct create_instance_t
 		struct from_state_t
 		{
 			std::string name;
-			std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable;
-			std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
 
 			constexpr auto operator()(this auto && self, auto && state)
 			{
@@ -1241,10 +1249,10 @@ struct create_instance_t
 
 		struct using_state_t
 		{
-			constexpr auto operator()(
+			static constexpr auto operator()(
 				std::string name,
-				std::vector<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-				std::vector<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) const
+				immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 			{
 				using vulkandemo::monad::stateio::get_state;
 				return get_state().bind(
@@ -1264,7 +1272,7 @@ struct query_sdl_instance_extension_names_t
 		struct action_t
 		{
 			types::SDLWindowPtr sdl_window;
-			std::vector<types::AvailableInstanceExtensionNameCstr> operator()() const
+			immer::array<types::AvailableInstanceExtensionNameCstr> operator()() const
 			{
 				std::vector<char const *> out;
 				uint32_t extension_count = 0;
@@ -1272,7 +1280,7 @@ struct query_sdl_instance_extension_names_t
 				out.resize(extension_count);
 				SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, out.data());
 				return hof::views::cast<types::AvailableInstanceExtensionNameCstr>(out) |
-					ranges::to<std::vector>;
+					ranges::to<immer::array>;
 			}
 		};
 
@@ -1289,23 +1297,27 @@ struct query_available_instance_layers_t
 	{
 		struct action_t
 		{
-			std::vector<VkLayerProperties> operator()() const
+			static constexpr immer::array<VkLayerProperties> operator()()
 			{
-				std::vector<VkLayerProperties> out;
 				uint32_t available_layers_count = 0;
 				VK_CHECK(
 					vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
 					"Failed to enumerate instance layers");
-				out.resize(available_layers_count);
+
+				immer::array<VkLayerProperties> out(available_layers_count);
+				immer::array_transient<VkLayerProperties> out_writeable =
+					std::move(out).transient();
+
 				VK_CHECK(
-					vkEnumerateInstanceLayerProperties(&available_layers_count, out.data()),
+					vkEnumerateInstanceLayerProperties(
+						&available_layers_count, out_writeable.data_mut()),
 					"Failed to enumerate instance layers");
 
-				return out;
+				return std::move(out_writeable).persistent();
 			}
 		};
 
-		constexpr auto operator()() const
+		static constexpr auto operator()()
 		{
 			return IO{action_t{}};
 		}
@@ -1318,25 +1330,26 @@ struct query_available_instance_extensions_t
 	{
 		struct action_t
 		{
-			std::vector<VkExtensionProperties> operator()() const
+			static constexpr immer::array<VkExtensionProperties> operator()()
 			{
-				std::vector<VkExtensionProperties> out;
 				uint32_t available_extensions_count = 0;
 				VK_CHECK(
 					vkEnumerateInstanceExtensionProperties(
 						nullptr, &available_extensions_count, nullptr),
 					"Failed to enumerate instance extensions");
-				out.resize(available_extensions_count);
+
+				auto out = immer::array<VkExtensionProperties>{available_extensions_count}.transient();
+
 				VK_CHECK(
 					vkEnumerateInstanceExtensionProperties(
-						nullptr, &available_extensions_count, out.data()),
+						nullptr, &available_extensions_count, out.data_mut()),
 					"Failed to enumerate instance extensions");
 
-				return out;
+				return std::move(out).persistent();
 			}
 		};
 
-		constexpr auto operator()() const
+		static constexpr auto operator()()
 		{
 			return IO{action_t{}};
 		}

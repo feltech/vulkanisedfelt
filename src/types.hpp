@@ -24,6 +24,7 @@
 #include <strong_type/equality.hpp>
 #include <strong_type/equality_with.hpp>
 #include <strong_type/formattable.hpp>
+#include <strong_type/hashable.hpp>
 #include <strong_type/implicitly_convertible_to.hpp>
 #include <strong_type/indexed.hpp>
 #include <strong_type/ordered.hpp>
@@ -31,6 +32,9 @@
 #include <strong_type/regular.hpp>
 #include <strong_type/semiregular.hpp>
 #include <strong_type/type.hpp>
+
+#include <immer/array.hpp>
+#include <immer/map.hpp>
 
 #include "Logger.hpp"
 
@@ -69,11 +73,11 @@ VulkanFramebufferPtr make_framebuffer_ptr(VulkanDevicePtr device, VkFramebuffer 
 using VulkanCommandPoolPtr = std::shared_ptr<std::remove_pointer_t<VkCommandPool>>;
 VulkanCommandPoolPtr make_command_pool_ptr(VulkanDevicePtr device, VkCommandPool command_pool);
 
-using VulkanCommandBuffersPtr = std::shared_ptr<std::vector<VkCommandBuffer>>;
+using VulkanCommandBuffersPtr = std::shared_ptr<immer::array<VkCommandBuffer>>;
 VulkanCommandBuffersPtr make_command_buffers_ptr(
 	VulkanDevicePtr device,
 	VulkanCommandPoolPtr pool,
-	std::vector<VkCommandBuffer> command_buffers);
+	immer::array<VkCommandBuffer> command_buffers);
 
 using VulkanSemaphorePtr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
 VulkanSemaphorePtr make_semaphore_ptr(VulkanDevicePtr device, VkSemaphore semaphore);
@@ -127,7 +131,8 @@ using VulkanQueueFamilyIdx = strong::type<
 	strong::equality,
 	strong::equality_with<uint32_t>,
 	strong::bicrementable,
-	strong::strongly_ordered>;
+	strong::strongly_ordered,
+	strong::hashable>;
 
 using VulkanQueueCount = strong::type<
 	uint32_t,
@@ -140,7 +145,7 @@ using VulkanQueueCount = strong::type<
 	strong::formattable>;
 
 using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
-	std::map<VulkanQueueFamilyIdx, std::vector<VkQueue>>;
+	immer::map<VulkanQueueFamilyIdx, immer::array<VkQueue>>;
 
 using AvailableDeviceExtensionNameView = strong::type<
 	std::string_view,
@@ -176,7 +181,8 @@ using DesiredInstanceExtensionNameView = strong::type<
 	strong::regular,
 	strong::partially_ordered,
 	strong::formattable,
-	strong::convertible_to<AvailableInstanceExtensionNameView>>;
+	strong::convertible_to<AvailableInstanceExtensionNameView>,
+	strong::hashable>;
 
 using AvailableInstanceLayerNameCstr =
 	strong::type<char const *, struct TagForAvailableInstanceLayerNameCstr, strong::semiregular>;
@@ -194,22 +200,19 @@ using DesiredInstanceLayerNameView = strong::type<
 	strong::regular,
 	strong::partially_ordered,
 	strong::formattable,
-	strong::convertible_to<AvailableInstanceLayerNameView>>;
+	strong::convertible_to<AvailableInstanceLayerNameView>,
+	strong::hashable>;
 
 template <class Container>
 concept ContiguousContainer =
 	std::is_trivially_copyable_v<typename std::decay_t<Container>::value_type> &&
 	std::ranges::range<Container> && requires(Container container)
 {
-	{
-		container.data()
-	} -> std::convertible_to<typename std::decay_t<Container>::const_pointer>;
-	{
-		container.size()
-	} -> std::convertible_to<std::size_t>;
+	{container.data()}->std::convertible_to<typename std::decay_t<Container>::const_pointer>;
+	{container.size()}->std::convertible_to<std::size_t>;
 };
 
 template <class Container, class T>
-concept ContiguousContainerOf =
-	ContiguousContainer<Container> && std::convertible_to<T, typename std::decay_t<Container>::value_type>;
+concept ContiguousContainerOf = ContiguousContainer<Container> &&
+	std::convertible_to<T, typename std::decay_t<Container>::value_type>;
 }  // namespace vulkandemo::types
