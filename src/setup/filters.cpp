@@ -201,7 +201,7 @@ extension_properties_filter_by_and_transform_to_instance_extension_name(
 	return std::move(out).persistent();
 }
 
-std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+immer::array<VkSurfaceFormatKHR> filter_surface_formats(
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats)
 {
@@ -211,15 +211,15 @@ std::vector<VkSurfaceFormatKHR> filter_surface_formats(
 			   {
 				   return std::ranges::contains(desired_formats, available_surface_format.format);
 			   }) |
-		ranges::to<std::vector>();
+		ranges::to<immer::array>();
 }
 
-std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+immer::array<VkSurfaceFormatKHR> filter_surface_formats(
 	LoggerPtr const & logger,
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats)
 {
-	std::vector<VkSurfaceFormatKHR> filtered_surface_formats =
+	immer::array<VkSurfaceFormatKHR> filtered_surface_formats =
 		filter_surface_formats(available_surface_formats, desired_formats);
 
 	if (logger && logger->should_log(spdlog::level::debug))

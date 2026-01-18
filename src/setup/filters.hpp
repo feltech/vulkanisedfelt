@@ -23,7 +23,8 @@ namespace vulkandemo::setup
 
 std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
 maybe_select_best_scoring_physical_device_and_queue_family_idx(
-	immer::array<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>> candidates);
+	immer::array<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+		candidates);
 
 std::optional<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
 maybe_score_physical_device_and_queue_family(
@@ -161,8 +162,7 @@ struct transform_to_instance_extension_name_filtered_by_instance_extension_name_
 	immer::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
 
 	constexpr immer::array<types::AvailableInstanceExtensionNameCstr> operator()(
-		this auto&& self,
-		immer::array<VkExtensionProperties> const & available_extensions)
+		this auto && self, immer::array<VkExtensionProperties> const & available_extensions)
 	{
 		return extension_properties_filter_by_and_transform_to_instance_extension_name(
 			FW(self).logger, FW(self).desired_extension_names, available_extensions);
@@ -175,35 +175,38 @@ struct transform_to_instance_extension_name_filtered_by_instance_extension_name_
  * @param desired_formats
  * @return
  */
-std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+immer::array<VkSurfaceFormatKHR> filter_surface_formats(
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats);
 
-/**
- * Returns a closure that filters/prioritizes VkSurfaceFormatKHRs by desired VkFormat order.
- */
-constexpr auto make_filter_surface_formats(auto && desired_formats)
-{
-	return [desired_formats =
-				FW(desired_formats)](std::span<VkSurfaceFormatKHR const> available_surface_formats)
-	{ return filter_surface_formats(available_surface_formats, desired_formats); };
-}
-
 // Filters and logs available VkSurfaceFormatKHRs by desired VkFormat order.
-std::vector<VkSurfaceFormatKHR> filter_surface_formats(
+immer::array<VkSurfaceFormatKHR> filter_surface_formats(
 	LoggerPtr const & logger,
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats);
 
-/**
- * Returns a closure that filters and logs VkSurfaceFormatKHRs by desired VkFormat order.
- */
-constexpr auto make_filter_surface_formats(AUTO(LoggerPtr) logger, auto && desired_formats)
+
+struct filter_surface_formats_t
 {
-	return [logger = FW(logger), desired_formats = FW(desired_formats)](
-			   std::span<VkSurfaceFormatKHR const> available_surface_formats)
-	{ return filter_surface_formats(logger, available_surface_formats, desired_formats); };
-}
+	static constexpr auto operator()(
+		LoggerPtr const & logger,
+		std::span<VkFormat const> desired_formats,
+		std::span<VkSurfaceFormatKHR const> formats)
+	{
+		return filter_surface_formats(logger, formats, desired_formats);
+	}
+
+	struct with_logger_and_desired_formats_t
+	{
+		LoggerPtr logger;
+		immer::array<VkFormat> desired_formats;
+
+		constexpr auto operator()(std::span<VkSurfaceFormatKHR const> formats) const
+		{
+			return filter_surface_formats(logger, formats, desired_formats);
+		}
+	};
+};
 
 // Returns a VkSwapchainCreateInfoKHR configured for exclusive sharing mode and double buffering (or
 // as close as possible).

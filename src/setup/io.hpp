@@ -88,7 +88,7 @@ types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
  * @param previous_swapchain
  * @return
  */
-std::tuple<types::VulkanSwapchainPtr, std::vector<types::VulkanImageViewPtr>>
+std::tuple<types::VulkanSwapchainPtr, immer::array<types::VulkanImageViewPtr>>
 create_exclusive_double_buffer_swapchain_and_image_views(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
@@ -114,7 +114,7 @@ types::VulkanSwapchainPtr create_swapchain(
  * @param swapchain
  * @return
  */
-std::vector<VkImage> query_swapchain_images(
+immer::array<VkImage> query_swapchain_images(
     types::VulkanDevicePtr const& device,
     types::VulkanSwapchainPtr const& swapchain);
 
@@ -126,7 +126,7 @@ std::vector<VkImage> query_swapchain_images(
  * @param images
  * @return
  */
-std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
+immer::array<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
     types::VulkanDevicePtr const& device,
     VkSurfaceFormatKHR surface_format,
     std::span<VkImage const> images);

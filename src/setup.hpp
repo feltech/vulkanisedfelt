@@ -64,7 +64,7 @@ namespace vulkandemo::setup
 [[deprecated]] std::tuple<VkPhysicalDevice, types::VulkanQueueFamilyIdx> select_physical_device(
 	LoggerPtr const & logger,
 	immer::array<VkPhysicalDevice> const & physical_devices,
-	std::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
+	immer::set<types::DesiredDeviceExtensionNameView> const & required_device_extensions,
 	VkQueueFlagBits required_queue_capabilities,
 	VkMemoryPropertyFlags required_memory_type = 0,
 	types::VulkanSurfacePtr const & required_surface_support = nullptr);
@@ -82,7 +82,7 @@ namespace vulkandemo::setup
 filter_available_device_extensions(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
-	std::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names);
+	immer::set<types::DesiredDeviceExtensionNameView> const & desired_device_extension_names);
 
 /**
  * Filter queue families to find those with desired capabilities

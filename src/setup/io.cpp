@@ -238,7 +238,7 @@ types::VulkanSwapchainPtr create_swapchain(
 	return types::make_swapchain_ptr(device, out);
 }
 
-std::vector<VkImage> query_swapchain_images(
+immer::array<VkImage> query_swapchain_images(
 	types::VulkanDevicePtr const & device, types::VulkanSwapchainPtr const & swapchain)
 {
 	uint32_t count = 0;
@@ -246,14 +246,15 @@ std::vector<VkImage> query_swapchain_images(
 		vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, nullptr),
 		"Failed to get swapchain image count");
 
-	std::vector<VkImage> out(count);
+	auto out = immer::array<VkImage>(count).transient();
+
 	VK_CHECK(
-		vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data()),
+		vkGetSwapchainImagesKHR(device.get(), swapchain.get(), &count, out.data_mut()),
 		"Failed to get swapchain images");
-	return out;
+	return std::move(out).persistent();
 }
 
-std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
+immer::array<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
 	types::VulkanDevicePtr const & device,
 	VkSurfaceFormatKHR surface_format,
 	std::span<VkImage const> images)
@@ -270,8 +271,7 @@ std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_la
 			 VK_COMPONENT_SWIZZLE_IDENTITY},
 		.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
 
-	std::vector<types::VulkanImageViewPtr> result;
-	result.reserve(images.size());
+	auto result = immer::array<types::VulkanImageViewPtr>{}.transient();
 	for (VkImage image : images)
 	{
 		image_view_create_info.image = image;
@@ -281,12 +281,12 @@ std::vector<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_la
 			"Failed to create image view");
 		result.push_back(types::make_image_view_ptr(device, image_view));
 	}
-	return result;
+	return std::move(result).persistent();
 }
 
 namespace
 {
-std::vector<types::VulkanImageViewPtr>
+immer::array<types::VulkanImageViewPtr>
 create_colour_aspect_single_mip_single_layer_swapchain_image_views(
 	types::VulkanDevicePtr const & device,
 	VkSurfaceFormatKHR const surface_format,
@@ -387,7 +387,7 @@ types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
 
 }  // namespace
 
-std::tuple<types::VulkanSwapchainPtr, std::vector<types::VulkanImageViewPtr>>
+std::tuple<types::VulkanSwapchainPtr, immer::array<types::VulkanImageViewPtr>>
 create_exclusive_double_buffer_swapchain_and_image_views(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
@@ -410,7 +410,7 @@ create_exclusive_double_buffer_swapchain_and_image_views(
 	// Query raw images associated with swapchain.
 
 	// Construct image views.
-	std::vector<types::VulkanImageViewPtr> image_views =
+	immer::array<types::VulkanImageViewPtr> image_views =
 		create_colour_aspect_single_mip_single_layer_swapchain_image_views(
 			device, surface_format, swapchain);
 
