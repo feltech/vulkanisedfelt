@@ -14,7 +14,7 @@
 #include <immer/array_transient.hpp>
 #include <immer/vector.hpp>
 
-#include "macros.hpp"
+#include "macros_push.hpp"
 
 /**
  * Small higher order functions useful for ranges transformations.

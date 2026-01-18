@@ -30,7 +30,7 @@
 #include <strong_type/type.hpp>
 
 #include "Logger.hpp"
-#include "macros.hpp"
+#include "macros_push.hpp"
 #include "setup.hpp"
 #include "setup/io.hpp"
 #include "types.hpp"

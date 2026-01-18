@@ -15,7 +15,7 @@
 #include <immer/set.hpp>
 
 #include "../Logger.hpp"
-#include "../macros.hpp"
+#include "../macros_push.hpp"
 #include "../types.hpp"
 
 namespace vulkandemo::setup

@@ -11,7 +11,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 
-#include "../macros.hpp"
+#include "../macros_push.hpp"
 #include "../types.hpp"
 
 namespace vulkandemo::draw::detail

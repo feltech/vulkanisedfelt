@@ -28,16 +28,16 @@
 
 #include "../Logger.hpp"
 #include "../hof.hpp"
-#include "../macros.hpp"
 #include "../monad.hpp"
 #include "../setup.hpp"
 #include "../types.hpp"
 #include "filters.hpp"
 #include "io.hpp"
 
+#include "../macros_push.hpp"
+
 namespace vulkandemo::setup::monad
 {
-using vulkandemo::monad::bind;
 using vulkandemo::monad::io::IO;
 using vulkandemo::monad::stateio::StateIO;
 
@@ -1439,12 +1439,14 @@ struct create_window_t
 		constexpr auto operator()(std::string title, int width, int height) const
 		{
 			using vulkandemo::monad::stateio::liftIO;
-			using vulkandemo::monad::stateio::modify_t;
+			using vulkandemo::monad::stateio::store_t;
 
 			return liftIO(io_factory_t{}(std::move(title), width, height))
-				.bind(modify_t::stateio_factory_t::with_mutator_t{modify_state_t{}});
+				.bind(store_t::stateio_factory_t::with_mutator_t{modify_state_t{}});
 		}
 	};
 };
 
 }  // namespace vulkandemo::setup::monad
+
+#include "../macros_pop.hpp"

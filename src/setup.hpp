@@ -25,7 +25,7 @@
 
 #include "Logger.hpp"
 #include "hof.hpp"
-#include "macros.hpp"
+#include "macros_push.hpp"
 #include "types.hpp"
 
 namespace vulkandemo::setup
