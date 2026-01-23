@@ -1,12 +1,12 @@
 #pragma once
+#include <concepts>
+#include <utility>
 
 #include <boost/hana/core/tag_of.hpp>
 #include <boost/hana/fwd/ap.hpp>
 #include <boost/hana/fwd/chain.hpp>
 #include <boost/hana/fwd/lift.hpp>
 #include <boost/hana/fwd/transform.hpp>
-#include <concepts>
-#include <utility>
 
 #include "../detail.hpp"
 #include "../io/fwd.hpp"
@@ -19,7 +19,7 @@ namespace boost::hana
 namespace io = vulkandemo::monad::io;
 namespace stateio = vulkandemo::monad::stateio;
 using vulkandemo::monad::detail::applicable_with;
-using vulkandemo::monad::detail::specialisation_of;
+using vulkandemo::hof::specialisation_of;
 using vulkandemo::monad::detail::Transformer;
 using vulkandemo::monad::detail::tuple_like;
 
@@ -65,12 +65,12 @@ struct chain_impl<stateio::stateio_tag_t>
 	template <class WrappedStateIO, class StateIOKleisli>
 	struct stateio_action_t
 	{
-		WrappedStateIO stateiom;
+		WrappedStateIO source;
 		StateIOKleisli kleisli;
 		constexpr auto operator()(this auto && self, auto && state)
 		{
 			// NOLINTNEXTLINE(bugprone-use-after-move)
-			return FW(self).stateiom(FW(state)).bind(io_lifter_t{FW(self).kleisli});
+			return FW(self).source(FW(state)).bind(io_lifter_t{FW(self).kleisli});
 		}
 	};
 
@@ -125,12 +125,12 @@ struct transform_impl<stateio::stateio_tag_t>
 	template <class WrappedStateIO, class Transformer>
 	struct stateio_action_t
 	{
-		WrappedStateIO stateiom;
+		WrappedStateIO source;
 		Transformer transformer;
 
 		constexpr auto operator()(this auto && self, auto && state)
 		{
-			return FW(self).stateiom(FW(state)).fmap(io_transformer_t{FW(self).transformer});
+			return FW(self).source(FW(state)).fmap(io_transformer_t{FW(self).transformer});
 		}
 	};
 
@@ -167,19 +167,19 @@ struct ap_impl<stateio::stateio_tag_t>
 {
 	// Note that StateIO is inherently sequential since state must be threaded
 	// through, so may as well use nested bind() calls (unlike e.g. ap<io_tag_t>).
-	static constexpr auto apply(auto && lhs, auto && rhs)
+	static constexpr auto apply(auto && fn_source, auto && value_source)
 	{
-		return FW(lhs).bind(fn_kleisli_t{FW(rhs)});
+		return FW(fn_source).bind(fn_kleisli_t{FW(value_source)});
 	}
 
 	template <class ValueStateIO>
 	struct fn_kleisli_t
 	{
-		ValueStateIO value_stateio;
+		ValueStateIO value_source;
 
 		constexpr auto operator()(this auto && self, auto && fn)
 		{
-			return FW(self).value_stateio.bind(value_kleisli_t{FW(fn)});
+			return FW(self).value_source.bind(value_kleisli_t{FW(fn)});
 		}
 	};
 

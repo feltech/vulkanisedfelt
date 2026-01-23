@@ -9,7 +9,7 @@
 
 namespace vulkandemo::monad::stateio
 {
-auto sequence(detail::specialisation_of<StateIO> auto &&... ms)
+constexpr auto sequence(hof::specialisation_of<StateIO> auto &&... ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;

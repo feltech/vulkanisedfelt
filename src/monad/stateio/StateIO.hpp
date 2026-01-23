@@ -1,12 +1,15 @@
 #pragma once
 
 #include <boost/hana/fwd/chain.hpp>
+#include <boost/hana/fwd/lift.hpp>
 #include <boost/hana/fwd/transform.hpp>
 
 #include "../detail.hpp"
 #include "../io/fwd.hpp"
 #include "./fwd.hpp"
 #include "./store.hpp"
+
+#include "./hana.hpp"  // NOLINT(*-include-cleaner)
 
 #include "../../macros_push.hpp"
 
@@ -18,7 +21,7 @@ constexpr auto pure(auto && value)
 	return boost::hana::lift<stateio_tag_t>(FW(value));
 }
 
-constexpr auto lift_io(detail::specialisation_of<io::IO> auto && iom)
+constexpr auto lift_io(hof::specialisation_of<io::IO> auto && iom)
 {
 	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }
@@ -33,7 +36,7 @@ struct StateIO
 	{
 		// Must return an IO monad that itself returns a pair.
 		static_assert(
-			detail::specialisation_of<decltype(action(state)), io::IO>,
+			hof::specialisation_of<decltype(action(state)), io::IO>,
 			// && detail::specialisation_of<decltype(action(state)()), std::pair>,
 			"StateIO action must return IO<pair<value, state>>");
 
@@ -61,7 +64,7 @@ struct StateIO
 		}
 	};
 
-	auto then(this auto && self, detail::specialisation_of<StateIO> auto && stateiom)
+	auto then(this auto && self, hof::specialisation_of<StateIO> auto && stateiom)
 	{
 		return FW(self).bind(then_t{FW(stateiom)});
 	}

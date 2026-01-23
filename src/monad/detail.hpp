@@ -1,11 +1,15 @@
 #pragma once
 
 #include <concepts>
-#include <immer/detail/rbts/bits.hpp>
-#include <immer/vector.hpp>
+#include <cstddef>
+#include <utility>
+
+#include <libfork/core/scheduler.hpp>
 #include <libfork/core/sync_wait.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
-#include <utility>
+
+#include <immer/detail/rbts/bits.hpp>
+#include <immer/vector.hpp>
 
 #include "../macros_push.hpp"
 
@@ -22,7 +26,7 @@ struct AsyncFunctorInterface
 {
 	Arg arg;
 
-	struct async_function_tag
+	struct async_function_tag_t
 	{
 	};
 
@@ -50,7 +54,7 @@ struct unwrap_async : std::type_identity<T>
 template <class T>
 requires requires
 {
-	typename T::async_function_tag;
+	typename T::async_function_tag_t;
 }
 struct unwrap_async<T> : std::type_identity<typename T::IOResultType>
 {
@@ -82,16 +86,6 @@ constexpr auto rotate_right(F && func, Ts &&... ts)
 		{ return func(FW(std::get<sizeof...(Ts) - 1>(tuple)), FW(std::get<is>(tuple))...); });
 }
 
-template <template <typename...> class Template, typename... Args>
-void is_specialisation_of(Template<Args...> /*unused*/)
-{
-}
-
-template <class T, template <typename...> class Template>
-concept specialisation_of = requires(T t)
-{
-	is_specialisation_of<Template>(t);
-};
 
 template <typename T, typename... As>
 concept CallableWithResultsOf = requires(T f, As... a)
@@ -146,80 +140,6 @@ struct apply_result<Func, Tuple<Args...>> : std::invoke_result<Func, Args...>
 template <class... Args>
 using apply_result_t = apply_result<Args...>;
 
-constexpr decltype(auto) ensure_tuple(auto && value)
-{
-	if constexpr (specialisation_of<std::decay_t<decltype(value)>, std::tuple>)
-	{
-		return FW(value);
-	}
-	else
-	{
-		return std::tuple{FW(value)};
-	}
-}
-
-template <class>
-struct FnTraitsImpl
-{
-	static constexpr bool kIsFunction = false;
-};
-
-template <typename R, typename... Args>
-struct FnTraitsImpl<std::function<R(Args...)>>
-{
-	static constexpr bool kIsFunction = true;
-	static constexpr std::size_t kArity = sizeof...(Args);
-
-	template <std::size_t idx>
-	using Arg = std::tuple_element_t<idx, std::tuple<Args...>>;
-
-	using ReturnValue = R;
-};
-
-template <class Func>
-using FnTraits = FnTraitsImpl<decltype(std::function{std::declval<std::decay_t<Func>>()})>;
-
-template <class T>
-concept IsMonad = requires(T t)
-{
-	{t.fmap([](decltype(t())) { return 0; })};
-};
-
-template <class T, typename R>
-concept IOTo = requires(T io)
-{
-	{io()}->std::convertible_to<R>;
-};
-
-template <typename F, typename A>
-concept MappingFrom = requires(F func, A value)
-{
-	{func(value)};
-};
-
-template <typename Container>
-struct Unspecialise;
-
-template <template <typename...> class Container, typename... OldArgs>
-struct Unspecialise<Container<OldArgs...>>
-{
-	template <typename... Args>
-	using Specialise = Container<Args...>;
-};
-
-template <
-	typename T,
-	typename Policy,
-	immer::detail::rbts::bits_t B,
-	immer::detail::rbts::bits_t BL>
-struct Unspecialise<immer::vector<T, Policy, B, BL>>
-{
-	template <typename NewT>
-	using Specialise = immer::vector<NewT, Policy, B, BL>;
-};
-
-template <typename Container, typename NewType>
-using Respecialise = Unspecialise<Container>::template Specialise<NewType>;
 
 template <class F, class T>
 struct invoke_or_apply_result : apply_result<F, T>

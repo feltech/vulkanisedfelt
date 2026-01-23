@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024-2025 David Feltell
 #pragma once
-#include <SDL_vulkan.h>
 #include <cstdint>
-#include <immer/array.hpp>
 #include <optional>
-#include <range/v3/range/conversion.hpp>
 #include <ranges>
 #include <set>
 #include <span>
-
 #include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include <range/v3/range/conversion.hpp>
+
 #include <SDL_video.h>
+#include <SDL_vulkan.h>
 
 #include <spdlog/common.h>
 
@@ -28,7 +27,8 @@
 
 #include "../Logger.hpp"
 #include "../hof.hpp"
-#include "../monad.hpp"
+#include "../monad/io.hpp"
+#include "../monad/stateio.hpp"
 #include "../setup.hpp"
 #include "../types.hpp"
 #include "filters.hpp"
@@ -41,7 +41,6 @@ namespace vulkandemo::setup::monad
 using vulkandemo::monad::io::IO;
 using vulkandemo::monad::stateio::StateIO;
 
-// IO monad lifter for creating a minimal pipeline layout (bind-like)
 struct create_minimal_pipeline_layout_t
 {
 	struct io_factory_t
@@ -62,7 +61,6 @@ struct create_minimal_pipeline_layout_t
 	};
 };
 
-// IO monad lifter for creating a semaphore (bind-like)
 struct create_semaphore_t
 {
 	struct io_factory_t

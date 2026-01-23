@@ -7,6 +7,16 @@
 #include <boost/hana/fwd/fold_left.hpp>
 #include <boost/hana/fwd/lift.hpp>
 
+// Headers technically not necessary here, but consumer must include them.
+// NOLINTBEGIN(*-include-cleaner)
+#include <boost/hana/ap.hpp>
+#include <boost/hana/append.hpp>
+#include <boost/hana/ext/std/tuple.hpp>
+#include <boost/hana/fold_left.hpp>
+#include <boost/hana/lift.hpp>
+// NOLINTEND(*-include-cleaner)
+
+#include <libfork/core.hpp>
 #include <libfork/core/task.hpp>
 
 #include "../detail.hpp"
@@ -29,9 +39,9 @@ struct sequence_t
 			using IOElem = RngOfIOs::value_type;
 			using IOElemResult = std::invoke_result_t<IOElem>;
 			using IOElemValue = detail::unwrap_async_t<IOElemResult>;
-			using Rng = detail::Unspecialise<RngOfIOs>::template Specialise<IOElemValue>;
+			using Rng = hof::unspecialise_t<RngOfIOs>::template specialise_t<IOElemValue>;
 
-			static_assert(!detail::specialisation_of<IOElemValue, IO>, "IO effect/return is IO");
+			static_assert(!hof::specialisation_of<IOElemValue, IO>, "IO effect/return is IO");
 
 			using IOResultType = Rng;
 
@@ -95,7 +105,7 @@ struct tuple_appender_t
 	}
 };
 
-auto sequence(detail::specialisation_of<IO> auto &&... ms)
+auto sequence(hof::specialisation_of<IO> auto &&... ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;

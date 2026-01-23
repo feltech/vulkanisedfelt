@@ -48,7 +48,8 @@
 
 #include "Logger.hpp"
 #include "hof.hpp"
-#include "monad.hpp"
+#include "./monad/io.hpp"
+#include "./monad/stateio.hpp"
 #include "setup/filters.hpp"
 #include "setup/logging.hpp"
 #include "setup/monad.hpp"

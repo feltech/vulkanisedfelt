@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
 #pragma once
+#include <cstddef>
 #include <optional>
 #include <ranges>
 #include <utility>
 
-#include <range/v3/view/cache1.hpp>
+#include <range/v3/range/conversion.hpp>
 #include <range/v3/view/filter.hpp>
 #include <range/v3/view/move.hpp>
 #include <range/v3/view/transform.hpp>
 
 #include <immer/array.hpp>
 #include <immer/array_transient.hpp>
+#include <immer/detail/rbts/bits.hpp>
 #include <immer/vector.hpp>
 
-#include "macros_push.hpp"
+#include "./macros_push.hpp"
 
 /**
  * Small higher order functions useful for ranges transformations.
@@ -40,6 +42,17 @@ struct unspecialise_t<immer::vector<T, Policy, B, BL>>
 {
 	template <typename NewT>
 	using specialise_t = immer::vector<NewT, Policy, B, BL>;
+};
+
+template <template <typename...> class Template, typename... Args>
+void noop(Template<Args...> /*unused*/)
+{
+}
+
+template <class T, template <typename...> class Template>
+concept specialisation_of = requires(T t)
+{
+	noop<Template>(t);
 };
 
 /**
@@ -98,7 +111,7 @@ struct transform_range_to_check_non_empty_t
 struct transform_maybes_to_values_t
 {
 	template <std::ranges::range InputContainer>
-	static constexpr auto operator()(InputContainer && values)
+	static constexpr auto operator()(InputContainer values)
 	{
 		return values | ranges::views::move |
 			ranges::views::filter([](auto const & elem) { return elem.has_value(); }) |
@@ -191,3 +204,5 @@ constexpr auto cast(Args &&... args)
 }
 }  // namespace views
 }  // namespace vulkandemo::hof
+
+#include "./macros_pop.hpp"

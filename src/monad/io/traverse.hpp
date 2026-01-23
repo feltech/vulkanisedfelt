@@ -2,7 +2,7 @@
 #include <ranges>
 #include <type_traits>
 
-#include <range/v3/to_container.hpp>
+#include <range/v3/range/conversion.hpp>
 #include <range/v3/view/move.hpp>
 #include <range/v3/view/transform.hpp>
 
@@ -26,11 +26,11 @@ struct traverse_t
 			using ValueElem = ValueRange::value_type;
 
 			static_assert(
-				!detail::specialisation_of<ValueElem, IO>,
+				!hof::specialisation_of<ValueElem, IO>,
 				"traverse expects a range of values, not a IOs");
 
 			using IOElem = decltype(kleisli(std::declval<ValueElem>()));
-			using IORange = detail::Unspecialise<ValueRange>::template Specialise<IOElem>;
+			using IORange = hof::unspecialise_t<ValueRange>::template specialise_t<IOElem>;
 
 			auto ios = values | ranges::views::move | ranges::views::transform(kleisli) |
 				ranges::to<IORange>();

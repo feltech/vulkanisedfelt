@@ -1,19 +1,19 @@
 #pragma once
 #include <concepts>
-#include <libfork/core/task.hpp>
-#include <type_traits>
 #include <tuple>
+#include <type_traits>
 
-#include <boost/hana/fwd/ap.hpp>
-#include <boost/hana/fwd/chain.hpp>
-#include <boost/hana/fwd/core/tag_of.hpp>
-#include <boost/hana/fwd/lift.hpp>
-#include <boost/hana/fwd/transform.hpp>
+#include <boost/hana/ap.hpp>
+#include <boost/hana/chain.hpp>
+#include <boost/hana/core/tag_of.hpp>
+#include <boost/hana/lift.hpp>
+#include <boost/hana/transform.hpp>
 
 #include <libfork/algorithm/lift.hpp>
 #include <libfork/core/control_flow.hpp>
 #include <libfork/core/eventually.hpp>
 #include <libfork/core/just.hpp>
+#include <libfork/core/task.hpp>
 
 #include "../detail.hpp"
 #include "./fwd.hpp"
@@ -57,20 +57,20 @@ struct lift_impl<io::io_tag_t>
 template <>
 struct chain_impl<io::io_tag_t>
 {
-	static auto apply(auto && iom, auto && lifter)
+	static auto apply(auto && iom, auto && kleisli)
 	{
-		return io::IO{io_action_t{FW(iom), FW(lifter)}};
+		return io::IO{io_action_t{FW(iom), FW(kleisli)}};
 	}
 
-	template <class WrappedIO, class Lifter>
+	template <class WrappedIO, class Kleisli>
 	struct io_action_t
 	{
 		WrappedIO iom;
-		Lifter lifter;
+		Kleisli kleisli;
 
 		constexpr auto operator()(this auto && self)
 		{
-			return async_function_t{std::tuple{FW(self).iom, FW(self).lifter}};
+			return async_function_t{std::tuple{FW(self).iom, FW(self).kleisli}};
 		}
 	};
 
@@ -283,7 +283,7 @@ struct ap_impl<io::io_tag_t>
 
 			co_await lf::join;
 
-			co_return (*func)(std::move(*value));
+			co_return (*std::move(func))(std::move(*value));
 		};
 	};
 	template <class Arg>
