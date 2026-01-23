@@ -1,4 +1,5 @@
 #pragma once
+#include <ranges>
 #include <type_traits>
 
 #include <boost/hana/fwd/chain.hpp>

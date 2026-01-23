@@ -354,14 +354,15 @@ struct create_device_t
 
 	struct stateio_factory_t
 	{
+		template <class State>
+		struct S : State
+		{
+			types::VulkanDevicePtr device;
+		};
 		struct modify_state_t
 		{
 			constexpr auto operator()(types::VulkanDevicePtr device, auto && state) const
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					types::VulkanDevicePtr device;
-				};
 				return S{FW(state), std::move(device)};
 			}
 		};
@@ -372,8 +373,8 @@ struct create_device_t
 				queue_family_and_counts,
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
 		{
-			using vulkandemo::monad::stateio::liftIO;
-			return liftIO(
+			using vulkandemo::monad::stateio::lift_io;
+			return lift_io(
 					   io_factory_t{}(
 						   physical_device,
 						   std::move(queue_family_and_counts),
@@ -421,9 +422,9 @@ struct query_swapchain_images_t
 		{
 			types::VulkanDevicePtr device;
 			types::VulkanSwapchainPtr swapchain;
-			immer::array<VkImage> operator()() const
+			constexpr immer::array<VkImage> operator()(this auto && self)
 			{
-				return setup::query_swapchain_images(device, swapchain);
+				return setup::query_swapchain_images(FW(self).device, FW(self).swapchain);
 			}
 		};
 
@@ -436,10 +437,10 @@ struct query_swapchain_images_t
 
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(auto const & state) const
+		constexpr auto operator()(auto && state) const
 		{
-			using vulkandemo::monad::stateio::liftIO;
-			return liftIO(io_factory_t{}(state.device, state.swapchain));
+			using vulkandemo::monad::stateio::lift_io;
+			return lift_io(io_factory_t{}(FW(state).device, FW(state).swapchain));
 		}
 	};
 };
@@ -453,17 +454,17 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 			types::VulkanDevicePtr device;
 			VkSurfaceFormatKHR surface_format{};
 			immer::array<VkImage> images;
-			constexpr immer::array<types::VulkanImageViewPtr> operator()() const
+			constexpr immer::array<types::VulkanImageViewPtr> operator()(this auto && self)
 			{
 				return setup::create_colour_aspect_single_mip_single_layer_image_views(
-					device, surface_format, std::span<VkImage const>{images});
+					FW(self).device, FW(self).surface_format, FW(self).images);
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			types::VulkanDevicePtr device,
 			VkSurfaceFormatKHR surface_format,
-			std::span<VkImage const> images) const
+			std::span<VkImage const> images)
 		{
 			return IO{action_t{
 				.device = std::move(device),
@@ -478,28 +479,31 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 		{
 			VkSurfaceFormatKHR surface_format;
 			immer::array<VkImage> images;
-			constexpr auto operator()(auto const & state) const
+			constexpr auto operator()(this auto && self, auto && state)
 			{
-				using vulkandemo::monad::stateio::liftIO;
-				return liftIO(io_factory_t{}(state.device, surface_format, images));
+				using vulkandemo::monad::stateio::lift_io;
+				return lift_io(
+					io_factory_t{}(FW(state).device, FW(self).surface_format, FW(self).images));
 			}
 		};
 
 		struct modify_state_t
 		{
-			constexpr auto operator()(
-				immer::array<types::VulkanImageViewPtr> image_views, auto && state) const
+			template <class State>
+			struct S : State
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					immer::array<types::VulkanImageViewPtr> image_views;
-				};
+				immer::array<types::VulkanImageViewPtr> image_views;
+			};
+
+			static constexpr auto operator()(
+				immer::array<types::VulkanImageViewPtr> image_views, auto && state)
+			{
 				return S{FW(state), std::move(image_views)};
 			}
 		};
 
-		constexpr auto operator()(
-			VkSurfaceFormatKHR surface_format, immer::array<VkImage> images) const
+		static constexpr auto operator()(
+			VkSurfaceFormatKHR surface_format, immer::array<VkImage> images)
 		{
 			using vulkandemo::monad::stateio::get_state_t;
 			return get_state_t::stateio_factory_t{}()
@@ -513,9 +517,9 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 		{
 			VkSurfaceFormatKHR surface_format;
 
-			constexpr auto operator()(immer::array<VkImage> images) const
+			constexpr auto operator()(this auto && self, immer::array<VkImage> images)
 			{
-				return stateio_factory_t{}(surface_format, std::move(images));
+				return stateio_factory_t{}(FW(self).surface_format, std::move(images));
 			}
 		};
 	};
@@ -747,7 +751,7 @@ struct create_swapchain_t
 		{
 			types::VulkanDevicePtr device;
 			VkSwapchainCreateInfoKHR create_info;
-			constexpr auto operator()(this auto&& self)
+			constexpr auto operator()(this auto && self)
 			{
 				return setup::create_swapchain(FW(self).device, FW(self).create_info);
 			}
@@ -767,19 +771,20 @@ struct create_swapchain_t
 			VkSwapchainCreateInfoKHR create_info;
 			constexpr auto operator()(auto const & state) const
 			{
-				using vulkandemo::monad::stateio::liftIO;
-				return liftIO(io_factory_t{}(state.device, create_info));
+				using vulkandemo::monad::stateio::lift_io;
+				return lift_io(io_factory_t{}(state.device, create_info));
 			}
 		};
 
 		struct modify_state_t
 		{
+			template <class State>
+			struct S : State
+			{
+				types::VulkanSwapchainPtr swapchain;
+			};
 			auto operator()(types::VulkanSwapchainPtr swapchain, auto && state) const
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					types::VulkanSwapchainPtr swapchain;
-				};
 				return S{FW(state), std::move(swapchain)};
 			}
 		};
@@ -1038,24 +1043,25 @@ struct create_surface_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				using vulkandemo::monad::stateio::liftIO;
-				return liftIO(io_factory_t{}(FW(state).window, FW(state).instance));
+				using vulkandemo::monad::stateio::lift_io;
+				return lift_io(io_factory_t{}(FW(state).window, FW(state).instance));
 			}
 		};
 
 		struct modify_state_t
 		{
+			template <class State>
+			struct S : State
+			{
+				types::VulkanSurfacePtr surface;
+			};
 			static constexpr auto operator()(types::VulkanSurfacePtr surface, auto && state)
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					types::VulkanSurfacePtr surface;
-				};
 				return S{FW(state), std::move(surface)};
 			}
 		};
 
-		constexpr auto operator()() const
+		static constexpr auto operator()()
 		{
 			using vulkandemo::monad::stateio::get_state_t;
 			return get_state_t::stateio_factory_t{}().bind(from_state_t{}).store(modify_state_t{});
@@ -1088,20 +1094,21 @@ struct create_debug_messenger_t
 	{
 		struct modify_state_t
 		{
+			template <class State>
+			struct S : State
+			{
+				types::VulkanDebugMessengerPtr messenger;
+			};
 			auto operator()(types::VulkanDebugMessengerPtr messenger, auto state) const
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					types::VulkanDebugMessengerPtr messenger;
-				};
 				return S{std::move(state), std::move(messenger)};
 			}
 		};
 
 		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
 		{
-			using vulkandemo::monad::stateio::liftIO;
-			return liftIO(io_factory_t{}(std::move(logger), std::move(instance)))
+			using vulkandemo::monad::stateio::lift_io;
+			return lift_io(io_factory_t{}(std::move(logger), std::move(instance)))
 				.store(modify_state_t{});
 		}
 
@@ -1211,12 +1218,13 @@ struct create_instance_t
 	{
 		struct modify_state_t
 		{
+			template <class State>
+			struct S : State
+			{
+				types::VulkanInstancePtr instance;
+			};
 			constexpr auto operator()(types::VulkanInstancePtr instance, auto state) const
 			{
-				struct S : std::decay_t<decltype(state)>
-				{
-					types::VulkanInstancePtr instance;
-				};
 				return S{std::move(state), std::move(instance)};
 			}
 		};
@@ -1227,8 +1235,8 @@ struct create_instance_t
 			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
 			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
-			using vulkandemo::monad::stateio::liftIO;
-			return liftIO(
+			using vulkandemo::monad::stateio::lift_io;
+			return lift_io(
 					   io_factory_t{}(
 						   std::move(logger),
 						   std::move(name),
@@ -1427,21 +1435,22 @@ struct create_window_t
 		struct modify_state_t
 		{
 			template <class State>
-			constexpr auto operator()(types::SDLWindowPtr window, State && state) const
+			struct S : State
 			{
-				struct S : std::decay_t<State>
-				{
-					types::SDLWindowPtr window;
-				};
+				types::SDLWindowPtr window;
+			};
+
+			static constexpr auto operator()(types::SDLWindowPtr window, auto && state)
+			{
 				return S{FW(state), std::move(window)};
 			}
 		};
-		constexpr auto operator()(std::string title, int width, int height) const
+		static constexpr auto operator()(std::string title, int width, int height)
 		{
-			using vulkandemo::monad::stateio::liftIO;
+			using vulkandemo::monad::stateio::lift_io;
 			using vulkandemo::monad::stateio::store_t;
 
-			return liftIO(io_factory_t{}(std::move(title), width, height))
+			return lift_io(io_factory_t{}(std::move(title), width, height))
 				.bind(store_t::stateio_factory_t::with_mutator_t{modify_state_t{}});
 		}
 	};

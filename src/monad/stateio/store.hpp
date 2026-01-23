@@ -2,8 +2,8 @@
 
 #include <utility>
 
-#include "./fwd.hpp"
 #include "../io/fwd.hpp"
+#include "./fwd.hpp"
 
 namespace vulkandemo::monad::stateio
 {
@@ -18,9 +18,13 @@ struct store_t
 			Value value;
 			Fn fn;
 
-			constexpr auto operator()(this auto&& self)
+			constexpr auto operator()(this auto && self)
 			{
-				return std::pair{FW(self).value, FW(self.fn)(FW(self).value, FW(self).state)};
+				auto value_to_return = self.value;
+				std::pair result{
+					std::move(value_to_return),
+					FW(self).fn(FW(self).value, FW(self).state)};
+				return result;
 			}
 		};
 
@@ -37,7 +41,7 @@ struct store_t
 		{
 			Value value;
 			Fn fn;
-			constexpr auto operator()(this auto&& self, auto && state)
+			constexpr auto operator()(this auto && self, auto && state)
 			{
 				return io_factory_t{}(FW(state), FW(self).value, FW(self).fn);
 			}
@@ -59,4 +63,4 @@ struct store_t
 		};
 	};
 };
-}
+}  // namespace vulkandemo::monad::stateio

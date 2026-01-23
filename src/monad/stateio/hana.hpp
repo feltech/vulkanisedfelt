@@ -86,7 +86,7 @@ struct chain_impl<stateio::stateio_tag_t>
 				static_assert(
 					specialisation_of<decltype(new_stateio), stateio::StateIO>,
 					"StateIO lifter must return a StateIO");
-				auto new_io = std::move(new_stateio)(std::move(value_and_state.second));
+				auto new_io = std::move(new_stateio)(FW(value_and_state).second);
 				static_assert(
 					specialisation_of<decltype(new_io), io::IO>,
 					"StateIO action must return an IO");
@@ -130,15 +130,14 @@ struct transform_impl<stateio::stateio_tag_t>
 
 		constexpr auto operator()(this auto && self, auto && state)
 		{
-			return FW(self).stateiom(state).fmap(io_transformer_t{FW(self).transformer, FW(state)});
+			return FW(self).stateiom(FW(state)).fmap(io_transformer_t{FW(self).transformer});
 		}
 	};
 
-	template <class State, class ValueTransformer>
+	template <class ValueTransformer>
 	struct io_transformer_t
 	{
 		ValueTransformer transformer;
-		State state;
 
 		constexpr auto operator()(this auto && self, auto && value_and_state)
 		{

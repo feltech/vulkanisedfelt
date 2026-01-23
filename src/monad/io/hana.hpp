@@ -1,8 +1,12 @@
 #pragma once
+#include <concepts>
+#include <libfork/core/task.hpp>
+#include <type_traits>
+#include <tuple>
 
 #include <boost/hana/fwd/ap.hpp>
 #include <boost/hana/fwd/chain.hpp>
-#include <boost/hana/fwd/core.hpp>
+#include <boost/hana/fwd/core/tag_of.hpp>
 #include <boost/hana/fwd/lift.hpp>
 #include <boost/hana/fwd/transform.hpp>
 
