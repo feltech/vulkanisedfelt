@@ -9,8 +9,10 @@
 #include <boost/hana/fwd/lift.hpp>
 #include <boost/hana/fwd/transform.hpp>
 
+#include "../..//hof/concepts.hpp"
 #include "../detail.hpp"
 #include "../io/fwd.hpp"
+#include "../readerio/fwd.hpp"
 #include "./fwd.hpp"
 
 #include "../../macros_push.hpp"
@@ -19,8 +21,10 @@ namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
 namespace stateio = vulkandemo::monad::stateio;
-using vulkandemo::hof::specialisation_of;
+namespace readerio = vulkandemo::monad::readerio;
 using vulkandemo::hof::applicable_with;
+using vulkandemo::hof::pair_with_t;
+using vulkandemo::hof::specialisation_of;
 using vulkandemo::monad::detail::Transformer;
 
 template <typename A>
@@ -34,22 +38,39 @@ struct lift_impl<stateio::stateio_tag_t>
 {
 	static auto apply(specialisation_of<io::IO> auto && iom)
 	{
-		return stateio::StateIO{action_t{FW(iom)}};
+		return stateio::StateIO{action_for_io_t{FW(iom)}};
+	}
+
+	static auto apply(specialisation_of<readerio::ReaderIO> auto && iom)
+	{
+		return stateio::StateIO{action_for_readerio_t{FW(iom)}};
 	}
 
 	static auto apply(auto && value)
 	{
-		return stateio::StateIO{action_t{lift<io::io_tag_t>(FW(value))}};
+		return stateio::StateIO{action_for_io_t{lift<io::io_tag_t>(FW(value))}};
 	}
 
-	template <class IO>
-	struct action_t
+	template <specialisation_of<io::IO> Monad>
+	struct action_for_io_t
 	{
-		IO iom;
+		Monad monad;
 
-		constexpr auto operator()(auto && state) const
+		constexpr auto operator()(this auto && self, auto && state)
 		{
-			return iom.fmap(vulkandemo::hof::pair_with_t{FW(state)});
+			return FW(self).monad.fmap(pair_with_t{FW(state)});
+		}
+	};
+
+	template <specialisation_of<readerio::ReaderIO> Monad>
+	struct action_for_readerio_t
+	{
+		Monad monad;
+
+		constexpr auto operator()(this auto && self, auto && state)
+		{
+			auto state_for_monad = state;
+			return FW(self).monad(std::move(state_for_monad)).fmap(pair_with_t{FW(state)});
 		}
 	};
 };

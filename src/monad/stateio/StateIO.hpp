@@ -5,12 +5,11 @@
 #include <boost/hana/fwd/lift.hpp>
 #include <boost/hana/fwd/transform.hpp>
 
-#include "../detail.hpp"
 #include "../io/fwd.hpp"
+#include "../readerio/fwd.hpp"
 #include "./fwd.hpp"
 #include "./store.hpp"
-
-#include "./hana.hpp"  // NOLINT(*-include-cleaner)
+#include "../../hof/concepts.hpp"
 
 #include "../../macros_push.hpp"
 
@@ -27,6 +26,11 @@ constexpr auto lift_io(hof::specialisation_of<io::IO> auto && iom)
 	return boost::hana::lift<stateio_tag_t>(FW(iom));
 }
 
+constexpr auto lift_readerio(hof::specialisation_of<readerio::ReaderIO> auto && iom)
+{
+	return boost::hana::lift<stateio_tag_t>(FW(iom));
+}
+
 template <typename Act>
 struct StateIO
 {
@@ -38,8 +42,7 @@ struct StateIO
 		// Must return an IO monad that itself returns a pair.
 		static_assert(
 			hof::specialisation_of<decltype(action(state)), io::IO>,
-			// && detail::specialisation_of<decltype(action(state)()), std::pair>,
-			"StateIO action must return IO<pair<value, state>>");
+			"StateIO action must return IO");
 
 		return FW(self).action(FW(state));
 	}

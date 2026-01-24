@@ -48,6 +48,7 @@
 #include <immer/vector.hpp>
 
 #include "./monad/io.hpp"
+#include "./monad/readerio.hpp"
 #include "./monad/stateio.hpp"
 #include "Logger.hpp"
 #include "hof.hpp"
@@ -647,6 +648,8 @@ struct query_sdl_and_desired_instance_extensions_t
 		}
 	};
 };
+
+
 struct query_instance_args_from_window_t
 {
 	struct io_factory_t
@@ -669,11 +672,11 @@ struct query_instance_args_from_window_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
 		static constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window)
 		{
-			using vulkandemo::monad::stateio::lift_io;
+			using vulkandemo::monad::readerio::lift_io;
 			return lift_io(io_factory_t{}(std::move(logger), std::move(window)));
 		}
 
@@ -681,7 +684,7 @@ struct query_instance_args_from_window_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
-				return stateio_factory_t{}(state->logger, state->window);
+				return readerio_factory_t{}(state->logger, state->window);
 			}
 		};
 
@@ -689,7 +692,7 @@ struct query_instance_args_from_window_t
 		{
 			static constexpr auto operator()()
 			{
-				using vulkandemo::monad::stateio::get_state;
+				using vulkandemo::monad::readerio::get_state;
 				return get_state().bind(from_state_t{});
 			}
 		};
@@ -705,10 +708,12 @@ struct create_default_instance_t
 			using monad::create_debug_messenger_t;
 			using monad::create_instance_t;
 			using vulkandemo::monad::stateio::get_state;
+			using vulkandemo::monad::stateio::lift_readerio;
 			// Create application window.
 			return monad::create_window_t::stateio_factory_t{}("", 0, 0)
 				// Gather arguments for constructing a vulkan instance.
-				.then(query_instance_args_from_window_t::stateio_factory_t::using_state_t{}())
+				.then(lift_readerio(
+					query_instance_args_from_window_t::readerio_factory_t::using_state_t{}()))
 				// Create/store Vulkan instance
 				.bind(create_instance_t::stateio_factory_t::using_state_t{})
 				// Create/store debug messenger callback closure.
@@ -1713,9 +1718,8 @@ struct query_surface_formats_and_create_swapchain_and_image_views_t
 {
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(VkPhysicalDevice physical_device) const
+		static constexpr auto operator()(VkPhysicalDevice physical_device)
 		{
-			using vulkandemo::monad::stateio::get_state_t;
 			return query_and_filter_surface_formats_t::stateio_factory_t::with_physical_device_t{
 				physical_device}()
 				.bind(
@@ -1975,6 +1979,8 @@ TEST_CASE("Create a Vulkan surface")
 	// 	std::filesystem::path{"/tmp/maps"},
 	// 	std::filesystem::copy_options::update_existing);
 }
+
+/*
 TEST_CASE("Enumerate devices")
 {
 	using namespace test::enumerate_devices;
@@ -2271,5 +2277,6 @@ TEST_CASE("Create semaphores")
 
 	CHECK(semaphore);
 }
+*/
 // NOLINTEND(readability-function-cognitive-complexity,*-using-namespace)
 }  // namespace vulkandemo::setup

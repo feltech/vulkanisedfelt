@@ -41,6 +41,7 @@ add_executable(
   ${_exe_target}
   src/monad/io.cpp
   src/monad/stateio.cpp
+  src/monad/readerio.cpp
   src/types.cpp
   src/setup.cpp
   src/setup/filters.cpp
