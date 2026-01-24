@@ -152,7 +152,9 @@ VulkanCommandPoolPtr make_command_pool_ptr(VulkanDevicePtr device, VkCommandPool
 }
 
 VulkanCommandBuffersPtr make_command_buffers_ptr(
-	VulkanDevicePtr device, VulkanCommandPoolPtr pool, immer::array<VkCommandBuffer> command_buffers)
+	VulkanDevicePtr device,
+	VulkanCommandPoolPtr pool,
+	immer::array<VkCommandBuffer> command_buffers)
 {
 	return VulkanCommandBuffersPtr{
 		new immer::array{std::move(command_buffers)},

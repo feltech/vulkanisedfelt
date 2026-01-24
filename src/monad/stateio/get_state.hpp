@@ -1,9 +1,12 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 
 #include <utility>
 
 #include "../io/fwd.hpp"
 #include "./fwd.hpp"
+
+#include "../../macros_push.hpp"
 
 namespace vulkandemo::monad::stateio
 {
@@ -50,3 +53,5 @@ constexpr auto get_state()
 	return get_state_t::stateio_factory_t{}();
 }
 }  // namespace vulkandemo::monad::stateio
+
+#include "../../macros_pop.hpp"

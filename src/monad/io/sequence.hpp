@@ -1,4 +1,5 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 #include <tuple>
 #include <type_traits>
 

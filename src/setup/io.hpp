@@ -115,8 +115,7 @@ types::VulkanSwapchainPtr create_swapchain(
  * @return
  */
 immer::array<VkImage> query_swapchain_images(
-    types::VulkanDevicePtr const& device,
-    types::VulkanSwapchainPtr const& swapchain);
+	types::VulkanDevicePtr const & device, types::VulkanSwapchainPtr const & swapchain);
 
 /**
  * Create image views for swapchain images.
@@ -127,9 +126,9 @@ immer::array<VkImage> query_swapchain_images(
  * @return
  */
 immer::array<types::VulkanImageViewPtr> create_colour_aspect_single_mip_single_layer_image_views(
-    types::VulkanDevicePtr const& device,
-    VkSurfaceFormatKHR surface_format,
-    std::span<VkImage const> images);
+	types::VulkanDevicePtr const & device,
+	VkSurfaceFormatKHR surface_format,
+	std::span<VkImage const> images);
 
 /**
  * Given a physical device, desired queue types, and desired extensions, get a logical
@@ -173,6 +172,38 @@ types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_a
 	VkDevice device,
 	std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
 		queue_family_and_counts);
+
+/**
+ * Query the extension names required by SDL for instance creation.
+ *
+ * @param sdl_window
+ * @return
+ */
+immer::array<types::AvailableInstanceExtensionNameCstr> query_sdl_instance_extension_names(
+	types::SDLWindowPtr const & sdl_window);
+
+/**
+ * Query all available instance layers.
+ *
+ * @return
+ */
+immer::array<VkLayerProperties> query_available_instance_layers();
+
+/**
+ * Query all available instance extensions.
+ *
+ * @return
+ */
+immer::array<VkExtensionProperties> query_available_instance_extensions();
+
+/**
+ * Get the title of an SDL window.
+ *
+ * @param window
+ * @return
+ */
+char const * query_window_title(types::SDLWindowPtr const & window);
+
 /**
  * Get a list of all physical devices.
  *
@@ -296,5 +327,52 @@ types::SDLWindowPtr create_window(char const * title, int width, int height);
  * @return
  */
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device);
+
+/**
+ * Query all available queue family properties for a physical device.
+ *
+ * @param physical_device
+ * @return
+ */
+immer::array<VkQueueFamilyProperties> query_available_queue_family_properties(
+	VkPhysicalDevice physical_device);
+
+/**
+ * Get the memory properties of a physical device.
+ *
+ * @param logger
+ * @param physical_device
+ * @return
+ */
+VkPhysicalDeviceMemoryProperties query_physical_device_memory_properties(
+	LoggerPtr const & logger, VkPhysicalDevice physical_device);
+
+/**
+ * Check if a queue family supports a surface on a physical device.
+ *
+ * @param physical_device
+ * @param surface
+ * @param queue_family_idx
+ * @return The queue family index if supported, otherwise nullopt.
+ */
+std::optional<types::VulkanQueueFamilyIdx> maybe_queue_family_idx_if_supported_by_physical_device_and_surface(
+	VkPhysicalDevice physical_device,
+	types::VulkanSurfacePtr const & surface,
+	types::VulkanQueueFamilyIdx queue_family_idx);
+
+/**
+ * Create a Vulkan instance.
+ *
+ * @param logger
+ * @param name
+ * @param layers_to_enable
+ * @param extensions_to_enable
+ * @return
+ */
+types::VulkanInstancePtr create_instance(
+	LoggerPtr const & logger,
+	std::string name,
+	immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+	immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable);
 
 }  // namespace vulkandemo::setup

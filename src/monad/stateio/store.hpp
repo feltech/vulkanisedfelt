@@ -1,9 +1,12 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 
 #include <utility>
 
 #include "../io/fwd.hpp"
 #include "./fwd.hpp"
+
+#include "../../macros_push.hpp"
 
 namespace vulkandemo::monad::stateio
 {
@@ -22,8 +25,7 @@ struct store_t
 			{
 				auto value_to_return = self.value;
 				std::pair result{
-					std::move(value_to_return),
-					FW(self).fn(FW(self).value, FW(self).state)};
+					std::move(value_to_return), FW(self).fn(FW(self).value, FW(self).state)};
 				return result;
 			}
 		};
@@ -31,7 +33,7 @@ struct store_t
 		static constexpr auto operator()(auto && state, auto && value, auto && fn)
 		{
 			return io::IO{action_t{FW(state), FW(value), FW(fn)}};
-		};
+		}
 	};
 
 	struct stateio_factory_t
@@ -64,3 +66,5 @@ struct store_t
 	};
 };
 }  // namespace vulkandemo::monad::stateio
+
+#include "../../macros_pop.hpp"

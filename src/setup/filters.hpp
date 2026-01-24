@@ -185,7 +185,6 @@ immer::array<VkSurfaceFormatKHR> filter_surface_formats(
 	std::span<VkSurfaceFormatKHR const> available_surface_formats,
 	std::span<VkFormat const> desired_formats);
 
-
 struct filter_surface_formats_t
 {
 	static constexpr auto operator()(

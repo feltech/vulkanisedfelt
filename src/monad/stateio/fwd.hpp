@@ -7,4 +7,4 @@ struct stateio_tag_t
 
 template <typename Act>
 struct StateIO;
-}  // namespace vulkandemo::monad::io
+}  // namespace vulkandemo::monad::stateio

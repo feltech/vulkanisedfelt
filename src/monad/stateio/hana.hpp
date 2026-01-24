@@ -1,4 +1,5 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 #include <concepts>
 #include <utility>
 
@@ -18,10 +19,9 @@ namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
 namespace stateio = vulkandemo::monad::stateio;
-using vulkandemo::monad::detail::applicable_with;
 using vulkandemo::hof::specialisation_of;
+using vulkandemo::hof::applicable_with;
 using vulkandemo::monad::detail::Transformer;
-using vulkandemo::monad::detail::tuple_like;
 
 template <typename A>
 struct tag_of<stateio::StateIO<A>>

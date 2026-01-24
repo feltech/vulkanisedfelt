@@ -1,4 +1,5 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 
 #include <boost/hana/fwd/chain.hpp>
 #include <boost/hana/fwd/lift.hpp>

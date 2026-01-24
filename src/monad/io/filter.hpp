@@ -1,6 +1,7 @@
 #pragma once
-#include <type_traits>
+// IWYU pragma: private, include "../io.hpp"
 
+#include <type_traits>
 #include "../../hof.hpp"
 #include "../detail.hpp"
 #include "./traverse.hpp"

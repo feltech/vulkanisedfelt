@@ -46,10 +46,10 @@
 #include <immer/set.hpp>
 #include <immer/vector.hpp>
 
-#include "Logger.hpp"
-#include "hof.hpp"
 #include "./monad/io.hpp"
 #include "./monad/stateio.hpp"
+#include "Logger.hpp"
+#include "hof.hpp"
 #include "setup/filters.hpp"
 #include "setup/logging.hpp"
 #include "setup/monad.hpp"

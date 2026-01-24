@@ -1,13 +1,14 @@
 #pragma once
+// IWYU pragma: private, include "../io.hpp"
 #include <concepts>
 #include <tuple>
 #include <type_traits>
 
-#include <boost/hana/ap.hpp>
-#include <boost/hana/chain.hpp>
+#include <boost/hana/fwd/ap.hpp>
+#include <boost/hana/fwd/chain.hpp>
+#include <boost/hana/fwd/lift.hpp>
+#include <boost/hana/fwd/transform.hpp>
 #include <boost/hana/core/tag_of.hpp>
-#include <boost/hana/lift.hpp>
-#include <boost/hana/transform.hpp>
 
 #include <libfork/algorithm/lift.hpp>
 #include <libfork/core/control_flow.hpp>
@@ -16,6 +17,7 @@
 #include <libfork/core/task.hpp>
 
 #include "../detail.hpp"
+#include "../../hof.hpp"
 #include "./fwd.hpp"
 
 #include "../../macros_push.hpp"
@@ -23,9 +25,9 @@
 namespace boost::hana
 {
 namespace io = vulkandemo::monad::io;
-using vulkandemo::monad::detail::applicable_with;
+using vulkandemo::hof::applicable_with;
 using vulkandemo::monad::detail::AsyncFunctorInterface;
-using vulkandemo::monad::detail::invoke_or_apply_result_t;
+using vulkandemo::hof::invoke_or_apply_result_t;
 using vulkandemo::monad::detail::unwrap_async_t;
 using vulkandemo::monad::detail::unwrap_async_v;
 

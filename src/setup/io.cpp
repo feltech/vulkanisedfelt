@@ -538,6 +538,56 @@ types::MapOfVulkanQueueFamilyIdxToVectorOfQueues query_queues_for_queue_family_a
 	return queues;
 }
 
+immer::array<types::AvailableInstanceExtensionNameCstr> query_sdl_instance_extension_names(
+	types::SDLWindowPtr const & sdl_window)
+{
+	std::vector<char const *> out;
+	uint32_t extension_count = 0;
+	SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, nullptr);
+	out.resize(extension_count);
+	SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, out.data());
+	return hof::views::cast<types::AvailableInstanceExtensionNameCstr>(out) |
+		ranges::to<immer::array>;
+}
+
+immer::array<VkLayerProperties> query_available_instance_layers()
+{
+	uint32_t available_layers_count = 0;
+	VK_CHECK(
+		vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
+		"Failed to enumerate instance layers");
+
+	auto out = immer::array<VkLayerProperties>(available_layers_count).transient();
+
+	VK_CHECK(
+		vkEnumerateInstanceLayerProperties(&available_layers_count, out.data_mut()),
+		"Failed to enumerate instance layers");
+
+	return std::move(out).persistent();
+}
+
+immer::array<VkExtensionProperties> query_available_instance_extensions()
+{
+	uint32_t available_extensions_count = 0;
+	VK_CHECK(
+		vkEnumerateInstanceExtensionProperties(nullptr, &available_extensions_count, nullptr),
+		"Failed to enumerate instance extensions");
+
+	auto out = immer::array<VkExtensionProperties>{available_extensions_count}.transient();
+
+	VK_CHECK(
+		vkEnumerateInstanceExtensionProperties(
+			nullptr, &available_extensions_count, out.data_mut()),
+		"Failed to enumerate instance extensions");
+
+	return std::move(out).persistent();
+}
+
+char const * query_window_title(types::SDLWindowPtr const & window)
+{
+	return SDL_GetWindowTitle(window.get());
+}
+
 immer::array<VkPhysicalDevice> enumerate_physical_devices(
 	LoggerPtr const & logger, types::VulkanInstancePtr const & instance)
 {
@@ -586,6 +636,53 @@ VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice phy
 	VkPhysicalDeviceProperties properties;
 	vkGetPhysicalDeviceProperties(physical_device, &properties);
 	return properties;
+}
+
+immer::array<VkQueueFamilyProperties> query_available_queue_family_properties(
+	VkPhysicalDevice physical_device)
+{
+	uint32_t queue_family_count = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
+
+	auto out = immer::array<VkQueueFamilyProperties>{queue_family_count}.transient();
+
+	vkGetPhysicalDeviceQueueFamilyProperties(
+		physical_device, &queue_family_count, out.data_mut());
+
+	return std::move(out).persistent();
+}
+
+VkPhysicalDeviceMemoryProperties query_physical_device_memory_properties(
+	LoggerPtr const & logger, VkPhysicalDevice physical_device)
+{
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+	if (logger->should_log(spdlog::level::debug))
+	{
+		VkPhysicalDeviceProperties device_properties;
+		vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+
+		logger->debug(
+			"Memory types for {}:\n\t{}",
+			device_properties.deviceName,
+			fmt::join(
+				std::views::enumerate(
+					std::span{memory_properties.memoryTypes}.subspan(
+						0, memory_properties.memoryTypeCount)) |
+					std::views::transform(
+						[](auto const & idx_and_memory_type)
+						{
+							return fmt::format(
+								"{}: {}",
+								std::get<0>(idx_and_memory_type),
+								string_VkMemoryPropertyFlags(
+									std::get<1>(idx_and_memory_type).propertyFlags));
+						}),
+				"\n\t"));
+	}
+
+	return memory_properties;
 }
 
 types::VulkanSurfacePtr create_surface(
@@ -816,4 +913,56 @@ types::SDLWindowPtr create_window(char const * title, int const width, int const
 
 	return types::make_window_ptr(window);
 }
+
+std::optional<types::VulkanQueueFamilyIdx> maybe_queue_family_idx_if_supported_by_physical_device_and_surface(
+	VkPhysicalDevice physical_device,
+	types::VulkanSurfacePtr const & surface,
+	types::VulkanQueueFamilyIdx const queue_family_idx)
+{
+	VkBool32 surface_supported = VK_FALSE;
+	VK_CHECK(
+		vkGetPhysicalDeviceSurfaceSupportKHR(
+			physical_device, queue_family_idx, surface.get(), &surface_supported),
+		"Failed to check surface support");
+	return (surface_supported == VK_TRUE) ? std::optional{queue_family_idx} : std::nullopt;
+}
+
+types::VulkanInstancePtr create_instance(
+	LoggerPtr const & logger,
+	std::string name,
+	immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+	immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
+{
+	auto const layers_to_enable_cstr =
+		layers_to_enable | hof::views::value_of() | ranges::to<std::vector<char const *>>;
+	auto const extensions_to_enable_cstr =
+		extensions_to_enable | hof::views::value_of() | ranges::to<std::vector<char const *>>;
+
+	logger->debug("Enabling instance extensions: {}", fmt::join(layers_to_enable_cstr, ", "));
+	logger->debug("Enabling layers: {}", fmt::join(extensions_to_enable_cstr, ", "));
+
+	// Application metadata.
+	VkApplicationInfo const app_info = {
+		.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+		.pApplicationName = name.c_str(),
+		.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+		.pEngineName = name.c_str(),
+		.engineVersion = VK_MAKE_VERSION(1, 0, 0),
+		.apiVersion = VK_API_VERSION_1_3,
+	};
+
+	VkInstanceCreateInfo const create_info = {
+		.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+		.pApplicationInfo = &app_info,
+		.enabledLayerCount = static_cast<uint32_t>(layers_to_enable_cstr.size()),
+		.ppEnabledLayerNames = layers_to_enable_cstr.data(),
+		.enabledExtensionCount = static_cast<uint32_t>(extensions_to_enable_cstr.size()),
+		.ppEnabledExtensionNames = extensions_to_enable_cstr.data(),
+	};
+
+	VkInstance out = nullptr;
+	VK_CHECK(vkCreateInstance(&create_info, nullptr, &out), "Failed to create Vulkan instance");
+	return types::make_instance_ptr(out);
+}
+
 }  // namespace vulkandemo::setup

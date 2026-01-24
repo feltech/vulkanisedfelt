@@ -23,6 +23,8 @@
 #     De-facto standard #pragma once is preferred.
 # - -hicpp-invalid-access-moved
 #     Duplicate of bugprone-use-after-move. Disabled to allow easier inline suppression.
+# - -fuchsia-trailing-return
+#     False positive flagging lambdas as disallowed for trailing return in clang-tidy 22.
 Checks: >
     *,
     -llvmlibc-*,
@@ -37,7 +39,8 @@ Checks: >
     -llvm-namespace-comment,
     -fuchsia-overloaded-operator,
     -portability-avoid-pragma-once,
-    -hicpp-invalid-access-moved
+    -hicpp-invalid-access-moved,
+    -fuchsia-trailing-return
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: file
@@ -57,59 +60,9 @@ CheckOptions:
         value: fn
     -   key: readability-identifier-length.IgnoredVariableNames
         value: fn
+    -   key: readability-identifier-naming.DefaultCase
+        value: lower_case
     -   key: readability-identifier-naming.ClassCase
         value: CamelCase
-    -   key: readability-identifier-naming.ClassIgnoredRegexp
-        value: '.*_t$'
-    -   key: readability-identifier-naming.ClassMemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.ClassConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.ClassConstantPrefix
-        value: k
-    #  - key:             readability-identifier-naming.ConstexprVariableCase
-    #    value:           CamelCase
-    #  - key:             readability-identifier-naming.ConstexprVariablePrefix
-    #    value:           k
-    -   key: readability-identifier-naming.EnumCase
-        value: CamelCase
-    -   key: readability-identifier-naming.EnumConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.EnumConstantPrefix
-        value: k
-    -   key: readability-identifier-naming.FunctionCase
-        value: lower_case
-    -   key: readability-identifier-naming.GlobalConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.GlobalConstantPrefix
-        value: k
-    -   key: readability-identifier-naming.StaticConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.StaticConstantPrefix
-        value: k
-    -   key: readability-identifier-naming.StaticVariableCase
-        value: lower_case
-    -   key: readability-identifier-naming.MacroDefinitionCase
-        value: UPPER_CASE
-    -   key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
-        value: '^[A-Z]+(_[A-Z]+)*_$'
-    -   key: readability-identifier-naming.MemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.PrivateMemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.PrivateMemberSuffix
-        value: _
-    -   key: readability-identifier-naming.PublicMemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.PublicMemberSuffix
-        value: ''
-    -   key: readability-identifier-naming.NamespaceCase
-        value: lower_case
-    -   key: readability-identifier-naming.ParameterCase
-        value: lower_case
-    -   key: readability-identifier-naming.TypeAliasCase
-        value: CamelCase
-    -   key: readability-identifier-naming.TypedefCase
-        value: CamelCase
-    -   key: readability-identifier-naming.VariableCase
+    -   key: readability-identifier-naming.StructCase
         value: lower_case

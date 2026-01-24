@@ -31,6 +31,7 @@
 #include "../monad/stateio.hpp"
 #include "../setup.hpp"
 #include "../types.hpp"
+#include "/home/dave/workspace/vulkanisedfelt/src/hof/functions.hpp"
 #include "filters.hpp"
 #include "io.hpp"
 
@@ -48,13 +49,13 @@ struct create_minimal_pipeline_layout_t
 		struct action_t
 		{
 			types::VulkanDevicePtr device;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self)
 			{
-				return setup::create_minimal_pipeline_layout(device);
+				return setup::create_minimal_pipeline_layout(FW(self).device);
 			}
 		};
 
-		constexpr auto operator()(types::VulkanDevicePtr device) const
+		static constexpr auto operator()(types::VulkanDevicePtr device)
 		{
 			return IO{action_t{std::move(device)}};
 		}
@@ -68,13 +69,13 @@ struct create_semaphore_t
 		struct action_t
 		{
 			types::VulkanDevicePtr device;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::create_semaphore(device);
+				return setup::create_semaphore(FW(self).device);
 			}
 		};
 
-		constexpr auto operator()(types::VulkanDevicePtr device) const
+		static constexpr auto operator()(types::VulkanDevicePtr device) 
 		{
 			return IO{action_t{std::move(device)}};
 		}
@@ -90,16 +91,17 @@ struct create_primary_command_buffers_t
 			types::VulkanDevicePtr device;
 			types::VulkanCommandPoolPtr pool;
 			types::VulkanCommandBufferCount count;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::create_primary_command_buffers(device, pool, count);
+				return setup::create_primary_command_buffers(
+					FW(self).device, FW(self).pool, FW(self).count);
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			types::VulkanDevicePtr device,
 			types::VulkanCommandPoolPtr pool,
-			types::VulkanCommandBufferCount count) const
+			types::VulkanCommandBufferCount count) 
 		{
 			return IO{
 				action_t{.device = std::move(device), .pool = std::move(pool), .count = count}};
@@ -115,14 +117,14 @@ struct create_command_pool_t
 		{
 			types::VulkanDevicePtr device;
 			types::VulkanQueueFamilyIdx queue_family_idx;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::create_command_pool(device, queue_family_idx);
+				return setup::create_command_pool(FW(self).device, FW(self).queue_family_idx);
 			}
 		};
 
-		constexpr auto operator()(
-			types::VulkanDevicePtr device, types::VulkanQueueFamilyIdx queue_family_idx) const
+		static constexpr auto operator()(
+			types::VulkanDevicePtr device, types::VulkanQueueFamilyIdx queue_family_idx) 
 		{
 			return IO{action_t{.device = std::move(device), .queue_family_idx = queue_family_idx}};
 		}
@@ -130,9 +132,9 @@ struct create_command_pool_t
 		struct with_queue_family_idx_t
 		{
 			types::VulkanQueueFamilyIdx queue_family_idx;
-			constexpr auto operator()(types::VulkanDevicePtr device) const
+			constexpr auto operator()(this auto&& self, types::VulkanDevicePtr device) 
 			{
-				return io_factory_t{}(std::move(device), queue_family_idx);
+				return io_factory_t{}(std::move(device), FW(self).queue_family_idx);
 			}
 		};
 	};
@@ -148,21 +150,21 @@ struct create_per_image_frame_buffers_t
 			types::VulkanRenderPassPtr render_pass;
 			std::vector<types::VulkanImageViewPtr> image_views;
 			VkExtent2D size;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::create_per_image_frame_buffers(
-					device,
-					render_pass,
-					std::span<types::VulkanImageViewPtr const>{image_views},
-					size);
+					FW(self).device,
+					FW(self).render_pass,
+					std::span<types::VulkanImageViewPtr const>{FW(self).image_views},
+					FW(self).size);
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			types::VulkanDevicePtr device,
 			types::VulkanRenderPassPtr render_pass,
 			std::vector<types::VulkanImageViewPtr> image_views,
-			VkExtent2D size) const
+			VkExtent2D size) 
 		{
 			return IO{action_t{
 				.device = std::move(device),
@@ -175,12 +177,13 @@ struct create_per_image_frame_buffers_t
 		{
 			VkExtent2D size;
 			constexpr auto operator()(
+				this auto&& self,
 				types::VulkanDevicePtr device,
 				types::VulkanRenderPassPtr render_pass,
-				std::vector<types::VulkanImageViewPtr> image_views) const
+				std::vector<types::VulkanImageViewPtr> image_views) 
 			{
 				return io_factory_t{}(
-					std::move(device), std::move(render_pass), std::move(image_views), size);
+					std::move(device), std::move(render_pass), std::move(image_views), FW(self).size);
 			}
 		};
 	};
@@ -195,15 +198,15 @@ struct create_single_presentation_subpass_render_pass_t
 		{
 			types::VulkanDevicePtr device;
 			VkFormat surface_format;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::create_single_presentation_subpass_render_pass(
-					surface_format, device);
+					FW(self).surface_format, FW(self).device);
 			}
 		};
 
-		constexpr auto operator()(
-			types::VulkanDevicePtr device, VkFormat const surface_format) const
+		static constexpr auto operator()(
+			types::VulkanDevicePtr device, VkFormat const surface_format) 
 		{
 			return IO{action_t{.device = std::move(device), .surface_format = surface_format}};
 		}
@@ -212,9 +215,9 @@ struct create_single_presentation_subpass_render_pass_t
 	struct with_surface_format_t
 	{
 		VkFormat surface_format;
-		auto operator()(types::VulkanDevicePtr device) const
+		constexpr auto operator()(this auto&& self, types::VulkanDevicePtr device) 
 		{
-			return io_factory_t{}(std::move(device), surface_format);
+			return io_factory_t{}(std::move(device), FW(self).surface_format);
 		}
 	};
 };
@@ -231,20 +234,25 @@ struct create_exclusive_double_buffer_swapchain_and_image_views_t
 			types::VulkanSurfacePtr surface;
 			VkSurfaceFormatKHR surface_format{};
 			types::VulkanSwapchainPtr previous_swapchain;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::create_exclusive_double_buffer_swapchain_and_image_views(
-					logger, physical_device, device, surface, surface_format, previous_swapchain);
+					FW(self).logger,
+					FW(self).physical_device,
+					FW(self).device,
+					FW(self).surface,
+					FW(self).surface_format,
+					FW(self).previous_swapchain);
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			VkPhysicalDevice physical_device,
 			types::VulkanDevicePtr device,
 			types::VulkanSurfacePtr surface,
 			VkSurfaceFormatKHR surface_format,
-			types::VulkanSwapchainPtr previous_swapchain = nullptr) const
+			types::VulkanSwapchainPtr previous_swapchain = nullptr) 
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -261,17 +269,18 @@ struct create_exclusive_double_buffer_swapchain_and_image_views_t
 			VkSurfaceFormatKHR surface_format{};
 
 			constexpr auto operator()(
+				this auto&& self,
 				VkPhysicalDevice physical_device,
 				types::VulkanDevicePtr device,
 				types::VulkanSurfacePtr surface,
-				types::VulkanSwapchainPtr previous_swapchain = nullptr) const
+				types::VulkanSwapchainPtr previous_swapchain = nullptr) 
 			{
 				return io_factory_t{}(
-					LoggerPtr{logger},
+					FW(self).logger,
 					physical_device,
 					std::move(device),
 					std::move(surface),
-					surface_format,
+					FW(self).surface_format,
 					std::move(previous_swapchain));
 			}
 		};
@@ -289,23 +298,23 @@ struct create_device_and_queues_t
 			std::vector<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
 				queue_family_and_counts;
 			std::vector<types::AvailableDeviceExtensionNameView> device_extension_names;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::create_device_and_queues(
-					physical_device,
+					FW(self).physical_device,
 					std::span<
 						std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>{
-						queue_family_and_counts},
+						FW(self).queue_family_and_counts},
 					std::span<types::AvailableDeviceExtensionNameView const>{
-						device_extension_names});
+						FW(self).device_extension_names});
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			VkPhysicalDevice physical_device,
 			std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
 				queue_family_and_counts,
-			std::span<types::AvailableDeviceExtensionNameView const> device_extension_names) const
+			std::span<types::AvailableDeviceExtensionNameView const> device_extension_names) 
 		{
 			return IO{action_t{
 				physical_device,
@@ -391,17 +400,17 @@ struct query_queues_for_queue_family_and_counts_t
 			types::VulkanDevicePtr device;
 			immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
 				queue_family_and_counts;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::query_queues_for_queue_family_and_counts(
-					device.get(), std::span{queue_family_and_counts});
+					FW(self).device.get(), std::span{FW(self).queue_family_and_counts});
 			}
 		};
 
 		static constexpr auto operator()(
 			types::VulkanDevicePtr device,
 			std::span<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount> const>
-				queue_family_and_counts)
+				queue_family_and_counts) 
 		{
 			return IO{action_t{
 				.device = std::move(device),
@@ -426,8 +435,8 @@ struct query_swapchain_images_t
 			}
 		};
 
-		constexpr auto operator()(
-			types::VulkanDevicePtr device, types::VulkanSwapchainPtr swapchain) const
+		static constexpr auto operator()(
+			types::VulkanDevicePtr device, types::VulkanSwapchainPtr swapchain) 
 		{
 			return IO{action_t{.device = std::move(device), .swapchain = std::move(swapchain)}};
 		}
@@ -435,7 +444,7 @@ struct query_swapchain_images_t
 
 	struct stateio_factory_t
 	{
-		constexpr auto operator()(auto && state) const
+		static constexpr auto operator()(auto && state) 
 		{
 			using vulkandemo::monad::stateio::lift_io;
 			return lift_io(io_factory_t{}(FW(state).device, FW(state).swapchain));
@@ -534,18 +543,21 @@ struct filter_available_surface_formats_t
 			VkPhysicalDevice physical_device{};
 			types::VulkanSurfacePtr surface;
 			std::vector<VkFormat> desired_formats;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::filter_available_surface_formats(
-					logger, physical_device, surface, std::span<VkFormat const>{desired_formats});
+					FW(self).logger,
+					FW(self).physical_device,
+					FW(self).surface,
+					std::span<VkFormat const>{FW(self).desired_formats});
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			VkPhysicalDevice physical_device,
 			types::VulkanSurfacePtr surface,
-			std::span<VkFormat const> desired_formats) const
+			std::span<VkFormat const> desired_formats) 
 		{
 			return IO{action_t{
 				std::move(logger),
@@ -565,18 +577,18 @@ struct select_physical_device_t
 			LoggerPtr logger;
 			immer::array<VkPhysicalDevice> physical_devices;
 			immer::set<types::DesiredDeviceExtensionNameView> required_device_extensions;
-			VkQueueFlagBits required_queue_capabilities;
-			VkMemoryPropertyFlags required_memory_type;
+			VkQueueFlagBits required_queue_capabilities{};
+			VkMemoryPropertyFlags required_memory_type{};
 			types::VulkanSurfacePtr required_surface_support;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::select_physical_device(
-					logger,
-					physical_devices,
-					required_device_extensions,
-					required_queue_capabilities,
-					required_memory_type,
-					required_surface_support);
+					FW(self).logger,
+					FW(self).physical_devices,
+					FW(self).required_device_extensions,
+					FW(self).required_queue_capabilities,
+					FW(self).required_memory_type,
+					FW(self).required_surface_support);
 			}
 		};
 
@@ -586,7 +598,7 @@ struct select_physical_device_t
 			immer::set<types::DesiredDeviceExtensionNameView> required_device_extensions,
 			VkQueueFlagBits const required_queue_capabilities,
 			VkMemoryPropertyFlags const required_memory_type = 0,
-			types::VulkanSurfacePtr required_surface_support = nullptr)
+			types::VulkanSurfacePtr required_surface_support = nullptr) 
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -607,9 +619,9 @@ struct query_available_device_extensions_t
 		struct action_t
 		{
 			VkPhysicalDevice physical_device;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::enumerate_physical_device_extension_properties(physical_device);
+				return setup::enumerate_physical_device_extension_properties(FW(self).physical_device);
 			}
 		};
 
@@ -629,15 +641,10 @@ struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 			VkPhysicalDevice physical_device;
 			types::VulkanSurfacePtr surface;
 			types::VulkanQueueFamilyIdx queue_family_idx;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				VkBool32 surface_supported = VK_FALSE;
-				VK_CHECK(
-					vkGetPhysicalDeviceSurfaceSupportKHR(
-						physical_device, queue_family_idx, surface.get(), &surface_supported),
-					"Failed to check surface support");
-				return (surface_supported == VK_TRUE) ? std::optional{queue_family_idx}
-													  : std::nullopt;
+				return setup::maybe_queue_family_idx_if_supported_by_physical_device_and_surface(
+					FW(self).physical_device, FW(self).surface, FW(self).queue_family_idx);
 			}
 		};
 
@@ -673,13 +680,13 @@ struct query_physical_device_properties_t
 		struct action_t
 		{
 			VkPhysicalDevice physical_device{};
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::query_physical_device_properties(physical_device);
+				return setup::query_physical_device_properties(FW(self).physical_device);
 			}
 		};
 
-		constexpr auto operator()(VkPhysicalDevice physical_device) const
+		static constexpr auto operator()(VkPhysicalDevice physical_device) 
 		{
 			return IO{action_t{physical_device}};
 		}
@@ -693,22 +700,13 @@ struct query_available_queue_family_properties_t
 		struct action_t
 		{
 			VkPhysicalDevice physical_device;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				uint32_t queue_family_count = 0;
-				vkGetPhysicalDeviceQueueFamilyProperties(
-					physical_device, &queue_family_count, nullptr);
-
-				auto out = immer::array<VkQueueFamilyProperties>{queue_family_count}.transient();
-
-				vkGetPhysicalDeviceQueueFamilyProperties(
-					physical_device, &queue_family_count, out.data_mut());
-
-				return std::move(out).persistent();
+				return setup::query_available_queue_family_properties(FW(self).physical_device);
 			}
 		};
 
-		static constexpr auto operator()(VkPhysicalDevice physical_device)
+		static constexpr auto operator()(VkPhysicalDevice physical_device) 
 		{
 			return IO{action_t{physical_device}};
 		}
@@ -724,16 +722,18 @@ struct filter_available_queue_families_t
 			VkPhysicalDevice physical_device;
 			VkQueueFlagBits desired_queue_capabilities;
 			types::VulkanSurfacePtr desired_surface;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::filter_available_queue_families(
-					physical_device, desired_queue_capabilities, desired_surface);
+					FW(self).physical_device,
+					FW(self).desired_queue_capabilities,
+					FW(self).desired_surface);
 			}
 		};
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			VkPhysicalDevice physical_device,
 			VkQueueFlagBits const desired_queue_capabilities,
-			types::VulkanSurfacePtr desired_surface) const
+			types::VulkanSurfacePtr desired_surface) 
 		{
 			return IO{
 				action_t{physical_device, desired_queue_capabilities, std::move(desired_surface)}};
@@ -749,14 +749,14 @@ struct create_swapchain_t
 		{
 			types::VulkanDevicePtr device;
 			VkSwapchainCreateInfoKHR create_info;
-			constexpr auto operator()(this auto && self)
+			constexpr auto operator()(this auto&& self) 
 			{
 				return setup::create_swapchain(FW(self).device, FW(self).create_info);
 			}
 		};
 
 		static constexpr auto operator()(
-			types::VulkanDevicePtr device, VkSwapchainCreateInfoKHR const & create_info)
+			types::VulkanDevicePtr device, VkSwapchainCreateInfoKHR const & create_info) 
 		{
 			return IO{action_t{.device = std::move(device), .create_info = create_info}};
 		}
@@ -767,10 +767,10 @@ struct create_swapchain_t
 		struct with_swapchain_create_info_t
 		{
 			VkSwapchainCreateInfoKHR create_info;
-			constexpr auto operator()(auto const & state) const
+			constexpr auto operator()(this auto&& self, auto const & state) 
 			{
 				using vulkandemo::monad::stateio::lift_io;
-				return lift_io(io_factory_t{}(state.device, create_info));
+				return lift_io(io_factory_t{}(state.device, FW(self).create_info));
 			}
 		};
 
@@ -781,13 +781,13 @@ struct create_swapchain_t
 			{
 				types::VulkanSwapchainPtr swapchain;
 			};
-			auto operator()(types::VulkanSwapchainPtr swapchain, auto && state) const
+			static constexpr auto operator()(types::VulkanSwapchainPtr swapchain, auto && state) 
 			{
 				return S{FW(state), std::move(swapchain)};
 			}
 		};
 
-		constexpr auto operator()(VkSwapchainCreateInfoKHR const create_info) const
+		static constexpr auto operator()(VkSwapchainCreateInfoKHR const create_info) 
 		{
 			using vulkandemo::monad::stateio::get_state_t;
 			return get_state_t::stateio_factory_t{}()
@@ -807,16 +807,17 @@ struct filter_available_memory_types_t
 			VkPhysicalDevice physical_device;
 			VkMemoryPropertyFlags memory_flags;
 
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::filter_available_memory_types(logger, physical_device, memory_flags);
+				return setup::filter_available_memory_types(
+					FW(self).logger, FW(self).physical_device, FW(self).memory_flags);
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			VkPhysicalDevice physical_device,
-			VkMemoryPropertyFlags memory_flags) const
+			VkMemoryPropertyFlags memory_flags) 
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -834,40 +835,14 @@ struct query_physical_device_memory_properties_t
 		{
 			LoggerPtr logger;
 			VkPhysicalDevice physical_device;
-			constexpr auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				VkPhysicalDeviceMemoryProperties memory_properties;
-				vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
-
-				if (logger->should_log(spdlog::level::debug))
-				{
-					VkPhysicalDeviceProperties device_properties;
-					vkGetPhysicalDeviceProperties(physical_device, &device_properties);
-
-					logger->debug(
-						"Memory types for {}:\n\t{}",
-						device_properties.deviceName,
-						fmt::join(
-							std::views::enumerate(
-								std::span{memory_properties.memoryTypes}.subspan(
-									0, memory_properties.memoryTypeCount)) |
-								std::views::transform(
-									[](auto const & idx_and_memory_type)
-									{
-										return fmt::format(
-											"{}: {}",
-											std::get<0>(idx_and_memory_type),
-											string_VkMemoryPropertyFlags(
-												std::get<1>(idx_and_memory_type).propertyFlags));
-									}),
-							"\n\t"));
-				}
-
-				return memory_properties;
+				return setup::query_physical_device_memory_properties(
+					FW(self).logger, FW(self).physical_device);
 			}
 		};
 
-		constexpr auto operator()(LoggerPtr logger, VkPhysicalDevice physical_device) const
+		static constexpr auto operator()(LoggerPtr logger, VkPhysicalDevice physical_device) 
 		{
 			return IO{action_t{.logger = std::move(logger), .physical_device = physical_device}};
 		}
@@ -883,14 +858,15 @@ struct query_surface_capabilities_t
 		{
 			VkPhysicalDevice physical_device;
 			types::VulkanSurfacePtr surface;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::query_surface_capabilities(physical_device, surface);
+				return setup::query_surface_capabilities(
+					FW(self).physical_device, FW(self).surface);
 			}
 		};
 
-		constexpr auto operator()(
-			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) const
+		static constexpr auto operator()(
+			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) 
 		{
 			return IO{action_t{.physical_device = physical_device, .surface = std::move(surface)}};
 		}
@@ -906,14 +882,14 @@ struct query_present_modes_t
 		{
 			VkPhysicalDevice physical_device;
 			types::VulkanSurfacePtr surface;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::query_present_modes(physical_device, surface);
+				return setup::query_present_modes(FW(self).physical_device, FW(self).surface);
 			}
 		};
 
-		constexpr auto operator()(
-			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) const
+		static constexpr auto operator()(
+			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) 
 		{
 			return IO{action_t{.physical_device = physical_device, .surface = std::move(surface)}};
 		}
@@ -929,14 +905,15 @@ struct query_available_surface_formats_t
 		{
 			VkPhysicalDevice physical_device{};
 			types::VulkanSurfacePtr surface;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::enumerate_physical_device_surface_formats(physical_device, surface);
+				return setup::enumerate_physical_device_surface_formats(
+					FW(self).physical_device, FW(self).surface);
 			}
 		};
 
-		constexpr auto operator()(
-			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) const
+		static constexpr auto operator()(
+			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface) 
 		{
 			return IO{action_t{.physical_device = physical_device, .surface = std::move(surface)}};
 		}
@@ -953,21 +930,21 @@ struct log_surface_format_selection_t
 			std::vector<VkSurfaceFormatKHR> filtered_surface_formats;
 			std::vector<VkSurfaceFormatKHR> available_surface_formats;
 			std::vector<VkFormat> desired_formats;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
 				setup::log_surface_format_selection(
-					logger,
-					std::span<VkSurfaceFormatKHR const>{filtered_surface_formats},
-					std::span<VkSurfaceFormatKHR const>{available_surface_formats},
-					std::span<VkFormat const>{desired_formats});
+					FW(self).logger,
+					std::span<VkSurfaceFormatKHR const>{FW(self).filtered_surface_formats},
+					std::span<VkSurfaceFormatKHR const>{FW(self).available_surface_formats},
+					std::span<VkFormat const>{FW(self).desired_formats});
 			}
 		};
 
-		constexpr auto operator()(
+		static constexpr auto operator()(
 			LoggerPtr logger,
 			std::span<VkSurfaceFormatKHR const> filtered_surface_formats,
 			std::span<VkSurfaceFormatKHR const> available_surface_formats,
-			std::span<VkFormat const> desired_formats) const
+			std::span<VkFormat const> desired_formats) 
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -991,9 +968,9 @@ struct enumerate_physical_devices_t
 		{
 			LoggerPtr logger;
 			types::VulkanInstancePtr instance;
-			constexpr immer::array<VkPhysicalDevice> operator()() const
+			constexpr immer::array<VkPhysicalDevice> operator()(this auto&& self) 
 			{
-				return setup::enumerate_physical_devices(logger, instance);
+				return setup::enumerate_physical_devices(FW(self).logger, FW(self).instance);
 			}
 		};
 
@@ -1082,7 +1059,7 @@ struct create_debug_messenger_t
 			}
 		};
 
-		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
+		static constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) 
 		{
 			return IO{action_t{.logger = std::move(logger), .instance = std::move(instance)}};
 		}
@@ -1097,13 +1074,13 @@ struct create_debug_messenger_t
 			{
 				types::VulkanDebugMessengerPtr messenger;
 			};
-			auto operator()(types::VulkanDebugMessengerPtr messenger, auto state) const
+			static constexpr auto operator()(types::VulkanDebugMessengerPtr messenger, auto state) 
 			{
 				return S{std::move(state), std::move(messenger)};
 			}
 		};
 
-		constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) const
+		static constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance) 
 		{
 			using vulkandemo::monad::stateio::lift_io;
 			return lift_io(io_factory_t{}(std::move(logger), std::move(instance)))
@@ -1112,7 +1089,7 @@ struct create_debug_messenger_t
 
 		struct from_state_t
 		{
-			constexpr auto operator()(auto && state) const
+			static constexpr auto operator()(auto && state) 
 			{
 				// NOLINTNEXTLINE(bugprone-use-after-move)
 				return stateio_factory_t{}(FW(state).logger, FW(state).instance);
@@ -1121,7 +1098,7 @@ struct create_debug_messenger_t
 
 		struct using_state_t
 		{
-			constexpr auto operator()() const
+			static constexpr auto operator()() 
 			{
 				using vulkandemo::monad::stateio::get_state;
 				return get_state().bind(from_state_t{});
@@ -1142,42 +1119,13 @@ struct create_instance_t
 			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable;
 			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
 
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				auto const layers_to_enable_cstr = layers_to_enable | hof::views::value_of() |
-					ranges::to<std::vector<char const *>>;
-				auto const extensions_to_enable_cstr = extensions_to_enable |
-					hof::views::value_of() | ranges::to<std::vector<char const *>>;
-
-				logger->debug(
-					"Enabling instance extensions: {}", fmt::join(layers_to_enable_cstr, ", "));
-				logger->debug("Enabling layers: {}", fmt::join(extensions_to_enable_cstr, ", "));
-
-				// Application metadata.
-				VkApplicationInfo const app_info = {
-					.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-					.pApplicationName = name.c_str(),
-					.applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-					.pEngineName = name.c_str(),
-					.engineVersion = VK_MAKE_VERSION(1, 0, 0),
-					.apiVersion = VK_API_VERSION_1_3,
-				};
-
-				VkInstanceCreateInfo const create_info = {
-					.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-					.pApplicationInfo = &app_info,
-					.enabledLayerCount = static_cast<uint32_t>(layers_to_enable_cstr.size()),
-					.ppEnabledLayerNames = layers_to_enable_cstr.data(),
-					.enabledExtensionCount =
-						static_cast<uint32_t>(extensions_to_enable_cstr.size()),
-					.ppEnabledExtensionNames = extensions_to_enable_cstr.data(),
-				};
-
-				VkInstance out = nullptr;
-				VK_CHECK(
-					vkCreateInstance(&create_info, nullptr, &out),
-					"Failed to create Vulkan instance");
-				return types::make_instance_ptr(out);
+				return setup::create_instance(
+					FW(self).logger,
+					FW(self).name,
+					FW(self).layers_to_enable,
+					FW(self).extensions_to_enable);
 			}
 		};
 
@@ -1185,7 +1133,7 @@ struct create_instance_t
 			LoggerPtr logger,
 			std::string name,
 			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) 
 		{
 			return IO{action_t{
 				.logger = std::move(logger),
@@ -1198,10 +1146,10 @@ struct create_instance_t
 		{
 			LoggerPtr logger;
 			constexpr auto operator()(
-				this auto && self,
+				this auto&& self,
 				std::string name,
 				immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
+				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable) 
 			{
 				return io_factory_t{}(
 					FW(self).logger,
@@ -1284,19 +1232,13 @@ struct query_sdl_instance_extension_names_t
 		struct action_t
 		{
 			types::SDLWindowPtr sdl_window;
-			immer::array<types::AvailableInstanceExtensionNameCstr> operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				std::vector<char const *> out;
-				uint32_t extension_count = 0;
-				SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, nullptr);
-				out.resize(extension_count);
-				SDL_Vulkan_GetInstanceExtensions(sdl_window.get(), &extension_count, out.data());
-				return hof::views::cast<types::AvailableInstanceExtensionNameCstr>(out) |
-					ranges::to<immer::array>;
+				return setup::query_sdl_instance_extension_names(FW(self).sdl_window);
 			}
 		};
 
-		constexpr auto operator()(types::SDLWindowPtr sdl_window) const
+		static constexpr auto operator()(types::SDLWindowPtr sdl_window) 
 		{
 			return IO{action_t{std::move(sdl_window)}};
 		}
@@ -1309,20 +1251,9 @@ struct query_available_instance_layers_t
 	{
 		struct action_t
 		{
-			static constexpr immer::array<VkLayerProperties> operator()()
+			constexpr auto operator()() const
 			{
-				uint32_t available_layers_count = 0;
-				VK_CHECK(
-					vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
-					"Failed to enumerate instance layers");
-
-				auto out = immer::array<VkLayerProperties>(available_layers_count).transient();
-
-				VK_CHECK(
-					vkEnumerateInstanceLayerProperties(&available_layers_count, out.data_mut()),
-					"Failed to enumerate instance layers");
-
-				return std::move(out).persistent();
+				return setup::query_available_instance_layers();
 			}
 		};
 
@@ -1339,23 +1270,9 @@ struct query_available_instance_extensions_t
 	{
 		struct action_t
 		{
-			static constexpr immer::array<VkExtensionProperties> operator()()
+			constexpr auto operator()() const
 			{
-				uint32_t available_extensions_count = 0;
-				VK_CHECK(
-					vkEnumerateInstanceExtensionProperties(
-						nullptr, &available_extensions_count, nullptr),
-					"Failed to enumerate instance extensions");
-
-				auto out =
-					immer::array<VkExtensionProperties>{available_extensions_count}.transient();
-
-				VK_CHECK(
-					vkEnumerateInstanceExtensionProperties(
-						nullptr, &available_extensions_count, out.data_mut()),
-					"Failed to enumerate instance extensions");
-
-				return std::move(out).persistent();
+				return setup::query_available_instance_extensions();
 			}
 		};
 
@@ -1373,13 +1290,13 @@ struct query_window_title_t
 		struct action_t
 		{
 			types::SDLWindowPtr window;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return SDL_GetWindowTitle(window.get());
+				return setup::query_window_title(FW(self).window);
 			}
 		};
 
-		constexpr auto operator()(types::SDLWindowPtr window) const
+		static constexpr auto operator()(types::SDLWindowPtr window) 
 		{
 			return IO{action_t{std::move(window)}};
 		}
@@ -1394,13 +1311,13 @@ struct window_drawable_size_t
 		struct action_t
 		{
 			types::SDLWindowPtr window;
-			auto operator()() const
+			constexpr auto operator()(this auto&& self) 
 			{
-				return setup::window_drawable_size(window);
+				return setup::window_drawable_size(FW(self).window);
 			}
 		};
 
-		constexpr auto operator()(types::SDLWindowPtr window) const
+		static constexpr auto operator()(types::SDLWindowPtr window) 
 		{
 			return IO{action_t{std::move(window)}};
 		}
@@ -1417,12 +1334,12 @@ struct create_window_t
 			int width;
 			int height;
 
-			types::SDLWindowPtr operator()() const
+			constexpr types::SDLWindowPtr operator()(this auto&& self) 
 			{
-				return setup::create_window(title.c_str(), width, height);
+				return setup::create_window(FW(self).title.c_str(), FW(self).width, FW(self).height);
 			}
 		};
-		constexpr auto operator()(std::string title, int const width, int const height) const
+		static constexpr auto operator()(std::string title, int const width, int const height) 
 		{
 			return IO{action_t{.title = std::move(title), .width = width, .height = height}};
 		}
@@ -1443,13 +1360,10 @@ struct create_window_t
 				return S{FW(state), std::move(window)};
 			}
 		};
-		static constexpr auto operator()(std::string title, int width, int height)
+		static constexpr auto operator()(std::string title, int width, int height) 
 		{
 			using vulkandemo::monad::stateio::lift_io;
-			using vulkandemo::monad::stateio::store_t;
-
-			return lift_io(io_factory_t{}(std::move(title), width, height))
-				.bind(store_t::stateio_factory_t::with_mutator_t{modify_state_t{}});
+			return lift_io(io_factory_t{}(std::move(title), width, height)).store(modify_state_t{});
 		}
 	};
 };
