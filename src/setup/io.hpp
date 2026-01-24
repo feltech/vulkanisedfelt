@@ -5,7 +5,8 @@
 #include <span>
 #include <tuple>
 #include <utility>
-#include <vector>
+
+#include <immer/array.hpp>
 
 #include <vulkan/vulkan_core.h>
 
@@ -58,7 +59,7 @@ types::VulkanCommandPoolPtr create_command_pool(
  * @param size
  * @return
  */
-std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
+immer::array<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 	types::VulkanDevicePtr const & device,
 	types::VulkanRenderPassPtr const & render_pass,
 	std::span<types::VulkanImageViewPtr const> image_views,
@@ -230,7 +231,7 @@ immer::array<VkExtensionProperties> enumerate_physical_device_extension_properti
  * @param surface
  * @return
  */
-std::vector<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
+immer::array<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
 	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
 
 /**
@@ -264,7 +265,7 @@ VkSurfaceCapabilitiesKHR query_surface_capabilities(
  * @param surface
  * @return
  */
-std::vector<VkPresentModeKHR> query_present_modes(
+immer::array<VkPresentModeKHR> query_present_modes(
 	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface);
 
 /**

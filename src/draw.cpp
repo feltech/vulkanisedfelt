@@ -196,7 +196,7 @@ TEST_CASE("Acquire swapchain image")
 		{{std::pair{queue_family_idx, types::VulkanQueueCount{1}}}},
 		{{types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}}});
 
-	std::vector<VkSurfaceFormatKHR> const available_formats =
+	immer::array<VkSurfaceFormatKHR> const available_formats =
 		setup::filter_available_surface_formats(
 			logger,
 			physical_device,
@@ -263,7 +263,7 @@ TEST_CASE("Populate render pass")
 	auto const image_available_semaphore = setup::create_semaphore(device);
 	auto const rendering_finished_semaphore = setup::create_semaphore(device);
 
-	std::vector<VkSurfaceFormatKHR> const available_formats =
+	immer::array<VkSurfaceFormatKHR> const available_formats =
 		setup::filter_available_surface_formats(
 			logger,
 			physical_device,
@@ -278,7 +278,7 @@ TEST_CASE("Populate render pass")
 
 	VkExtent2D const drawable_size = setup::window_drawable_size(window);
 
-	std::vector<types::VulkanFramebufferPtr> const frame_buffers =
+	immer::array<types::VulkanFramebufferPtr> const frame_buffers =
 		setup::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
 
 	types::VulkanCommandPoolPtr const command_pool =
@@ -336,7 +336,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 	auto const image_available_semaphore = setup::create_semaphore(device);
 	auto const rendering_finished_semaphore = setup::create_semaphore(device);
 
-	std::vector<VkSurfaceFormatKHR> const available_formats =
+	immer::array<VkSurfaceFormatKHR> const available_formats =
 		setup::filter_available_surface_formats(
 			logger,
 			physical_device,
@@ -351,7 +351,7 @@ TEST_CASE("Populate command queue and present")	 // NOLINT(*-function-cognitive-
 
 	VkExtent2D const drawable_size = setup::window_drawable_size(window);
 
-	std::vector<types::VulkanFramebufferPtr> const frame_buffers =
+	immer::array<types::VulkanFramebufferPtr> const frame_buffers =
 		setup::create_per_image_frame_buffers(device, render_pass, image_views, drawable_size);
 
 	types::VulkanCommandPoolPtr const command_pool =

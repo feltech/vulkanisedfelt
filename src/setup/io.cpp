@@ -116,7 +116,7 @@ types::VulkanCommandPoolPtr create_command_pool(
 	return types::make_command_pool_ptr(std::move(device), command_pool);
 }
 
-std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
+immer::array<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 	types::VulkanDevicePtr const & device,
 	types::VulkanRenderPassPtr const & render_pass,
 	std::span<types::VulkanImageViewPtr const> const image_views,
@@ -135,7 +135,7 @@ std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 	};
 
 	return image_views |
-		std::views::transform(
+		ranges::views::transform(
 			   [&](types::VulkanImageViewPtr const & image_view)
 			   {
 				   VkImageView image_view_handle = image_view.get();
@@ -147,7 +147,7 @@ std::vector<types::VulkanFramebufferPtr> create_per_image_frame_buffers(
 				   frame_buffer_create_info.pAttachments = nullptr;	 // reset.
 				   return types::make_framebuffer_ptr(device, out);
 			   }) |
-		ranges::to<std::vector>();
+		ranges::to<immer::array>();
 }
 
 types::VulkanRenderPassPtr create_single_presentation_subpass_render_pass(
@@ -213,19 +213,20 @@ VkSurfaceCapabilitiesKHR query_surface_capabilities(
 	return surface_capabilities;
 }
 
-std::vector<VkPresentModeKHR> query_present_modes(
+immer::array<VkPresentModeKHR> query_present_modes(
 	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
 {
 	uint32_t count = 0;
 	VK_CHECK(
 		vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface.get(), &count, nullptr),
 		"Failed to get present mode count");
-	std::vector<VkPresentModeKHR> out(count);
+	auto out = immer::array<VkPresentModeKHR>{count}.transient();
 	VK_CHECK(
 		vkGetPhysicalDeviceSurfacePresentModesKHR(
-			physical_device, surface.get(), &count, out.data()),
+			physical_device, surface.get(), &count, out.data_mut()),
 		"Failed to get present modes");
-	return out;
+
+	return std::move(out).persistent();
 }
 
 types::VulkanSwapchainPtr create_swapchain(
@@ -309,13 +310,13 @@ types::VulkanSwapchainPtr create_exclusive_double_buffer_swapchain(
 		query_surface_capabilities(physical_device, surface);
 
 	// Get present modes.
-	std::vector<VkPresentModeKHR> const present_modes =
+	immer::array<VkPresentModeKHR> const present_modes =
 		query_present_modes(physical_device, surface);
 
 	// Log present modes at debug level.
 	logger->debug(
 		"\tAvailable present modes: {}",
-		fmt::join(std::views::transform(present_modes, &string_VkPresentModeKHR), ", "));
+		fmt::join(present_modes | std::views::transform(&string_VkPresentModeKHR), ", "));
 
 	// Choose best present mode.
 	VkPresentModeKHR const present_mode = [&]
@@ -417,18 +418,20 @@ create_exclusive_double_buffer_swapchain_and_image_views(
 	return {std::move(swapchain), std::move(image_views)};
 }
 
-std::vector<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
+immer::array<VkSurfaceFormatKHR> enumerate_physical_device_surface_formats(
 	VkPhysicalDevice physical_device, types::VulkanSurfacePtr const & surface)
 {
 	uint32_t count = 0;
 	VK_CHECK(
 		vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface.get(), &count, nullptr),
 		"Failed to get surface format count");
-	std::vector<VkSurfaceFormatKHR> out(count);
+	auto out = immer::array<VkSurfaceFormatKHR>{count}.transient();
 	VK_CHECK(
-		vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface.get(), &count, out.data()),
+		vkGetPhysicalDeviceSurfaceFormatsKHR(
+			physical_device, surface.get(), &count, out.data_mut()),
 		"Failed to get surface formats");
-	return out;
+
+	return std::move(out).persistent();
 }
 
 void log_surface_format_selection(
@@ -482,16 +485,16 @@ types::VulkanDevicePtr create_device(
 		queue_family_and_counts,
 	std::span<types::AvailableDeviceExtensionNameView const> device_extension_names)
 {
-	std::vector<char const *> const device_extension_cstr_names = device_extension_names |
-		hof::views::value_of() | std::views::transform(&std::string_view::data) |
-		ranges::to<std::vector>();
+	immer::array<char const *> const device_extension_cstr_names = device_extension_names |
+		hof::views::value_of() | ranges::views::transform(&std::string_view::data) |
+		ranges::to<immer::array>();
 
-	std::vector const queue_priorities(
+	immer::array<float> const queue_priorities(
 		std::ranges::max(queue_family_and_counts | std::views::values), 1.0F);
 
-	std::vector<VkDeviceQueueCreateInfo> const queue_create_infos =
+	immer::array<VkDeviceQueueCreateInfo> const queue_create_infos =
 		queue_family_and_counts |
-		std::views::transform(
+		ranges::views::transform(
 			[&](auto const & queue_family_and_count)
 			{
 				auto const [queue_family_idx, queue_count] = queue_family_and_count;
@@ -502,7 +505,7 @@ types::VulkanDevicePtr create_device(
 					.pQueuePriorities = queue_priorities.data()};
 				return queue_create_info;
 			}) |
-		ranges::to<std::vector>();
+		ranges::to<immer::array>();
 
 	VkDeviceCreateInfo const device_create_info{
 		.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -557,7 +560,7 @@ immer::array<VkLayerProperties> query_available_instance_layers()
 		vkEnumerateInstanceLayerProperties(&available_layers_count, nullptr),
 		"Failed to enumerate instance layers");
 
-	auto out = immer::array<VkLayerProperties>(available_layers_count).transient();
+	auto out = immer::array<VkLayerProperties>{available_layers_count}.transient();
 
 	VK_CHECK(
 		vkEnumerateInstanceLayerProperties(&available_layers_count, out.data_mut()),
@@ -595,10 +598,12 @@ immer::array<VkPhysicalDevice> enumerate_physical_devices(
 	VK_CHECK(
 		vkEnumeratePhysicalDevices(instance.get(), &device_count, nullptr),
 		"Failed to enumerate physical devices");
-	auto physical_devices = immer::array<VkPhysicalDevice>{device_count}.transient();
+	auto out = immer::array<VkPhysicalDevice>{device_count}.transient();
 	VK_CHECK(
-		vkEnumeratePhysicalDevices(instance.get(), &device_count, physical_devices.data_mut()),
+		vkEnumeratePhysicalDevices(instance.get(), &device_count, out.data_mut()),
 		"Failed to enumerate physical devices");
+
+	immer::array<VkPhysicalDevice> const physical_devices = std::move(out).persistent();
 
 	// Log device information.
 	if (logger->should_log(spdlog::level::debug))
@@ -613,7 +618,7 @@ immer::array<VkPhysicalDevice> enumerate_physical_devices(
 				"\tDevice Type: {}", string_VkPhysicalDeviceType(device_properties.deviceType));
 		}
 	}
-	return std::move(physical_devices).persistent();
+	return physical_devices;
 }
 
 immer::array<VkExtensionProperties> enumerate_physical_device_extension_properties(
@@ -628,7 +633,8 @@ immer::array<VkExtensionProperties> enumerate_physical_device_extension_properti
 		vkEnumerateDeviceExtensionProperties(
 			physical_device, nullptr, &extension_count, out.data_mut()),
 		"Failed to get device extensions");
-	return out.persistent();
+
+	return std::move(out).persistent();
 }
 
 VkPhysicalDeviceProperties query_physical_device_properties(VkPhysicalDevice physical_device)
@@ -646,8 +652,7 @@ immer::array<VkQueueFamilyProperties> query_available_queue_family_properties(
 
 	auto out = immer::array<VkQueueFamilyProperties>{queue_family_count}.transient();
 
-	vkGetPhysicalDeviceQueueFamilyProperties(
-		physical_device, &queue_family_count, out.data_mut());
+	vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, out.data_mut());
 
 	return std::move(out).persistent();
 }
@@ -914,7 +919,8 @@ types::SDLWindowPtr create_window(char const * title, int const width, int const
 	return types::make_window_ptr(window);
 }
 
-std::optional<types::VulkanQueueFamilyIdx> maybe_queue_family_idx_if_supported_by_physical_device_and_surface(
+std::optional<types::VulkanQueueFamilyIdx>
+maybe_queue_family_idx_if_supported_by_physical_device_and_surface(
 	VkPhysicalDevice physical_device,
 	types::VulkanSurfacePtr const & surface,
 	types::VulkanQueueFamilyIdx const queue_family_idx)

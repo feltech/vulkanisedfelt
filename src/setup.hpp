@@ -44,7 +44,7 @@ namespace vulkandemo::setup
  */
 // [DEPRECATED] Use enumerate_physical_device_surface_formats (io.hpp) and filter_surface_formats
 // (filters.hpp) instead.
-[[deprecated]] std::vector<VkSurfaceFormatKHR> filter_available_surface_formats(
+immer::array<VkSurfaceFormatKHR> filter_available_surface_formats(
 	LoggerPtr const & logger,
 	VkPhysicalDevice physical_device,
 	types::VulkanSurfacePtr const & surface,
@@ -117,7 +117,7 @@ filter_available_queue_families(
  * @param desired_layer_names
  * @return
  */
-[[deprecated]] std::vector<types::AvailableInstanceLayerNameCstr> filter_available_layers(
+immer::array<types::AvailableInstanceLayerNameCstr> filter_available_layers(
 	LoggerPtr const & logger,
 	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names);
 
@@ -128,9 +128,8 @@ filter_available_queue_families(
  * @param desired_extension_names
  * @return
  */
-[[deprecated]] std::vector<types::AvailableInstanceExtensionNameCstr>
-filter_available_instance_extensions(
+immer::array<types::AvailableInstanceExtensionNameCstr> filter_available_instance_extensions(
 	LoggerPtr const & logger,
-	std::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names);
+	immer::set<types::DesiredInstanceExtensionNameView> const & desired_extension_names);
 
 }  // namespace vulkandemo::setup
