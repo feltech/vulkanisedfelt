@@ -398,6 +398,7 @@ namespace test
 {
 using vulkandemo::monad::stateio::get_state_t;
 using vulkandemo::monad::stateio::lift_io;
+namespace readerio = vulkandemo::monad::readerio;
 namespace create_a_window
 {
 constexpr int kExpectedWidth = 800;
@@ -649,7 +650,6 @@ struct query_sdl_and_desired_instance_extensions_t
 	};
 };
 
-
 struct query_instance_args_from_window_t
 {
 	struct io_factory_t
@@ -729,20 +729,22 @@ namespace create_a_vulkan_surface
 
 struct create_surface_t
 {
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
-		static constexpr auto operator()(
-			types::SDLWindowPtr window, types::VulkanInstancePtr instance)
-		{
-			return lift_io(
-				monad::create_surface_t::io_factory_t{}(std::move(window), std::move(instance)));
-		}
-
 		struct from_state_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
-				return StateIO{stateio_factory_t{}(state->window, state->instance)};
+				return readerio::lift_io(
+					monad::create_surface_t::io_factory_t{}(state->window, state->instance));
+			}
+		};
+
+		struct using_state_t
+		{
+			static constexpr auto operator()()
+			{
+				return readerio::get_state().bind(from_state_t{});
 			}
 		};
 	};
@@ -1945,10 +1947,11 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 TEST_CASE("Create a Vulkan surface")
 {
 	using namespace test::create_a_vulkan_surface;
+	namespace stateio = vulkandemo::monad::stateio;
 
-	auto const program = test::create_default_instance_t::stateio_factory_t{}()
-							 .bind(create_surface_t::stateio_factory_t::from_state_t{})
-							 .fmap(check_surface_t{});
+	auto const program = test::create_default_instance_t::stateio_factory_t{}().then(
+		stateio::lift_readerio(create_surface_t::readerio_factory_t::using_state_t{}())
+			.fmap(check_surface_t{}));
 
 	struct state_t
 	{
@@ -2070,6 +2073,7 @@ TEST_CASE("Create logical device with queues")
 
 TEST_CASE("Create swapchain")
 {
+	SUBCASE("Create swapchain and image views")
 	{
 		auto const program =
 			test::create_default_instance_and_physical_device_and_queue_family_t::
