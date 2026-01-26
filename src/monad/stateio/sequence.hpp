@@ -1,5 +1,4 @@
 #pragma once
-// IWYU pragma: private, include "../io.hpp"
 #include <boost/hana/fwd/ap.hpp>
 #include <boost/hana/fwd/append.hpp>
 #include <boost/hana/fwd/fold_left.hpp>

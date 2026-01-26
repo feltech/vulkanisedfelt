@@ -1,5 +1,5 @@
+// IWYU pragma: private, include "../stateio.hpp"
 #pragma once
-// IWYU pragma: private, include "../io.hpp"
 
 #include <utility>
 

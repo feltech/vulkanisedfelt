@@ -58,7 +58,7 @@ struct is_applicable<Func, Tuple<Args...>> : std::is_invocable<Func, Args...>
 }  // namespace detail
 
 template <class F, class T>
-concept applicable_with = detail::is_applicable<F, T>::value;
+concept applicable_with = detail::is_applicable<std::decay_t<F>, std::decay_t<T>>::value;
 
 namespace detail
 {

@@ -1,5 +1,5 @@
-#pragma once
 // IWYU pragma: private, include "../io.hpp"
+#pragma once
 #include <ranges>
 #include <type_traits>
 

@@ -11,3 +11,4 @@
 #include "./stateio/hana.hpp"
 #include "./stateio/sequence.hpp"
 #include "./stateio/store.hpp"
+#include "./stateio/lift_kleisli.hpp"

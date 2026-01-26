@@ -674,28 +674,18 @@ struct query_instance_args_from_window_t
 
 	struct readerio_factory_t
 	{
-		static constexpr auto operator()(LoggerPtr logger, types::SDLWindowPtr window)
-		{
-			using vulkandemo::monad::readerio::lift_io;
-			return lift_io(io_factory_t{}(std::move(logger), std::move(window)));
-		}
-
-		struct from_state_t
+		struct action_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
-				return readerio_factory_t{}(state->logger, state->window);
+				return io_factory_t{}(state->logger, state->window);
 			}
 		};
 
-		struct using_state_t
+		static constexpr auto operator()()
 		{
-			static constexpr auto operator()()
-			{
-				using vulkandemo::monad::readerio::get_state;
-				return get_state().bind(from_state_t{});
-			}
-		};
+			return readerio::ReaderIO{action_t{}};
+		}
 	};
 };
 
@@ -712,8 +702,7 @@ struct create_default_instance_t
 			// Create application window.
 			return monad::create_window_t::stateio_factory_t{}("", 0, 0)
 				// Gather arguments for constructing a vulkan instance.
-				.then(lift_readerio(
-					query_instance_args_from_window_t::readerio_factory_t::using_state_t{}()))
+				.then(lift_readerio(query_instance_args_from_window_t::readerio_factory_t{}()))
 				// Create/store Vulkan instance
 				.bind(create_instance_t::stateio_factory_t::using_state_t{})
 				// Create/store debug messenger callback closure.
@@ -731,22 +720,17 @@ struct create_surface_t
 {
 	struct readerio_factory_t
 	{
-		struct from_state_t
+		struct action_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
-				return readerio::lift_io(
-					monad::create_surface_t::io_factory_t{}(state->window, state->instance));
+				return monad::create_surface_t::io_factory_t{}(state->window, state->instance);
 			}
 		};
-
-		struct using_state_t
+		static constexpr auto operator()()
 		{
-			static constexpr auto operator()()
-			{
-				return readerio::get_state().bind(from_state_t{});
-			}
-		};
+			return readerio::ReaderIO{action_t{}};
+		}
 	};
 };
 
@@ -892,27 +876,23 @@ struct check_supported_extensions_and_memory_types_and_queue_families_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
-		struct with_device_and_surface_t
+		struct action_t
 		{
 			VkPhysicalDevice chosen_device;
 			types::VulkanSurfacePtr surface;
 			constexpr auto operator()(this auto && self, auto const & state)
 			{
-				return lift_io(
-					io_factory_t{}(state->logger, FW(self).chosen_device, FW(self).surface));
+				return io_factory_t{}(state->logger, FW(self).chosen_device, FW(self).surface);
 			}
 		};
 
 		static constexpr auto operator()(
 			VkPhysicalDevice chosen_device, types::VulkanSurfacePtr surface)
 		{
-			using vulkandemo::monad::stateio::get_state_t;
-
-			return get_state_t::stateio_factory_t{}().bind(
-				with_device_and_surface_t{
-					.chosen_device = chosen_device, .surface = std::move(surface)});
+			return readerio::ReaderIO{
+				action_t{.chosen_device = chosen_device, .surface = std::move(surface)}};
 		}
 	};
 };
@@ -1950,8 +1930,7 @@ TEST_CASE("Create a Vulkan surface")
 	namespace stateio = vulkandemo::monad::stateio;
 
 	auto const program = test::create_default_instance_t::stateio_factory_t{}().then(
-		stateio::lift_readerio(create_surface_t::readerio_factory_t::using_state_t{}())
-			.fmap(check_surface_t{}));
+		stateio::lift_readerio(create_surface_t::readerio_factory_t{}()).fmap(check_surface_t{}));
 
 	struct state_t
 	{
@@ -1983,15 +1962,17 @@ TEST_CASE("Create a Vulkan surface")
 	// 	std::filesystem::copy_options::update_existing);
 }
 
-/*
 TEST_CASE("Enumerate devices")
 {
 	using namespace test::enumerate_devices;
-	auto const program = test::create_default_instance_t::stateio_factory_t{}()
-							 .bind(choose_physical_device_and_create_surface_t::stateio_factory_t{})
-							 .bind(
-								 check_supported_extensions_and_memory_types_and_queue_families_t::
-									 stateio_factory_t{});
+	namespace stateio = vulkandemo::monad::stateio;
+	auto const program =
+		test::create_default_instance_t::stateio_factory_t{}()
+			.bind(choose_physical_device_and_create_surface_t::stateio_factory_t{})
+			.bind(
+				stateio::lift_kleisli_t{
+					check_supported_extensions_and_memory_types_and_queue_families_t::
+						readerio_factory_t{}});
 
 	struct state_t
 	{
@@ -2006,6 +1987,7 @@ TEST_CASE("Enumerate devices")
 	CHECK(result);
 }
 
+/*
 TEST_CASE("Select physical device")
 {
 	using namespace test::select_physical_device;
