@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024-2025 David Feltell
 #pragma once
+#include <cassert>
 #include <string>
 #include <utility>
 
@@ -14,6 +15,7 @@
 #include "../hof.hpp"
 #include "../hof/functions.hpp"
 #include "../monad/io.hpp"
+#include "../monad/readerio.hpp"
 #include "../monad/stateio.hpp"
 #include "../setup.hpp"
 #include "../types.hpp"
@@ -26,6 +28,9 @@ namespace vulkandemo::setup::monad
 {
 using vulkandemo::monad::io::IO;
 using vulkandemo::monad::stateio::StateIO;
+namespace io = vulkandemo::monad::io;
+namespace readerio = vulkandemo::monad::readerio;
+namespace stateio = vulkandemo::monad::stateio;
 
 struct create_minimal_pipeline_layout_t
 {
@@ -174,7 +179,6 @@ struct create_per_image_frame_buffers_t
 	};
 };
 
-// IO monad lifter for creating a single presentation subpass render pass (bind-like)
 struct create_single_presentation_subpass_render_pass_t
 {
 	struct io_factory_t
@@ -182,27 +186,36 @@ struct create_single_presentation_subpass_render_pass_t
 		struct action_t
 		{
 			types::VulkanDevicePtr device;
-			VkFormat surface_format;
+			VkSurfaceFormatKHR surface_format;
 			constexpr auto operator()(this auto && self)
 			{
 				return setup::create_single_presentation_subpass_render_pass(
-					FW(self).surface_format, FW(self).device);
+					FW(self).surface_format.format, FW(self).device);
 			}
 		};
 
 		static constexpr auto operator()(
-			types::VulkanDevicePtr device, VkFormat const surface_format)
+			types::VulkanDevicePtr device, VkSurfaceFormatKHR const surface_format)
 		{
 			return IO{action_t{.device = std::move(device), .surface_format = surface_format}};
 		}
 	};
 
-	struct with_surface_format_t
+	struct readerio_factory_t
 	{
-		VkFormat surface_format;
-		constexpr auto operator()(this auto && self, types::VulkanDevicePtr device)
+		struct action_t
 		{
-			return io_factory_t{}(std::move(device), FW(self).surface_format);
+			static constexpr auto operator()(auto && state)
+			{
+				assert(state->device);
+				assert(state->surface_format.format != VK_FORMAT_UNDEFINED);
+				return io_factory_t{}(state->device, state->surface_format);
+			}
+		};
+
+		static constexpr auto operator()()
+		{
+			return readerio::ReaderIO{action_t{}};
 		}
 	};
 };
@@ -339,6 +352,28 @@ struct create_device_t
 		}
 	};
 
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names;
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return io_factory_t{}(
+					state->physical_device,
+					state->queue_family_and_counts,
+					FW(self).device_extension_names);
+			}
+		};
+
+		static constexpr auto operator()(
+			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
+		{
+			return readerio::ReaderIO{
+				action_t{.device_extension_names = std::move(device_extension_names)}};
+		}
+	};
+
 	struct stateio_factory_t
 	{
 		struct modify_state_t
@@ -366,6 +401,13 @@ struct create_device_t
 						   physical_device,
 						   std::move(queue_family_and_counts),
 						   std::move(device_extension_names)))
+				.store(modify_state_t{});
+		}
+
+		static constexpr auto operator()(
+			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
+		{
+			return stateio::lift_readerio(readerio_factory_t{}(std::move(device_extension_names)))
 				.store(modify_state_t{});
 		}
 	};
@@ -420,12 +462,18 @@ struct query_swapchain_images_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
-		static constexpr auto operator()(auto const & state)
+		struct action_t
 		{
-			using vulkandemo::monad::stateio::lift_io;
-			return lift_io(io_factory_t{}(state->device, state->swapchain));
+			static constexpr auto operator()(auto const & state)
+			{
+				return io_factory_t{}(state->device, state->swapchain);
+			}
+		};
+		static constexpr auto operator()()
+		{
+			return readerio::ReaderIO{action_t{}};
 		}
 	};
 };
@@ -458,20 +506,34 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
-		struct with_surface_format_and_images_t
+		struct action_t
 		{
-			VkSurfaceFormatKHR surface_format;
 			immer::array<VkImage> images;
-			constexpr auto operator()(this auto && self, auto const & state)
+			constexpr auto operator()(this auto && self, auto && state)
 			{
-				using vulkandemo::monad::stateio::lift_io;
-				return lift_io(
-					io_factory_t{}(state->device, FW(self).surface_format, FW(self).images));
+				return io_factory_t{}(state->device, state->surface_format, FW(self).images);
 			}
 		};
 
+		static constexpr auto operator()(immer::array<VkImage> images)
+		{
+			return readerio::ReaderIO{action_t{.images = std::move(images)}};
+		}
+
+		struct with_images_t
+		{
+			immer::array<VkImage> images;
+			constexpr auto operator()(this auto && self)
+			{
+				return readerio_factory_t{}(FW(self).images);
+			}
+		};
+	};
+
+	struct stateio_factory_t
+	{
 		struct modify_state_t
 		{
 			static constexpr auto operator()(
@@ -486,26 +548,11 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 			}
 		};
 
-		static constexpr auto operator()(
-			VkSurfaceFormatKHR surface_format, immer::array<VkImage> images)
+		static constexpr auto operator()(immer::array<VkImage> images)
 		{
-			using vulkandemo::monad::stateio::get_state_t;
-			return get_state_t::stateio_factory_t{}()
-				.bind(
-					with_surface_format_and_images_t{
-						.surface_format = surface_format, .images = std::move(images)})
+			return stateio::lift_readerio(readerio_factory_t::with_images_t{std::move(images)}())
 				.store(modify_state_t{});
 		}
-
-		struct with_surface_format_t
-		{
-			VkSurfaceFormatKHR surface_format;
-
-			constexpr auto operator()(this auto && self, immer::array<VkImage> images)
-			{
-				return stateio_factory_t{}(FW(self).surface_format, std::move(images));
-			}
-		};
 	};
 };
 
@@ -872,7 +919,6 @@ struct query_present_modes_t
 	};
 };
 
-// IO monad lifter for querying available surface formats (bind-like)
 struct query_available_surface_formats_t
 {
 	struct io_factory_t
@@ -892,6 +938,72 @@ struct query_available_surface_formats_t
 			VkPhysicalDevice physical_device, types::VulkanSurfacePtr surface)
 		{
 			return IO{action_t{.physical_device = physical_device, .surface = std::move(surface)}};
+		}
+	};
+};
+
+struct select_surface_format_t
+{
+	struct io_factory_t
+	{
+		static constexpr auto operator()(
+			LoggerPtr logger,
+			VkPhysicalDevice physical_device,
+			types::VulkanSurfacePtr surface,
+			immer::array<VkFormat> desired_formats)
+		{
+			return query_available_surface_formats_t::io_factory_t{}(
+					   physical_device, std::move(surface))
+				.fmap(
+					filter_surface_formats_t::with_logger_and_desired_formats_t{
+						.logger = std::move(logger), .desired_formats = std::move(desired_formats)})
+				.fmap(hof::transform_range_to_front_elem_t{});
+		}
+	};
+
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			immer::array<VkFormat> desired_formats;
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				assert(state->logger);
+				assert(state->physical_device);
+				assert(state->surface);
+				return io_factory_t{}(
+					FW(state)->logger,
+					FW(state)->physical_device,
+					FW(state)->surface,
+					FW(self).desired_formats);
+			}
+		};
+
+		static constexpr auto operator()(immer::array<VkFormat> desired_formats)
+		{
+			return readerio::ReaderIO{action_t{std::move(desired_formats)}};
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		struct modify_state_t
+		{
+			static constexpr auto operator()(VkSurfaceFormatKHR const surface_format, auto && state)
+			{
+				return FW(state).update(
+					[&](auto obj)
+					{
+						obj.surface_format = surface_format;
+						return obj;
+					});
+			}
+		};
+
+		static constexpr auto operator()(immer::array<VkFormat> desired_formats)
+		{
+			return stateio::lift_readerio(readerio_factory_t{}(std::move(desired_formats)))
+				.store(modify_state_t{});
 		}
 	};
 };
@@ -983,17 +1095,25 @@ struct create_surface_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct readerio_factory_t
 	{
-		struct from_state_t
+		struct action_t
 		{
-			static constexpr auto operator()(auto const & state)
+			static constexpr auto operator()(auto && state)
 			{
-				using vulkandemo::monad::stateio::lift_io;
-				return lift_io(io_factory_t{}(state->window, state->instance));
+				return io_factory_t{}(state->window, state->instance);
 			}
 		};
 
+		static constexpr auto operator()()
+		{
+			namespace readerio = vulkandemo::monad::readerio;
+			return readerio::ReaderIO{action_t{}};
+		}
+	};
+
+	struct stateio_factory_t
+	{
 		struct modify_state_t
 		{
 			static constexpr auto operator()(types::VulkanSurfacePtr surface, auto && state)
@@ -1009,8 +1129,8 @@ struct create_surface_t
 
 		static constexpr auto operator()()
 		{
-			using vulkandemo::monad::stateio::get_state_t;
-			return get_state_t::stateio_factory_t{}().bind(from_state_t{}).store(modify_state_t{});
+			namespace stateio = vulkandemo::monad::stateio;
+			return stateio::lift_readerio(readerio_factory_t{}()).store(modify_state_t{});
 		}
 	};
 };

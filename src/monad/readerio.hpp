@@ -10,3 +10,4 @@
 #include "./readerio/hana.hpp"
 #include "./readerio/get_state.hpp"
 #include "./readerio/sequence.hpp"
+#include "./readerio/lift_kleisli.hpp"
