@@ -1689,6 +1689,7 @@ struct swapchain_create_info_t
 			VkSurfaceFormatKHR surface_format,
 			types::VulkanSwapchainPtr previous_swapchain)
 		{
+			assert(surface_format.format != VK_FORMAT_UNDEFINED);
 			auto surface_for_present_mode_query = surface;
 			auto surface_for_capabilities_query = surface;
 			auto surface_for_swapchain_create_info = std::move(surface);
@@ -1734,24 +1735,15 @@ struct create_swapchain_and_image_views_t
 {
 	struct stateio_factory_t
 	{
-		struct with_state_t
-		{
-			constexpr auto operator()(auto && state) const
-			{
-				return stateio::lift_readerio(swapchain_create_info_t::readerio_factory_t{}())
-					.bind(monad::create_swapchain_t::stateio_factory_t{})
-					.then(
-						stateio::lift_readerio(
-							monad::query_swapchain_images_t::readerio_factory_t{}()))
-					.bind(
-						monad::create_colour_aspect_single_mip_single_layer_image_views_t::
-							stateio_factory_t{});
-			}
-		};
-
 		static constexpr auto operator()()
 		{
-			return stateio::get_state().bind(with_state_t{});
+			return stateio::lift_readerio(swapchain_create_info_t::readerio_factory_t{}())
+				.bind(monad::create_swapchain_t::stateio_factory_t{})
+				.then(
+					stateio::lift_readerio(monad::query_swapchain_images_t::readerio_factory_t{}()))
+				.bind(
+					monad::create_colour_aspect_single_mip_single_layer_image_views_t::
+						stateio_factory_t{});
 		}
 	};
 };
@@ -1843,9 +1835,8 @@ struct create_and_check_render_pass_t
 	{
 		static constexpr auto operator()()
 		{
-			using monad::create_single_presentation_subpass_render_pass_t;
-			return create_single_presentation_subpass_render_pass_t::readerio_factory_t{}().fmap(
-				check_render_pass_t{});
+			return monad::create_single_presentation_subpass_render_pass_t::readerio_factory_t{}()
+				.fmap(check_render_pass_t{});
 		}
 	};
 
@@ -1864,6 +1855,49 @@ struct create_and_check_render_pass_t
 	};
 };
 }  // namespace create_a_render_pass
+
+namespace create_frame_buffers
+{
+struct check_frame_buffers_t
+{
+	static constexpr auto operator()(immer::array<types::VulkanFramebufferPtr> frame_buffers)
+	{
+		CHECK(frame_buffers.size() > 0);
+		CHECK(frame_buffers.front());
+		return true;
+	}
+};
+
+struct create_and_check_frame_buffers_t
+{
+	struct readerio_factory_t
+	{
+		static constexpr auto operator()()
+		{
+			return monad::window_drawable_size_t::readerio_factory{}()
+				.bind(monad::create_per_image_frame_buffers_t::readerio_factory_t{})
+				.fmap(check_frame_buffers_t{});
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		static constexpr auto operator()()
+		{
+			// > Layout (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) requires the extensions VK_KHR_swapchain.
+			return monad::create_device_t::stateio_factory_t{}(
+					   {types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
+			.then(
+				monad::select_surface_format_t::stateio_factory_t{}(
+					immer::array{{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}}))
+			.then(create_swapchain::create_swapchain_and_image_views_t::stateio_factory_t{}())
+				.then(
+					monad::create_single_presentation_subpass_render_pass_t::stateio_factory_t{}())
+				.then(stateio::lift_readerio(readerio_factory_t{}()));
+		}
+	};
+};
+}  // namespace create_frame_buffers
 
 namespace monad_utilities
 {
@@ -2193,10 +2227,37 @@ TEST_CASE("Create render pass")
 	CHECK(result);
 }
 
-/*
 TEST_CASE("Create frame buffers")
 {
-	LoggerPtr const logger = create_logger("Create frame buffers");
+	{
+		using namespace test::create_frame_buffers;
+
+		auto const program = test::create_default_instance_and_physical_device_and_queue_family_t::
+								 stateio_factory_t{}()
+									 .then(create_and_check_frame_buffers_t::stateio_factory_t{}());
+
+		struct state_t
+		{
+			LoggerPtr logger = create_logger("Create frame buffers");
+			types::VulkanDebugMessengerPtr messenger;
+			types::SDLWindowPtr window;
+			types::VulkanInstancePtr instance;
+			types::VulkanSurfacePtr surface;
+			VkPhysicalDevice physical_device;
+			immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
+				queue_family_and_counts;
+			types::VulkanDevicePtr device;
+			VkSurfaceFormatKHR surface_format;
+			types::VulkanSwapchainPtr swapchain;
+			immer::array<types::VulkanImageViewPtr> image_views;
+			types::VulkanRenderPassPtr render_pass;
+		} initial_state_v;
+		immer::box<state_t> initial_state{std::move(initial_state_v)};
+
+		auto const [result, state] = program(std::move(initial_state))().sync_wait();
+		CHECK(result);
+	}
+	LoggerPtr const logger = create_logger("Create frame buffers (legacy)");
 	types::SDLWindowPtr const window = create_window("", 1, 2);
 	VkExtent2D const drawable_size = window_drawable_size(window);
 	CHECK(drawable_size.width > 0);
@@ -2237,6 +2298,7 @@ TEST_CASE("Create frame buffers")
 	CHECK(frame_buffers.size() == image_views.size());
 }
 
+/*
 TEST_CASE("Create command buffers")
 {
 	LoggerPtr const logger = create_logger("Create command buffers");

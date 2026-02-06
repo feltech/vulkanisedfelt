@@ -177,6 +177,28 @@ struct create_per_image_frame_buffers_t
 			}
 		};
 	};
+
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			VkExtent2D size;
+			constexpr auto operator()(this auto&& self, auto && state)
+			{
+				assert(state->device);
+				assert(state->render_pass);
+				assert(state->image_views.size() > 0);
+				assert(state->image_views[0]);
+
+				return io_factory_t{}(state->device, state->render_pass, state->image_views, FW(self).size);
+			}
+		};
+
+		static constexpr auto operator()(VkExtent2D const size)
+		{
+			return readerio::ReaderIO{action_t{.size = size}};
+		}
+	};
 };
 
 struct create_single_presentation_subpass_render_pass_t
@@ -189,6 +211,7 @@ struct create_single_presentation_subpass_render_pass_t
 			VkSurfaceFormatKHR surface_format;
 			constexpr auto operator()(this auto && self)
 			{
+				assert(self.device);
 				return setup::create_single_presentation_subpass_render_pass(
 					FW(self).surface_format.format, FW(self).device);
 			}
@@ -216,6 +239,27 @@ struct create_single_presentation_subpass_render_pass_t
 		static constexpr auto operator()()
 		{
 			return readerio::ReaderIO{action_t{}};
+		}
+	};
+
+	struct stateio_factory_t
+	{
+		struct modify_t
+		{
+			static constexpr auto operator()(types::VulkanRenderPassPtr render_pass, auto && state)
+			{
+				return FW(state).update(
+					[&](auto obj)
+					{
+						obj.render_pass = std::move(render_pass);
+						return obj;
+					});
+			}
+		};
+
+		static constexpr auto operator()()
+		{
+			return stateio::lift_readerio(readerio_factory_t{}()).store(modify_t{});
 		}
 	};
 };
@@ -1405,6 +1449,7 @@ struct window_drawable_size_t
 			types::SDLWindowPtr window;
 			constexpr auto operator()(this auto && self)
 			{
+				assert(self.window);
 				return setup::window_drawable_size(FW(self).window);
 			}
 		};
@@ -1412,6 +1457,23 @@ struct window_drawable_size_t
 		static constexpr auto operator()(types::SDLWindowPtr window)
 		{
 			return IO{action_t{std::move(window)}};
+		}
+	};
+	
+	struct readerio_factory
+	{
+		struct action_t
+		{
+			static constexpr auto operator()(auto&& state)
+			{
+				return io_factory_t{}(state->window);
+			}
+		};
+		
+		static constexpr auto operator()()
+		{
+			namespace readerio = vulkandemo::monad::readerio;
+			return readerio::ReaderIO{action_t{}};
 		}
 	};
 };
