@@ -24,7 +24,7 @@
 
 #include "../macros_push.hpp"
 
-namespace vulkandemo::setup::monad
+namespace vulkandemo::setup::monadic
 {
 using vulkandemo::monad::io::IO;
 using vulkandemo::monad::stateio::StateIO;
@@ -81,7 +81,7 @@ struct create_primary_command_buffers_t
 			types::VulkanDevicePtr device;
 			types::VulkanCommandPoolPtr pool;
 			types::VulkanCommandBufferCount count;
-			constexpr auto operator()(this auto && self)
+			constexpr types::VulkanCommandBuffersPtr operator()(this auto && self)
 			{
 				return setup::create_primary_command_buffers(
 					FW(self).device, FW(self).pool, FW(self).count);
@@ -126,6 +126,13 @@ struct create_command_pool_t
 			{
 				return io_factory_t{}(std::move(device), FW(self).queue_family_idx);
 			}
+		};
+	};
+
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
 		};
 	};
 };
@@ -183,14 +190,15 @@ struct create_per_image_frame_buffers_t
 		struct action_t
 		{
 			VkExtent2D size;
-			constexpr auto operator()(this auto&& self, auto && state)
+			constexpr auto operator()(this auto && self, auto && state)
 			{
 				assert(state->device);
 				assert(state->render_pass);
 				assert(state->image_views.size() > 0);
 				assert(state->image_views[0]);
 
-				return io_factory_t{}(state->device, state->render_pass, state->image_views, FW(self).size);
+				return io_factory_t{}(
+					state->device, state->render_pass, state->image_views, FW(self).size);
 			}
 		};
 
@@ -1296,6 +1304,37 @@ struct create_instance_t
 		};
 	};
 
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			std::string name;
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable;
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
+
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				assert(state->logger);
+				return io_factory_t{}(
+					FW(state)->logger,
+					FW(self).name,
+					FW(self).layers_to_enable,
+					FW(self).extensions_to_enable);
+			}
+		};
+
+		static constexpr auto operator()(
+			std::string name,
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
+		{
+			return readerio::ReaderIO{action_t{
+				.name = std::move(name),
+				.layers_to_enable = std::move(layers_to_enable),
+				.extensions_to_enable = std::move(extensions_to_enable)}};
+		}
+	};
+
 	struct stateio_factory_t
 	{
 		struct modify_state_t
@@ -1327,37 +1366,18 @@ struct create_instance_t
 				.store(modify_state_t{});
 		}
 
-		struct from_state_t
+		static constexpr auto operator()(
+			std::string name,
+			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
+			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
-			std::string name;
-			immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable;
-			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable;
-
-			constexpr auto operator()(this auto && self, auto const & state)
-			{
-				return stateio_factory_t{}(
-					state->logger,
-					FW(self).name,
-					FW(self).layers_to_enable,
-					FW(self).extensions_to_enable);
-			}
-		};
-
-		struct using_state_t
-		{
-			static constexpr auto operator()(
-				std::string name,
-				immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
-				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
-			{
-				using vulkandemo::monad::stateio::get_state;
-				return get_state().bind(
-					from_state_t{
-						.name = std::move(name),
-						.layers_to_enable = std::move(layers_to_enable),
-						.extensions_to_enable = std::move(extensions_to_enable)});
-			}
-		};
+			return stateio::lift_readerio(
+					   readerio_factory_t{}(
+						   std::move(name),
+						   std::move(layers_to_enable),
+						   std::move(extensions_to_enable)))
+				.store(modify_state_t{});
+		}
 	};
 };
 
@@ -1367,10 +1387,10 @@ struct query_sdl_instance_extension_names_t
 	{
 		struct action_t
 		{
-			types::SDLWindowPtr sdl_window;
+			types::SDLWindowPtr window;
 			constexpr auto operator()(this auto && self)
 			{
-				return setup::query_sdl_instance_extension_names(FW(self).sdl_window);
+				return setup::query_sdl_instance_extension_names(FW(self).window);
 			}
 		};
 
@@ -1379,17 +1399,33 @@ struct query_sdl_instance_extension_names_t
 			return IO{action_t{std::move(sdl_window)}};
 		}
 	};
+
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			static constexpr auto operator()(auto && state)
+			{
+				return io_factory_t{}(FW(state)->window);
+			}
+		};
+
+		static constexpr auto operator()()
+		{
+			return readerio::ReaderIO{action_t{}};
+		}
+	};
 };
 
-struct query_available_instance_layers_t
+struct enumerate_instance_layer_properties_t
 {
 	struct io_factory_t
 	{
 		struct action_t
 		{
-			constexpr auto operator()() const
+			constexpr immer::array<VkLayerProperties> operator()() const
 			{
-				return setup::query_available_instance_layers();
+				return setup::enumerate_instance_layer_properties();
 			}
 		};
 
@@ -1397,6 +1433,42 @@ struct query_available_instance_layers_t
 		{
 			return IO{action_t{}};
 		}
+	};
+};
+
+struct layer_properties_filter_by_and_transform_to_instance_layer_name_t
+{
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names;
+			immer::array<VkLayerProperties> available_layer_descs;
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return io::pure(layer_properties_filter_by_and_transform_to_instance_layer_name(
+					state->logger, FW(self).desired_layer_names, FW(self).available_layer_descs));
+			}
+		};
+
+		static constexpr auto operator()(
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names,
+			immer::array<VkLayerProperties> available_layer_descs)
+		{
+			return readerio::ReaderIO{action_t{
+				.desired_layer_names = std::move(desired_layer_names),
+				.available_layer_descs = std::move(available_layer_descs)}};
+		}
+
+		struct with_desired_layer_names_t
+		{
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names;
+			constexpr auto operator()(
+				this auto && self, immer::array<VkLayerProperties> available_layer_descs)
+			{
+				return readerio_factory_t{}(FW(self).desired_layer_names, std::move(available_layer_descs));
+			}
+		};
 	};
 };
 
@@ -1406,7 +1478,7 @@ struct query_available_instance_extensions_t
 	{
 		struct action_t
 		{
-			constexpr auto operator()() const
+			constexpr immer::array<VkExtensionProperties> operator()() const
 			{
 				return setup::query_available_instance_extensions();
 			}
@@ -1416,6 +1488,46 @@ struct query_available_instance_extensions_t
 		{
 			return IO{action_t{}};
 		}
+	};
+};
+
+struct extension_properties_filter_by_and_transform_to_instance_extension_name_t
+{
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			immer::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
+			immer::array<VkExtensionProperties> available_extensions;
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return io::pure(
+					extension_properties_filter_by_and_transform_to_instance_extension_name(
+						state->logger,
+						FW(self).desired_extension_names,
+						FW(self).available_extensions));
+			}
+		};
+
+		static constexpr auto operator()(
+			immer::set<types::DesiredInstanceExtensionNameView> desired_extension_names,
+			immer::array<VkExtensionProperties> available_extensions)
+		{
+			return readerio::ReaderIO{action_t{
+				.desired_extension_names = std::move(desired_extension_names),
+				.available_extensions = std::move(available_extensions)}};
+		}
+
+		struct with_desired_extension_names_t
+		{
+			immer::set<types::DesiredInstanceExtensionNameView> desired_extension_names;
+			constexpr auto operator()(
+				this auto && self, immer::array<VkExtensionProperties> available_extensions)
+			{
+				return readerio_factory_t{}(
+					FW(self).desired_extension_names, std::move(available_extensions));
+			}
+		};
 	};
 };
 
@@ -1435,6 +1547,22 @@ struct query_window_title_t
 		static constexpr auto operator()(types::SDLWindowPtr window)
 		{
 			return IO{action_t{std::move(window)}};
+		}
+	};
+
+	struct readerio_factory_t
+	{
+		struct action_t
+		{
+			static constexpr auto operator()(auto && state)
+			{
+				return io_factory_t{}(state->window);
+			}
+		};
+
+		static constexpr auto operator()()
+		{
+			return readerio::ReaderIO{action_t{}};
 		}
 	};
 };
@@ -1459,17 +1587,17 @@ struct window_drawable_size_t
 			return IO{action_t{std::move(window)}};
 		}
 	};
-	
+
 	struct readerio_factory
 	{
 		struct action_t
 		{
-			static constexpr auto operator()(auto&& state)
+			static constexpr auto operator()(auto && state)
 			{
 				return io_factory_t{}(state->window);
 			}
 		};
-		
+
 		static constexpr auto operator()()
 		{
 			namespace readerio = vulkandemo::monad::readerio;

@@ -151,16 +151,16 @@ memory_properties_filter_by_and_transform_to_memory_type_idx(
 }
 
 immer::array<types::AvailableInstanceLayerNameCstr>
-layer_description_filter_by_and_transform_to_instance_layer_name(
+layer_properties_filter_by_and_transform_to_instance_layer_name(
 	LoggerPtr const & logger,
 	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
-	immer::array<VkLayerProperties> const & available_layer_descs)
+	immer::array<VkLayerProperties> const & available_layer_properties)
 {
-	auto const available_layer_names = available_layer_descs |
+	auto const available_layer_names = available_layer_properties |
 		std::views::transform(&VkLayerProperties::layerName) |
 		ranges::to<std::set<types::AvailableInstanceLayerNameView>>;
 
-	log_layer_info(logger, desired_layer_names, available_layer_names, available_layer_descs);
+	log_layer_info(logger, desired_layer_names, available_layer_names, available_layer_properties);
 
 	// Get intersection of desired layers and available layers, converted to C strings.
 	auto rng = ranges::views::set_intersection(

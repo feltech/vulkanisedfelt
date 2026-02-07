@@ -1,5 +1,5 @@
-#pragma once
 // IWYU pragma: private, include "../readerio.hpp"
+#pragma once
 #include <ranges>
 #include <tuple>
 

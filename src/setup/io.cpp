@@ -553,7 +553,7 @@ immer::array<types::AvailableInstanceExtensionNameCstr> query_sdl_instance_exten
 		ranges::to<immer::array>;
 }
 
-immer::array<VkLayerProperties> query_available_instance_layers()
+immer::array<VkLayerProperties> enumerate_instance_layer_properties()
 {
 	uint32_t available_layers_count = 0;
 	VK_CHECK(

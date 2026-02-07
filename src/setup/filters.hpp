@@ -118,10 +118,10 @@ struct memory_properties_filter_by_and_transform_to_memory_type_idx_t
 
 // Filters available instance layers by desired names and transforms to C string pointers
 immer::array<types::AvailableInstanceLayerNameCstr>
-layer_description_filter_by_and_transform_to_instance_layer_name(
+layer_properties_filter_by_and_transform_to_instance_layer_name(
 	LoggerPtr const & logger,
 	immer::set<types::DesiredInstanceLayerNameView> const & desired_layer_names,
-	immer::array<VkLayerProperties> const & available_layer_descs);
+	immer::array<VkLayerProperties> const & available_layer_properties);
 
 struct transform_to_instance_layer_name_filtered_by_instance_layer_name_t
 {
@@ -131,18 +131,18 @@ struct transform_to_instance_layer_name_filtered_by_instance_layer_name_t
 	constexpr immer::array<types::AvailableInstanceLayerNameCstr> operator()(
 		immer::array<VkLayerProperties> const & available_layer_descs) const
 	{
-		return layer_description_filter_by_and_transform_to_instance_layer_name(
+		return layer_properties_filter_by_and_transform_to_instance_layer_name(
 			logger, desired_layer_names, available_layer_descs);
 	}
 };
 
-constexpr auto make_layer_description_filter_by_and_transform_to_instance_layer_name(
+constexpr auto make_layer_properties_filter_by_and_transform_to_instance_layer_name(
 	AUTO(LoggerPtr) logger, AUTO(std::set<types::DesiredInstanceLayerNameView>) desired_layer_names)
 {
 	return [logger = FW(logger), desired_layer_names = FW(desired_layer_names)](
 			   AUTO(std::vector<VkLayerProperties>) available_layer_descs)
 	{
-		return layer_description_filter_by_and_transform_to_instance_layer_name(
+		return layer_properties_filter_by_and_transform_to_instance_layer_name(
 			logger, desired_layer_names, FW(available_layer_descs));
 	};
 }

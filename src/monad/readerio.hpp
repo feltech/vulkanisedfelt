@@ -6,8 +6,8 @@
 
 #include "./io/IO.hpp"
 #include "./io/hana.hpp"
-#include "./readerio/ReaderIO.hpp"
-#include "./readerio/hana.hpp"
-#include "./readerio/get_state.hpp"
-#include "./readerio/sequence.hpp"
-#include "./readerio/lift_kleisli.hpp"
+#include "./readerio/ReaderIO.hpp"		// IWYU pragma: export
+#include "./readerio/get_state.hpp"		// IWYU pragma: export
+#include "./readerio/hana.hpp"			// IWYU pragma: export
+#include "./readerio/lift_kleisli.hpp"	// IWYU pragma: export
+#include "./readerio/sequence.hpp"		// IWYU pragma: export

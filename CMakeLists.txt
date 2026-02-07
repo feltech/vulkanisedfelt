@@ -46,7 +46,7 @@ add_executable(
   src/setup.cpp
   src/setup/filters.cpp
   src/setup/io.cpp
-  src/setup/monad.cpp
+  src/setup/monadic.cpp
   src/setup/logging.cpp
   src/draw.cpp
   src/Logger.cpp

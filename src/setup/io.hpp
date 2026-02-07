@@ -188,7 +188,7 @@ immer::array<types::AvailableInstanceExtensionNameCstr> query_sdl_instance_exten
  *
  * @return
  */
-immer::array<VkLayerProperties> query_available_instance_layers();
+immer::array<VkLayerProperties> enumerate_instance_layer_properties();
 
 /**
  * Query all available instance extensions.
