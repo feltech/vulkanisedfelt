@@ -50,7 +50,7 @@ struct IO
 	{
 		static_assert(std::ranges::range<Value>, "Can only traverse effects that give a range");
 
-		return FW(self).bind(traverse_t::io_factory_t::with_kleisli_t{FW(kleisli)});
+		return FW(self).bind(traverse_t::io_t::with_kleisli_t{FW(kleisli)});
 	}
 
 	[[nodiscard]] auto filter(this auto && self, auto && kleisli)
@@ -60,7 +60,7 @@ struct IO
 		// elements.
 		static_assert(std::ranges::range<Value>, "Can only filter effects that give a range");
 
-		return FW(self).bind(filter_t::io_factory_t::with_kleisli_t{FW(kleisli)});
+		return FW(self).bind(filter_t::io_t::with_kleisli_t{FW(kleisli)});
 	}
 };
 }  // namespace vulkandemo::monad::io

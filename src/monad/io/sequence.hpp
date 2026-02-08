@@ -31,7 +31,7 @@ struct io_tag_t;
 
 struct sequence_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		template <class Arg>
 		struct async_function_t : detail::AsyncFunctorInterface<Arg>
@@ -132,7 +132,7 @@ auto sequence(hof::specialisation_of<IO> auto &&... ms)
 
 auto sequence(std::ranges::range auto && rng)
 {
-	return sequence_t::io_factory_t{}(FW(rng));
+	return sequence_t::io_t{}(FW(rng));
 }
 }  // namespace vulkandemo::monad::io
 

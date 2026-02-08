@@ -75,7 +75,7 @@ struct StateIO
 
 	auto store(this auto && self, auto && fn)
 	{
-		return FW(self).bind(store_t::stateio_factory_t::with_mutator_t{FW(fn)});
+		return FW(self).bind(store_t::stateio_t::with_mutator_t{FW(fn)});
 	}
 };
 }  // namespace vulkandemo::monad::stateio

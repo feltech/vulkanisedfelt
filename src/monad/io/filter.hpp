@@ -13,7 +13,7 @@ namespace vulkandemo::monad::io
 
 struct filter_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		static constexpr auto operator()(auto && values, auto && kleisli)
 		{
@@ -28,7 +28,7 @@ struct filter_t
 				"the input element");
 
 			Rng filterable_values = values;
-			return traverse_t::io_factory_t{}(FW(values), FW(kleisli))
+			return traverse_t::io_t{}(FW(values), FW(kleisli))
 				.fmap(hof::transform_maybes_to_values_t{});
 		}
 
@@ -38,7 +38,7 @@ struct filter_t
 			Kleisli kleisli;
 			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 			{
-				return io_factory_t{}(FW(values), FW(self).kleisli);
+				return io_t{}(FW(values), FW(self).kleisli);
 			}
 		};
 	};

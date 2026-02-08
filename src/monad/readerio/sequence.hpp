@@ -31,7 +31,7 @@ namespace vulkandemo::monad::readerio
 
 struct sequence_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		template <class State>
 		struct readerio_to_io_t
@@ -96,7 +96,7 @@ auto sequence(hof::specialisation_of<ReaderIO> auto &&... ms)
 
 auto sequence(std::ranges::range auto && rng)
 {
-	return sequence_t::io_factory_t{}(FW(rng));
+	return sequence_t::io_t{}(FW(rng));
 }
 }  // namespace vulkandemo::monad::readerio
 

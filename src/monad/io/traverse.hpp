@@ -16,7 +16,7 @@ namespace vulkandemo::monad::io
 {
 struct traverse_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		static constexpr auto operator()(auto values, auto const & kleisli)
 		{
@@ -44,7 +44,7 @@ struct traverse_t
 			ElementLifter kliesli;
 			constexpr auto operator()(this auto && self, std::ranges::range auto && values)
 			{
-				return io_factory_t{}(FW(values), FW(self).kliesli);
+				return io_t{}(FW(values), FW(self).kliesli);
 			}
 		};
 	};

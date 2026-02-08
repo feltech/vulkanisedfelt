@@ -48,9 +48,9 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	struct state_t
 	{
 		LoggerPtr logger = create_logger("Create frame buffers");
-		types::VulkanDebugMessengerPtr messenger;
 		types::SDLWindowPtr window;
 		types::VulkanInstancePtr instance;
+		types::VulkanDebugMessengerPtr messenger;
 		types::VulkanSurfacePtr surface;
 		VkPhysicalDevice physical_device;
 		immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
@@ -65,7 +65,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	immer::box<state_t> initial_state{std::move(initial_state_v)};
 
 	auto const program =
-		setup::monadic::create_window_t::stateio_factory_t{}("", 100, 100)
+		setup::monadic::create_window_t::stateio_t{}("", 100, 100)
 			.then(
 				// Gather arguments for create_instance.
 				monad::stateio::lift_readerio(
@@ -74,33 +74,31 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 						monad::readerio::pure("the instance"),
 						// arg: layers_to_enable
 						monad::readerio::lift_io(
-							setup::monadic::enumerate_instance_layer_properties_t::io_factory_t{}())
+							setup::monadic::enumerate_instance_layer_properties_t::io_t{}())
 							.bind(
 								setup::monadic::
 									layer_properties_filter_by_and_transform_to_instance_layer_name_t::
-										readerio_factory_t::with_desired_layer_names_t{
+										readerio_t::with_desired_layer_names_t{
 											{types::DesiredInstanceLayerNameView{
 												"VK_LAYER_KHRONOS_validation"}}}),
 						// arg: extensions_to_enable
 						monad::readerio::sequence(
 							// SDL window extensions
-							setup::monadic::query_sdl_instance_extension_names_t::
-								readerio_factory_t{}(),
+							setup::monadic::query_sdl_instance_extension_names_t::readerio_t{}(),
 							// Other extensions
 							monad::readerio::lift_io(
-								setup::monadic::query_available_instance_extensions_t::
-									io_factory_t{}())
+								setup::monadic::query_available_instance_extensions_t::io_t{}())
 								.bind(
 									// Filter down to desired extensions.
 									setup::monadic::
 										extension_properties_filter_by_and_transform_to_instance_extension_name_t::
-											readerio_factory_t::with_desired_extension_names_t{
+											readerio_t::with_desired_extension_names_t{
 												immer::set{{types::DesiredInstanceExtensionNameView{
 													VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}}))
 							// Concatenate SDL and extra extensions.
 							.fmap(hof::transform_concat_t{}))))
 			// Create instance.
-			.bind(setup::monadic::create_instance_t::stateio_factory_t{});
+			.bind(setup::monadic::create_instance_t::stateio_t{});
 
 	auto const [result, state] = program(std::move(initial_state))().sync_wait();
 

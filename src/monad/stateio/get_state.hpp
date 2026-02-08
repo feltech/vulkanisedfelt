@@ -12,7 +12,7 @@ namespace vulkandemo::monad::stateio
 {
 struct get_state_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		template <class State>
 		struct action_t
@@ -31,13 +31,13 @@ struct get_state_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct action_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_factory_t{}(FW(state));
+				return io_t{}(FW(state));
 			}
 		};
 
@@ -50,7 +50,7 @@ struct get_state_t
 
 constexpr auto get_state()
 {
-	return get_state_t::stateio_factory_t{}();
+	return get_state_t::stateio_t{}();
 }
 }  // namespace vulkandemo::monad::stateio
 

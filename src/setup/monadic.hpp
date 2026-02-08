@@ -34,7 +34,7 @@ namespace stateio = vulkandemo::monad::stateio;
 
 struct create_minimal_pipeline_layout_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -54,7 +54,7 @@ struct create_minimal_pipeline_layout_t
 
 struct create_semaphore_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -74,7 +74,7 @@ struct create_semaphore_t
 
 struct create_primary_command_buffers_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -101,7 +101,7 @@ struct create_primary_command_buffers_t
 
 struct create_command_pool_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -124,12 +124,12 @@ struct create_command_pool_t
 			types::VulkanQueueFamilyIdx queue_family_idx;
 			constexpr auto operator()(this auto && self, types::VulkanDevicePtr device)
 			{
-				return io_factory_t{}(std::move(device), FW(self).queue_family_idx);
+				return io_t{}(std::move(device), FW(self).queue_family_idx);
 			}
 		};
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -139,7 +139,7 @@ struct create_command_pool_t
 
 struct create_per_image_frame_buffers_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -176,7 +176,7 @@ struct create_per_image_frame_buffers_t
 				types::VulkanRenderPassPtr render_pass,
 				immer::array<types::VulkanImageViewPtr> image_views)
 			{
-				return io_factory_t{}(
+				return io_t{}(
 					std::move(device),
 					std::move(render_pass),
 					std::move(image_views),
@@ -185,7 +185,7 @@ struct create_per_image_frame_buffers_t
 		};
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -197,7 +197,7 @@ struct create_per_image_frame_buffers_t
 				assert(state->image_views.size() > 0);
 				assert(state->image_views[0]);
 
-				return io_factory_t{}(
+				return io_t{}(
 					state->device, state->render_pass, state->image_views, FW(self).size);
 			}
 		};
@@ -211,7 +211,7 @@ struct create_per_image_frame_buffers_t
 
 struct create_single_presentation_subpass_render_pass_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -232,7 +232,7 @@ struct create_single_presentation_subpass_render_pass_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -240,7 +240,7 @@ struct create_single_presentation_subpass_render_pass_t
 			{
 				assert(state->device);
 				assert(state->surface_format.format != VK_FORMAT_UNDEFINED);
-				return io_factory_t{}(state->device, state->surface_format);
+				return io_t{}(state->device, state->surface_format);
 			}
 		};
 
@@ -250,7 +250,7 @@ struct create_single_presentation_subpass_render_pass_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_t
 		{
@@ -267,14 +267,14 @@ struct create_single_presentation_subpass_render_pass_t
 
 		static constexpr auto operator()()
 		{
-			return stateio::lift_readerio(readerio_factory_t{}()).store(modify_t{});
+			return stateio::lift_readerio(readerio_t{}()).store(modify_t{});
 		}
 	};
 };
 
 struct create_exclusive_double_buffer_swapchain_and_image_views_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -325,7 +325,7 @@ struct create_exclusive_double_buffer_swapchain_and_image_views_t
 				types::VulkanSurfacePtr surface,
 				types::VulkanSwapchainPtr previous_swapchain = nullptr)
 			{
-				return io_factory_t{}(
+				return io_t{}(
 					FW(self).logger,
 					physical_device,
 					std::move(device),
@@ -340,7 +340,7 @@ struct create_exclusive_double_buffer_swapchain_and_image_views_t
 // IO monad lifter for creating device and queues (bind-like)
 struct create_device_and_queues_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -373,7 +373,7 @@ struct create_device_and_queues_t
 
 struct create_device_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -404,14 +404,14 @@ struct create_device_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names;
 			constexpr auto operator()(this auto && self, auto && state)
 			{
-				return io_factory_t{}(
+				return io_t{}(
 					state->physical_device,
 					state->queue_family_and_counts,
 					FW(self).device_extension_names);
@@ -426,7 +426,7 @@ struct create_device_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -449,7 +449,7 @@ struct create_device_t
 		{
 			using vulkandemo::monad::stateio::lift_io;
 			return lift_io(
-					   io_factory_t{}(
+					   io_t{}(
 						   physical_device,
 						   std::move(queue_family_and_counts),
 						   std::move(device_extension_names)))
@@ -459,7 +459,7 @@ struct create_device_t
 		static constexpr auto operator()(
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
 		{
-			return stateio::lift_readerio(readerio_factory_t{}(std::move(device_extension_names)))
+			return stateio::lift_readerio(readerio_t{}(std::move(device_extension_names)))
 				.store(modify_state_t{});
 		}
 	};
@@ -467,7 +467,7 @@ struct create_device_t
 
 struct query_queues_for_queue_family_and_counts_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -495,7 +495,7 @@ struct query_queues_for_queue_family_and_counts_t
 
 struct query_swapchain_images_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -514,13 +514,13 @@ struct query_swapchain_images_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
-				return io_factory_t{}(state->device, state->swapchain);
+				return io_t{}(state->device, state->swapchain);
 			}
 		};
 		static constexpr auto operator()()
@@ -532,7 +532,7 @@ struct query_swapchain_images_t
 
 struct create_colour_aspect_single_mip_single_layer_image_views_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -558,14 +558,14 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			immer::array<VkImage> images;
 			constexpr auto operator()(this auto && self, auto && state)
 			{
-				return io_factory_t{}(state->device, state->surface_format, FW(self).images);
+				return io_t{}(state->device, state->surface_format, FW(self).images);
 			}
 		};
 
@@ -579,12 +579,12 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 			immer::array<VkImage> images;
 			constexpr auto operator()(this auto && self)
 			{
-				return readerio_factory_t{}(FW(self).images);
+				return readerio_t{}(FW(self).images);
 			}
 		};
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -602,7 +602,7 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 
 		static constexpr auto operator()(immer::array<VkImage> images)
 		{
-			return stateio::lift_readerio(readerio_factory_t::with_images_t{std::move(images)}())
+			return stateio::lift_readerio(readerio_t::with_images_t{std::move(images)}())
 				.store(modify_state_t{});
 		}
 	};
@@ -611,7 +611,7 @@ struct create_colour_aspect_single_mip_single_layer_image_views_t
 // IO monad lifter for filtering available surface formats (bind-like)
 struct filter_available_surface_formats_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -646,7 +646,7 @@ struct filter_available_surface_formats_t
 
 struct select_physical_device_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -690,7 +690,7 @@ struct select_physical_device_t
 // IO monad lifter for querying available device extensions (bind-like)
 struct query_available_device_extensions_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -711,7 +711,7 @@ struct query_available_device_extensions_t
 
 struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -743,7 +743,7 @@ struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 			constexpr auto operator()(
 				this auto && self, types::VulkanQueueFamilyIdx const queue_family_idx)
 			{
-				return io_factory_t{}(self.physical_device, FW(self).surface, queue_family_idx);
+				return io_t{}(self.physical_device, FW(self).surface, queue_family_idx);
 			}
 		};
 	};
@@ -752,7 +752,7 @@ struct maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t
 // IO monad lifter for querying physical device properties (bind-like)
 struct query_physical_device_properties_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -772,7 +772,7 @@ struct query_physical_device_properties_t
 
 struct query_available_queue_family_properties_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -792,7 +792,7 @@ struct query_available_queue_family_properties_t
 
 struct filter_available_queue_families_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -820,7 +820,7 @@ struct filter_available_queue_families_t
 
 struct create_swapchain_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -839,7 +839,7 @@ struct create_swapchain_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct with_swapchain_create_info_t
 		{
@@ -847,7 +847,7 @@ struct create_swapchain_t
 			constexpr auto operator()(this auto && self, auto const & state)
 			{
 				using vulkandemo::monad::stateio::lift_io;
-				return lift_io(io_factory_t{}(state->device, FW(self).create_info));
+				return lift_io(io_t{}(state->device, FW(self).create_info));
 			}
 		};
 
@@ -867,7 +867,7 @@ struct create_swapchain_t
 		static constexpr auto operator()(VkSwapchainCreateInfoKHR const create_info)
 		{
 			using vulkandemo::monad::stateio::get_state_t;
-			return get_state_t::stateio_factory_t{}()
+			return get_state_t::stateio_t{}()
 				.bind(with_swapchain_create_info_t{create_info})
 				.store(modify_state_t{});
 		}
@@ -876,7 +876,7 @@ struct create_swapchain_t
 
 struct filter_available_memory_types_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -904,7 +904,7 @@ struct filter_available_memory_types_t
 
 struct query_physical_device_memory_properties_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -927,7 +927,7 @@ struct query_physical_device_memory_properties_t
 // IO monad lifter for querying surface capabilities (bind-like)
 struct query_surface_capabilities_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -951,7 +951,7 @@ struct query_surface_capabilities_t
 // IO monad lifter for querying present modes (bind-like)
 struct query_present_modes_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -973,7 +973,7 @@ struct query_present_modes_t
 
 struct query_available_surface_formats_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -996,7 +996,7 @@ struct query_available_surface_formats_t
 
 struct select_surface_format_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		static constexpr auto operator()(
 			LoggerPtr logger,
@@ -1004,7 +1004,7 @@ struct select_surface_format_t
 			types::VulkanSurfacePtr surface,
 			immer::array<VkFormat> desired_formats)
 		{
-			return query_available_surface_formats_t::io_factory_t{}(
+			return query_available_surface_formats_t::io_t{}(
 					   physical_device, std::move(surface))
 				.fmap(
 					filter_surface_formats_t::with_logger_and_desired_formats_t{
@@ -1013,7 +1013,7 @@ struct select_surface_format_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -1023,7 +1023,7 @@ struct select_surface_format_t
 				assert(state->logger);
 				assert(state->physical_device);
 				assert(state->surface);
-				return io_factory_t{}(
+				return io_t{}(
 					FW(state)->logger,
 					FW(state)->physical_device,
 					FW(state)->surface,
@@ -1037,7 +1037,7 @@ struct select_surface_format_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -1054,7 +1054,7 @@ struct select_surface_format_t
 
 		static constexpr auto operator()(immer::array<VkFormat> desired_formats)
 		{
-			return stateio::lift_readerio(readerio_factory_t{}(std::move(desired_formats)))
+			return stateio::lift_readerio(readerio_t{}(std::move(desired_formats)))
 				.store(modify_state_t{});
 		}
 	};
@@ -1062,7 +1062,7 @@ struct select_surface_format_t
 
 struct log_surface_format_selection_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1097,7 +1097,7 @@ struct log_surface_format_selection_t
 
 struct enumerate_physical_devices_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1119,7 +1119,7 @@ struct enumerate_physical_devices_t
 			LoggerPtr logger;
 			constexpr auto operator()(this auto && self, types::VulkanInstancePtr instance)
 			{
-				return io_factory_t{}(FW(self).logger, std::move(instance));
+				return io_t{}(FW(self).logger, std::move(instance));
 			}
 		};
 	};
@@ -1127,7 +1127,7 @@ struct enumerate_physical_devices_t
 
 struct create_surface_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1147,13 +1147,13 @@ struct create_surface_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_factory_t{}(state->window, state->instance);
+				return io_t{}(state->window, state->instance);
 			}
 		};
 
@@ -1164,7 +1164,7 @@ struct create_surface_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -1182,14 +1182,14 @@ struct create_surface_t
 		static constexpr auto operator()()
 		{
 			namespace stateio = vulkandemo::monad::stateio;
-			return stateio::lift_readerio(readerio_factory_t{}()).store(modify_state_t{});
+			return stateio::lift_readerio(readerio_t{}()).store(modify_state_t{});
 		}
 	};
 };
 
 struct create_debug_messenger_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1208,7 +1208,7 @@ struct create_debug_messenger_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -1227,7 +1227,7 @@ struct create_debug_messenger_t
 		static constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance)
 		{
 			using vulkandemo::monad::stateio::lift_io;
-			return lift_io(io_factory_t{}(std::move(logger), std::move(instance)))
+			return lift_io(io_t{}(std::move(logger), std::move(instance)))
 				.store(modify_state_t{});
 		}
 
@@ -1236,7 +1236,7 @@ struct create_debug_messenger_t
 			static constexpr auto operator()(auto const & state)
 			{
 				// NOLINTNEXTLINE(bugprone-use-after-move)
-				return stateio_factory_t{}(state->logger, state->instance);
+				return stateio_t{}(state->logger, state->instance);
 			}
 		};
 
@@ -1253,7 +1253,7 @@ struct create_debug_messenger_t
 
 struct create_instance_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		// IO monad lifter for creating a Vulkan instance
 		struct action_t
@@ -1295,7 +1295,7 @@ struct create_instance_t
 				immer::array<types::AvailableInstanceLayerNameCstr> layers_to_enable,
 				immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 			{
-				return io_factory_t{}(
+				return io_t{}(
 					FW(self).logger,
 					std::move(name),
 					std::move(layers_to_enable),
@@ -1304,7 +1304,7 @@ struct create_instance_t
 		};
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -1315,7 +1315,7 @@ struct create_instance_t
 			constexpr auto operator()(this auto && self, auto && state)
 			{
 				assert(state->logger);
-				return io_factory_t{}(
+				return io_t{}(
 					FW(state)->logger,
 					FW(self).name,
 					FW(self).layers_to_enable,
@@ -1335,7 +1335,7 @@ struct create_instance_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -1358,7 +1358,7 @@ struct create_instance_t
 		{
 			using vulkandemo::monad::stateio::lift_io;
 			return lift_io(
-					   io_factory_t{}(
+					   io_t{}(
 						   std::move(logger),
 						   std::move(name),
 						   std::move(layers_to_enable),
@@ -1372,7 +1372,7 @@ struct create_instance_t
 			immer::array<types::AvailableInstanceExtensionNameCstr> extensions_to_enable)
 		{
 			return stateio::lift_readerio(
-					   readerio_factory_t{}(
+					   readerio_t{}(
 						   std::move(name),
 						   std::move(layers_to_enable),
 						   std::move(extensions_to_enable)))
@@ -1383,7 +1383,7 @@ struct create_instance_t
 
 struct query_sdl_instance_extension_names_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1400,13 +1400,13 @@ struct query_sdl_instance_extension_names_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_factory_t{}(FW(state)->window);
+				return io_t{}(FW(state)->window);
 			}
 		};
 
@@ -1419,7 +1419,7 @@ struct query_sdl_instance_extension_names_t
 
 struct enumerate_instance_layer_properties_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1438,7 +1438,7 @@ struct enumerate_instance_layer_properties_t
 
 struct layer_properties_filter_by_and_transform_to_instance_layer_name_t
 {
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -1466,7 +1466,7 @@ struct layer_properties_filter_by_and_transform_to_instance_layer_name_t
 			constexpr auto operator()(
 				this auto && self, immer::array<VkLayerProperties> available_layer_descs)
 			{
-				return readerio_factory_t{}(FW(self).desired_layer_names, std::move(available_layer_descs));
+				return readerio_t{}(FW(self).desired_layer_names, std::move(available_layer_descs));
 			}
 		};
 	};
@@ -1474,7 +1474,7 @@ struct layer_properties_filter_by_and_transform_to_instance_layer_name_t
 
 struct query_available_instance_extensions_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1493,7 +1493,7 @@ struct query_available_instance_extensions_t
 
 struct extension_properties_filter_by_and_transform_to_instance_extension_name_t
 {
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -1524,7 +1524,7 @@ struct extension_properties_filter_by_and_transform_to_instance_extension_name_t
 			constexpr auto operator()(
 				this auto && self, immer::array<VkExtensionProperties> available_extensions)
 			{
-				return readerio_factory_t{}(
+				return readerio_t{}(
 					FW(self).desired_extension_names, std::move(available_extensions));
 			}
 		};
@@ -1533,7 +1533,7 @@ struct extension_properties_filter_by_and_transform_to_instance_extension_name_t
 
 struct query_window_title_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1550,13 +1550,13 @@ struct query_window_title_t
 		}
 	};
 
-	struct readerio_factory_t
+	struct readerio_t
 	{
 		struct action_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_factory_t{}(state->window);
+				return io_t{}(state->window);
 			}
 		};
 
@@ -1570,7 +1570,7 @@ struct query_window_title_t
 // IO monad lifter for window drawable size (bind-like)
 struct window_drawable_size_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1594,7 +1594,7 @@ struct window_drawable_size_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_factory_t{}(state->window);
+				return io_t{}(state->window);
 			}
 		};
 
@@ -1608,7 +1608,7 @@ struct window_drawable_size_t
 
 struct create_window_t
 {
-	struct io_factory_t
+	struct io_t
 	{
 		struct action_t
 		{
@@ -1628,7 +1628,7 @@ struct create_window_t
 		}
 	};
 
-	struct stateio_factory_t
+	struct stateio_t
 	{
 		struct modify_state_t
 		{
@@ -1645,7 +1645,7 @@ struct create_window_t
 		static constexpr auto operator()(std::string title, int width, int height)
 		{
 			using vulkandemo::monad::stateio::lift_io;
-			return lift_io(io_factory_t{}(std::move(title), width, height)).store(modify_state_t{});
+			return lift_io(io_t{}(std::move(title), width, height)).store(modify_state_t{});
 		}
 	};
 };
