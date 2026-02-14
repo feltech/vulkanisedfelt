@@ -65,41 +65,12 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 	immer::box<state_t> initial_state{std::move(initial_state_v)};
 
 	auto const program =
-		setup::monadic::create_window_t::stateio_t{}("", 100, 100)
+		setup::monadic::create_window("", 100, 100)
 			.then(
-				// Gather arguments for create_instance.
-				monad::stateio::lift_readerio(
-					monad::readerio::sequence(
-						// arg: name
-						monad::readerio::pure("the instance"),
-						// arg: layers_to_enable
-						monad::readerio::lift_io(
-							setup::monadic::enumerate_instance_layer_properties_t::io_t{}())
-							.bind(
-								setup::monadic::
-									layer_properties_filter_by_and_transform_to_instance_layer_name_t::
-										readerio_t::with_desired_layer_names_t{
-											{types::DesiredInstanceLayerNameView{
-												"VK_LAYER_KHRONOS_validation"}}}),
-						// arg: extensions_to_enable
-						monad::readerio::sequence(
-							// SDL window extensions
-							setup::monadic::query_sdl_instance_extension_names_t::readerio_t{}(),
-							// Other extensions
-							monad::readerio::lift_io(
-								setup::monadic::query_available_instance_extensions_t::io_t{}())
-								.bind(
-									// Filter down to desired extensions.
-									setup::monadic::
-										extension_properties_filter_by_and_transform_to_instance_extension_name_t::
-											readerio_t::with_desired_extension_names_t{
-												immer::set{{types::DesiredInstanceExtensionNameView{
-													VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}}}))
-							// Concatenate SDL and extra extensions.
-							.fmap(hof::transform_concat_t{}))))
-			// Create instance.
-			.bind(setup::monadic::create_instance_t::stateio_t{});
-
+				setup::monadic::create_instance_and_maybe_debug_messenger(
+					"vulkandemo",
+					{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}},
+					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}));
 	auto const [result, state] = program(std::move(initial_state))().sync_wait();
 
 	types::SDLWindowPtr const window = setup::create_window("", 100, 100);

@@ -27,3 +27,17 @@
 #undef AUTO
 #endif
 #define AUTO(T) std::convertible_to<T> auto &&
+
+#pragma push_macro("OVER")
+#ifdef OVER
+#undef OVER
+#endif
+// Duplicated (with modification) from `LIFT` in https://github.com/rollbear/lift
+#define OVER(f)                                                             \
+	OVER_ba7b8453f262e429575e23dcb2192b33_1(                                \
+		a_ba7b8453f262e429575e23dcb2192b33_1,                               \
+		(f)(::std::forward<decltype(a_ba7b8453f262e429575e23dcb2192b33_1)>( \
+			a_ba7b8453f262e429575e23dcb2192b33_1)...))
+
+#define OVER_ba7b8453f262e429575e23dcb2192b33_1(a, f_of_a) \
+	[&](auto &&... a) noexcept(noexcept(f_of_a)) -> decltype(f_of_a) { return f_of_a; }

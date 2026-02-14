@@ -1,5 +1,6 @@
 #pragma once
 // IWYU pragma: private, include "../io.hpp"
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 
@@ -19,6 +20,7 @@
 
 #include <libfork/core.hpp>
 #include <libfork/core/task.hpp>
+#include <libfork/algorithm/lift.hpp>
 
 #include "../detail.hpp"
 #include "./fwd.hpp"
@@ -106,7 +108,7 @@ struct tuple_appender_t
 	}
 };
 
-auto sequence(hof::specialisation_of<IO> auto &&... ms)
+constexpr auto sequence(hof::specialisation_of<IO> auto &&... ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;

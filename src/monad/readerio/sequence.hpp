@@ -17,8 +17,8 @@
 #include <boost/hana/lift.hpp>
 // NOLINTEND(*-include-cleaner)
 
-#include <range/v3/view/transform.hpp>
 #include <range/v3/range/conversion.hpp>
+#include <range/v3/view/transform.hpp>
 
 #include "../../hof/concepts.hpp"
 #include "../io/fwd.hpp"
@@ -64,18 +64,13 @@ struct sequence_t
 	};
 };
 
-template <typename Tuple>
-struct tuple_appender_t
-{
-	Tuple vals;
-	constexpr auto operator()(this auto && self, auto && value_to_append)
-	{
-		using boost::hana::append;
-		return append(FW(self).vals, FW(value_to_append));
-	}
-};
-
 auto sequence(hof::specialisation_of<ReaderIO> auto &&... ms)
+{
+	return sequence(std::tuple{FW(ms)...});
+}
+
+template <hof::specialisation_of<ReaderIO>... ReaderIOs>
+auto sequence(std::tuple<ReaderIOs...> ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;
@@ -83,14 +78,13 @@ auto sequence(hof::specialisation_of<ReaderIO> auto &&... ms)
 	using boost::hana::lift;
 
 	return fold_left(
-		std::tuple{FW(ms)...},
+		ms,
 		lift<readerio_tag_t>(std::tuple{}),
 		[](auto && acc, auto && readeriom)
 		{
 			return ap(
-				acc.fmap([](auto && values) { return tuple_appender_t{FW(values)}; }),
+				acc.fmap([](auto && values) { return detail::tuple_appender_t{FW(values)}; }),
 				FW(readeriom));
-			;
 		});
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/hana/fwd/append.hpp>
 #include <concepts>
 #include <cstddef>
 #include <utility>
@@ -65,6 +66,16 @@ using unwrap_async_t = unwrap_async<T>::type;
 template <class T>
 constexpr auto unwrap_async_v = unwrap_async<T>::value;
 
+template <typename Tuple>
+struct tuple_appender_t
+{
+	Tuple vals;
+	constexpr auto operator()(this auto && self, auto && value_to_append)
+	{
+		using boost::hana::append;
+		return append(FW(self).vals, FW(value_to_append));
+	}
+};
 }  // namespace vulkandemo::monad::detail
 
 // NOLINTEND(*-overloaded-operator,*-trailing-return,*-identifier-length)

@@ -1,4 +1,6 @@
 #pragma once
+#include <tuple>
+
 #include <boost/hana/fwd/ap.hpp>
 #include <boost/hana/fwd/append.hpp>
 #include <boost/hana/fwd/fold_left.hpp>
@@ -11,7 +13,9 @@
 
 namespace vulkandemo::monad::stateio
 {
-constexpr auto sequence(hof::specialisation_of<StateIO> auto &&... ms)
+
+template <hof::specialisation_of<StateIO>... StateIOs>
+constexpr auto sequence(std::tuple<StateIOs...> ms)
 {
 	using boost::hana::ap;
 	using boost::hana::append;
@@ -19,7 +23,7 @@ constexpr auto sequence(hof::specialisation_of<StateIO> auto &&... ms)
 	using boost::hana::lift;
 
 	return fold_left(
-		std::tuple{FW(ms)...},
+		std::move(ms),
 		lift<stateio_tag_t>(std::tuple{}),
 		[](auto && acc, auto && iom)
 		{
@@ -29,15 +33,14 @@ constexpr auto sequence(hof::specialisation_of<StateIO> auto &&... ms)
 			return ap(
 				// Transform IO result from a tuple of values to a function that appends a value
 				// to the (captured) tuple and returns the new tuple.
-				acc.fmap(
-					[](auto && values)
-					{
-						return [values = FW(values)](auto && value_to_append)
-						{ return append(values, FW(value_to_append)); };
-					}),
+				acc.fmap([](auto && values) { return detail::tuple_appender_t{FW(values)}; }),
 				FW(iom));
-			;
 		});
+}
+
+constexpr auto sequence(hof::specialisation_of<StateIO> auto &&... ms)
+{
+	return sequence(std::tuple{FW(ms)...});
 }
 
 }  // namespace vulkandemo::monad::stateio

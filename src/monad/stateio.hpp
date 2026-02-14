@@ -12,3 +12,4 @@
 #include "./stateio/lift_kleisli.hpp"  // IWYU pragma: export
 #include "./stateio/sequence.hpp"	   // IWYU pragma: export
 #include "./stateio/store.hpp"		   // IWYU pragma: export
+#include "./stateio/traverse.hpp"		   // IWYU pragma: export

@@ -463,8 +463,7 @@ struct query_sdl_and_desired_instance_extensions_t
 		{
 			return sequence(
 					   // Get SDL window vulkan extension names.
-					   monadic::query_sdl_instance_extension_names_t::io_t{}(
-						   std::move(window)),
+					   monadic::query_sdl_instance_extension_names_t::io_t{}(std::move(window)),
 					   // Fetch and filter additional extension names.
 					   query_desired_instance_extensions_t::io_t{}(std::move(logger)))
 				.fmap(
@@ -638,8 +637,7 @@ struct query_sdl_and_desired_instance_extensions_t
 		{
 			return sequence(
 					   // Get SDL window required vulkan extension names.
-					   monadic::query_sdl_instance_extension_names_t::io_t{}(
-						   std::move(window)),
+					   monadic::query_sdl_instance_extension_names_t::io_t{}(std::move(window)),
 					   // Fetch and filter additional extension names.
 					   monadic::query_available_instance_extensions_t::io_t{}().fmap(
 						   transform_to_instance_extension_name_filtered_by_instance_extension_name_t{
@@ -1057,10 +1055,9 @@ struct score_devices_and_select_best_and_check_valid_t
 			types::VulkanSurfacePtr surface, immer::array<VkPhysicalDevice> physical_devices) const
 		{
 			namespace io = vulkandemo::monad::io;
-			auto score_ios =
-				physical_devices |
+			auto score_ios = physical_devices |
 				ranges::views::transform(
-					compute_device_score_t::io_t::with_surface_t{std::move(surface)}) |
+								 compute_device_score_t::io_t::with_surface_t{std::move(surface)}) |
 				ranges::to<immer::array>;
 
 			return io::sequence(std::move(score_ios))
@@ -1233,8 +1230,7 @@ struct compute_score_for_physical_devices_t
 			auto const score_ios =
 				physical_devices |
 				ranges::views::transform(
-					compute_score_for_physical_device_t::io_t::with_surface_t{
-						std::move(surface)}) |
+					compute_score_for_physical_device_t::io_t::with_surface_t{std::move(surface)}) |
 				ranges::to<immer::array>;
 
 			return sequence(score_ios);
@@ -1263,14 +1259,12 @@ struct select_physical_device_and_queue_family_for_surface_t
 		{
 			return monadic::enumerate_physical_devices_t::io_t{}(logger, std::move(instance))
 				.filter(
-					check_has_host_visible_mem_for_physical_device_t::io_t::with_logger_t{
-						logger})
+					check_has_host_visible_mem_for_physical_device_t::io_t::with_logger_t{logger})
 				.filter(
-					check_has_swapchain_extension_for_physical_device_t::io_t::
-						with_logger_t{logger})
+					check_has_swapchain_extension_for_physical_device_t::io_t::with_logger_t{
+						logger})
 				.bind(
-					compute_score_for_physical_devices_t::io_t::with_surface_t{
-						std::move(surface)})
+					compute_score_for_physical_devices_t::io_t::with_surface_t{std::move(surface)})
 				.fmap(hof::transform_maybes_to_values_t{})
 				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx);
 		}
@@ -1362,8 +1356,7 @@ struct create_default_instance_and_physical_device_and_queue_family_t
 		static constexpr auto operator()()
 		{
 			return create_default_instance_t::stateio_t{}().then(
-				create_surface_and_select_physical_device_and_queue_family_t::
-					stateio_t{}());
+				create_surface_and_select_physical_device_and_queue_family_t::stateio_t{}());
 		}
 	};
 };
@@ -1527,8 +1520,7 @@ struct query_queues_and_check_t
 			auto const & state) const
 		{
 			using vulkandemo::monad::stateio::lift_io;
-			return lift_io(
-				io_t{}(state->device, queue_family_idx, queue_family_and_counts));
+			return lift_io(io_t{}(state->device, queue_family_idx, queue_family_and_counts));
 		}
 
 		struct with_queue_family_idx_and_queue_counts_t
@@ -1537,8 +1529,7 @@ struct query_queues_and_check_t
 			QueueFamilyIdxAndCounts queue_family_and_counts;
 			constexpr auto operator()(this auto && self, auto const & state)
 			{
-				return stateio_t{}(
-					self.queue_family_idx, FW(self).queue_family_and_counts, state);
+				return stateio_t{}(self.queue_family_idx, FW(self).queue_family_and_counts, state);
 			}
 		};
 	};
@@ -1565,10 +1556,9 @@ struct create_device_and_queues_and_check_t
 					   {types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
 				.then(get_state_t::stateio_t{}())
 				.bind(
-					query_queues_and_check_t::stateio_t::
-						with_queue_family_idx_and_queue_counts_t{
-							.queue_family_idx = queue_family_idx,
-							.queue_family_and_counts = queue_family_and_counts});
+					query_queues_and_check_t::stateio_t::with_queue_family_idx_and_queue_counts_t{
+						.queue_family_idx = queue_family_idx,
+						.queue_family_and_counts = queue_family_and_counts});
 		}
 	};
 };
@@ -1601,8 +1591,7 @@ struct query_and_filter_surface_formats_t
 		{
 			static constexpr auto operator()(auto && state)
 			{
-				return io_t{}(
-					FW(state)->logger, FW(state)->physical_device, FW(state)->surface);
+				return io_t{}(FW(state)->logger, FW(state)->physical_device, FW(state)->surface);
 			}
 		};
 
@@ -1739,8 +1728,7 @@ struct create_swapchain_and_image_views_t
 		{
 			return stateio::lift_readerio(swapchain_create_info_t::readerio_t{}())
 				.bind(monadic::create_swapchain_t::stateio_t{})
-				.then(
-					stateio::lift_readerio(monadic::query_swapchain_images_t::readerio_t{}()))
+				.then(stateio::lift_readerio(monadic::query_swapchain_images_t::readerio_t{}()))
 				.bind(
 					monadic::create_colour_aspect_single_mip_single_layer_image_views_t::
 						stateio_t{});
@@ -1788,8 +1776,7 @@ struct check_swapchain_t
 		static constexpr auto operator()(immer::array<types::VulkanImageViewPtr> image_views)
 		{
 			using vulkandemo::monad::stateio::get_state_t;
-			return get_state_t::stateio_t{}().bind(
-				with_image_views_t{std::move(image_views)});
+			return get_state_t::stateio_t{}().bind(with_image_views_t{std::move(image_views)});
 		}
 	};
 };
@@ -1835,8 +1822,8 @@ struct create_and_check_render_pass_t
 	{
 		static constexpr auto operator()()
 		{
-			return monadic::create_single_presentation_subpass_render_pass_t::readerio_t{}()
-				.fmap(check_render_pass_t{});
+			return monadic::create_single_presentation_subpass_render_pass_t::readerio_t{}().fmap(
+				check_render_pass_t{});
 		}
 	};
 
@@ -1887,12 +1874,11 @@ struct create_and_check_frame_buffers_t
 			// > Layout (VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) requires the extensions VK_KHR_swapchain.
 			return monadic::create_device_t::stateio_t{}(
 					   {types::AvailableDeviceExtensionNameView{VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
-			.then(
-				monadic::select_surface_format_t::stateio_t{}(
-					immer::array{{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}}))
-			.then(create_swapchain::create_swapchain_and_image_views_t::stateio_t{}())
 				.then(
-					monadic::create_single_presentation_subpass_render_pass_t::stateio_t{}())
+					monadic::select_surface_format_t::stateio_t{}(
+						immer::array{{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM}}))
+				.then(create_swapchain::create_swapchain_and_image_views_t::stateio_t{}())
+				.then(monadic::create_single_presentation_subpass_render_pass_t::stateio_t{}())
 				.then(stateio::lift_readerio(readerio_t{}()));
 		}
 	};
@@ -1953,8 +1939,7 @@ TEST_CASE("Monad utilites")
 	{
 		namespace io = vulkandemo::monad::io;
 
-		auto const program =
-			io::pure(immer::vector{{2, 3, 4}}).filter(evens_filter_t::io_t{});
+		auto const program = io::pure(immer::vector{{2, 3, 4}}).filter(evens_filter_t::io_t{});
 
 		auto result = program().sync_wait();
 		CHECK(result == immer::vector{{3}});
@@ -1966,9 +1951,8 @@ TEST_CASE("Create a window")
 	using namespace test::create_a_window;
 	using monadic::create_window_t;
 	// Create a window.
-	auto const program =
-		create_window_t::io_t{}(kExpectedName, kExpectedWidth, kExpectedHeight)
-			.bind(check_window_t::io_t{});
+	auto const program = create_window_t::io_t{}(kExpectedName, kExpectedWidth, kExpectedHeight)
+							 .bind(check_window_t::io_t{});
 
 	CHECK(program().sync_wait(4));
 }
@@ -2015,9 +1999,7 @@ TEST_CASE("Create a Vulkan instance")
 	auto const program =
 		// Create application window.
 		monadic::create_window_t::io_t{}("", 0, 0)
-			.bind(
-				query_layers_and_extensions_and_create_instance_t::io_t::with_logger_t{
-					logger})
+			.bind(query_layers_and_extensions_and_create_instance_t::io_t::with_logger_t{logger})
 			.bind(check_instance_t::io_t{});
 
 	CHECK(program().sync_wait());
@@ -2029,11 +2011,10 @@ TEST_CASE("Create a Vulkan debug utils messenger")
 
 	using namespace test::create_a_vulkan_debug_utils_messenger;
 
-	auto const program =
-		test::query_desired_instance_extensions_t::io_t{}(logger)
-			.bind(create_instance_with_extensions_t::io_t::with_logger_t{logger})
-			.bind(create_debug_messenger_t::io_t::with_logger_t{logger})
-			.bind(check_messenger_t::io_t{});
+	auto const program = test::query_desired_instance_extensions_t::io_t{}(logger)
+							 .bind(create_instance_with_extensions_t::io_t::with_logger_t{logger})
+							 .bind(create_debug_messenger_t::io_t::with_logger_t{logger})
+							 .bind(check_messenger_t::io_t{});
 
 	CHECK(program().sync_wait());
 }
@@ -2147,10 +2128,9 @@ TEST_CASE("Select device with capability")
 TEST_CASE("Create logical device with queues")
 {
 	auto const program =
-		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}()
-			.bind(
-				test::create_logical_device_with_queues::create_device_and_queues_and_check_t::
-					stateio_t{});
+		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}().bind(
+			test::create_logical_device_with_queues::create_device_and_queues_and_check_t::
+				stateio_t{});
 
 	struct state_t
 	{
@@ -2173,11 +2153,9 @@ TEST_CASE("Create logical device with queues")
 TEST_CASE("Create swapchain")
 {
 	auto const program =
-		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}()
-			.then(
-				test::create_swapchain::
-					create_and_check_swapchain_for_physical_device_and_queue_family_t::
-						stateio_t{}());
+		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}().then(
+			test::create_swapchain::
+				create_and_check_swapchain_for_physical_device_and_queue_family_t::stateio_t{}());
 
 	struct state_t
 	{
@@ -2205,8 +2183,8 @@ TEST_CASE("Create render pass")
 	using namespace test::create_a_render_pass;
 
 	auto const program =
-		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}()
-			.then(create_and_check_render_pass_t::stateio_t{}());
+		test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}().then(
+			create_and_check_render_pass_t::stateio_t{}());
 
 	struct state_t
 	{
@@ -2232,9 +2210,9 @@ TEST_CASE("Create frame buffers")
 	{
 		using namespace test::create_frame_buffers;
 
-		auto const program = test::create_default_instance_and_physical_device_and_queue_family_t::
-								 stateio_t{}()
-									 .then(create_and_check_frame_buffers_t::stateio_t{}());
+		auto const program =
+			test::create_default_instance_and_physical_device_and_queue_family_t::stateio_t{}()
+				.then(create_and_check_frame_buffers_t::stateio_t{}());
 
 		struct state_t
 		{

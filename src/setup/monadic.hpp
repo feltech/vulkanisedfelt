@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2024-2025 David Feltell
 #pragma once
+#include <algorithm>
 #include <cassert>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -26,11 +28,11 @@
 
 namespace vulkandemo::setup::monadic
 {
-using vulkandemo::monad::io::IO;
-using vulkandemo::monad::stateio::StateIO;
-namespace io = vulkandemo::monad::io;
-namespace readerio = vulkandemo::monad::readerio;
-namespace stateio = vulkandemo::monad::stateio;
+using monad::io::IO;
+using monad::stateio::StateIO;
+namespace io = monad::io;
+namespace readerio = monad::readerio;
+namespace stateio = monad::stateio;
 
 struct create_minimal_pipeline_layout_t
 {
@@ -197,8 +199,7 @@ struct create_per_image_frame_buffers_t
 				assert(state->image_views.size() > 0);
 				assert(state->image_views[0]);
 
-				return io_t{}(
-					state->device, state->render_pass, state->image_views, FW(self).size);
+				return io_t{}(state->device, state->render_pass, state->image_views, FW(self).size);
 			}
 		};
 
@@ -1004,8 +1005,7 @@ struct select_surface_format_t
 			types::VulkanSurfacePtr surface,
 			immer::array<VkFormat> desired_formats)
 		{
-			return query_available_surface_formats_t::io_t{}(
-					   physical_device, std::move(surface))
+			return query_available_surface_formats_t::io_t{}(physical_device, std::move(surface))
 				.fmap(
 					filter_surface_formats_t::with_logger_and_desired_formats_t{
 						.logger = std::move(logger), .desired_formats = std::move(desired_formats)})
@@ -1208,6 +1208,22 @@ struct create_debug_messenger_t
 		}
 	};
 
+	struct readerio_t
+	{
+		struct action_t
+		{
+			constexpr auto operator()(auto && state)
+			{
+				return io_t{}(state->logger, state->instance);
+			}
+		};
+
+		static constexpr auto operator()()
+		{
+			return readerio::ReaderIO{action_t{}};
+		}
+	};
+
 	struct stateio_t
 	{
 		struct modify_state_t
@@ -1227,11 +1243,15 @@ struct create_debug_messenger_t
 		static constexpr auto operator()(LoggerPtr logger, types::VulkanInstancePtr instance)
 		{
 			using vulkandemo::monad::stateio::lift_io;
-			return lift_io(io_t{}(std::move(logger), std::move(instance)))
-				.store(modify_state_t{});
+			return lift_io(io_t{}(std::move(logger), std::move(instance))).store(modify_state_t{});
 		}
 
-		struct from_state_t
+		static constexpr auto operator()()
+		{
+			return stateio::lift_readerio(readerio_t{}()).store(modify_state_t{});
+		}
+
+		struct [[deprecated]] from_state_t
 		{
 			static constexpr auto operator()(auto const & state)
 			{
@@ -1240,7 +1260,7 @@ struct create_debug_messenger_t
 			}
 		};
 
-		struct using_state_t
+		struct [[deprecated]] using_state_t
 		{
 			static constexpr auto operator()()
 			{
@@ -1388,7 +1408,8 @@ struct query_sdl_instance_extension_names_t
 		struct action_t
 		{
 			types::SDLWindowPtr window;
-			constexpr auto operator()(this auto && self)
+			constexpr immer::array<types::AvailableInstanceExtensionNameCstr> operator()(
+				this auto && self)
 			{
 				return setup::query_sdl_instance_extension_names(FW(self).window);
 			}
@@ -1650,6 +1671,170 @@ struct create_window_t
 	};
 };
 
-}  // namespace vulkandemo::setup::monad
+struct query_required_layer_names_t
+{
+	struct readerio_t
+	{
+		constexpr auto operator()(
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names)
+		{
+			return readerio::lift_io(
+					   setup::monadic::enumerate_instance_layer_properties_t::io_t{}())
+				.bind(
+					layer_properties_filter_by_and_transform_to_instance_layer_name_t::readerio_t::
+						with_desired_layer_names_t{std::move(desired_layer_names)});
+		}
+	};
+};
+
+struct query_required_instance_extension_names_t
+{
+	struct readerio_t
+	{
+		constexpr auto operator()(
+			immer::set<types::DesiredInstanceExtensionNameView> desired_instance_extensions)
+		{
+			return readerio::sequence(
+					   readerio::lift_io(query_available_instance_extensions_t::io_t{}())
+						   .bind(
+							   extension_properties_filter_by_and_transform_to_instance_extension_name_t::
+								   readerio_t::with_desired_extension_names_t{
+									   std::move(desired_instance_extensions)}),
+					   setup::monadic::query_sdl_instance_extension_names_t::readerio_t{}())
+				.fmap(hof::transform_concat_t{});
+		}
+	};
+};
+
+struct maybe_create_debug_messenger_t
+{
+	struct io_t
+	{
+		struct action_t
+		{
+			LoggerPtr logger;
+			types::VulkanInstancePtr instance;
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_instance_extensions;
+
+			constexpr std::optional<types::VulkanDebugMessengerPtr> operator()(this auto && self)
+			{
+				if (!std::ranges::contains(
+						FW(self).available_instance_extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+					return std::nullopt;
+
+				return setup::create_debug_messenger(FW(self).logger, FW(self).instance);
+			}
+		};
+
+		constexpr auto operator()(
+			LoggerPtr logger,
+			types::VulkanInstancePtr instance,
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_instance_extensions)
+		{
+			return IO{action_t{logger, instance, available_instance_extensions}};
+		}
+	};
+
+	struct readerio_t
+	{
+		struct action_t
+		{
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_instance_extensions;
+
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return io_t{}(
+					state->logger, state->instance, FW(self).available_instance_extensions);
+			}
+		};
+
+		constexpr auto operator()(
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_instance_extensions)
+		{
+			return readerio::ReaderIO{action_t{std::move(available_instance_extensions)}};
+		}
+	};
+
+	struct stateio_t
+	{
+		static constexpr auto operator()(
+			immer::array<types::AvailableInstanceExtensionNameCstr> available_instance_extensions)
+		{
+			using traverse_t = stateio::traverse_t::stateio_t;
+			using store_t = stateio::store_t::stateio_t;
+			using modify_state_t = create_debug_messenger_t::stateio_t::modify_state_t;
+			;
+			return stateio::lift_readerio(readerio_t{}(std::move(available_instance_extensions)))
+				.bind(traverse_t::with_kleisli_t{store_t::with_mutator_t{modify_state_t{}}});
+		}
+	};
+};
+
+struct create_instance_with_required_layers_and_extensions_t
+{
+	struct stateio_t
+	{
+		struct with_name_and_desired_layers_t
+		{
+			std::string name;
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names;
+
+			constexpr auto operator()(
+				this auto && self,
+				immer::array<types::AvailableInstanceExtensionNameCstr>
+					required_instance_extensions)
+			{
+				return stateio::lift_readerio(
+						   readerio::sequence(
+							   readerio::pure(FW(self).name),
+							   query_required_layer_names_t::readerio_t{}(
+								   FW(self).desired_layer_names),
+							   readerio::pure(std::move(required_instance_extensions))))
+					.bind(create_instance_t::stateio_t{});
+			}
+		};
+	};
+};
+
+struct create_instance_and_maybe_debug_messenger_t
+{
+	struct stateio_t
+	{
+		constexpr auto operator()(
+			std::string name,
+			immer::set<types::DesiredInstanceLayerNameView> desired_layer_names,
+			immer::set<types::DesiredInstanceExtensionNameView> desired_instance_extensions)
+		{
+			return stateio::lift_readerio(
+					   query_required_instance_extension_names_t::readerio_t{}(
+						   std::move(desired_instance_extensions)))
+				.bind(
+					stateio::fanout(
+						maybe_create_debug_messenger_t::stateio_t{},
+						create_instance_with_required_layers_and_extensions_t::stateio_t::
+							with_name_and_desired_layers_t{
+								.name = std::move(name),
+								.desired_layer_names = std::move(desired_layer_names)}));
+		}
+	};
+};
+
+constexpr auto create_window(std::string title, int width, int height)
+{
+	using namespace vulkandemo::monad;
+	return create_window_t::stateio_t{}(std::move(title), width, height);
+}
+
+constexpr auto create_instance_and_maybe_debug_messenger(
+	std::string name,
+	immer::set<types::DesiredInstanceLayerNameView> desired_layer_names,
+	immer::set<types::DesiredInstanceExtensionNameView> desired_instance_extensions)
+
+{
+	return create_instance_and_maybe_debug_messenger_t::stateio_t{}(
+		std::move(name), std::move(desired_layer_names), std::move(desired_instance_extensions));
+}
+
+}  // namespace vulkandemo::setup::monadic
 
 #include "../macros_pop.hpp"
