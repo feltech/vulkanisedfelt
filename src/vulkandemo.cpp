@@ -53,8 +53,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 		types::VulkanDebugMessengerPtr messenger;
 		types::VulkanSurfacePtr surface;
 		VkPhysicalDevice physical_device;
-		immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
-			queue_family_and_counts;
+		types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 		types::VulkanDevicePtr device;
 		VkSurfaceFormatKHR surface_format{};
 		types::VulkanSwapchainPtr swapchain;
@@ -70,7 +69,8 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 				setup::monadic::create_instance_and_maybe_debug_messenger(
 					"vulkandemo",
 					{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}},
-					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}));
+					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}))
+			.then(setup::monadic::create_surface());
 	auto const [result, state] = program(std::move(initial_state))().sync_wait();
 
 	types::SDLWindowPtr const window = setup::create_window("", 100, 100);

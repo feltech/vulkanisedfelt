@@ -1,7 +1,9 @@
 #pragma once
 // IWYU pragma: private, include "../io.hpp"
 
+#include <optional>
 #include <type_traits>
+
 #include "../../hof.hpp"
 #include "../detail.hpp"
 #include "./traverse.hpp"
@@ -27,7 +29,6 @@ struct filter_t
 				"filter expects a kleisli that returns an IO whose effect is a std::optional of "
 				"the input element");
 
-			Rng filterable_values = values;
 			return traverse_t::io_t{}(FW(values), FW(kleisli))
 				.fmap(hof::transform_maybes_to_values_t{});
 		}

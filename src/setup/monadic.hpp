@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <utility>
 
@@ -379,28 +380,36 @@ struct create_device_t
 		struct action_t
 		{
 			VkPhysicalDevice physical_device;
-			immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
-				queue_family_and_counts;
+			types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues;
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names;
 
 			constexpr auto operator()(this auto && self)
 			{
+				auto queue_family_and_counts =
+					immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>{}
+						.transient();
+
+				for (auto const & [queue_family_idx, family_queues] : self.queues)
+				{
+					queue_family_and_counts.push_back(
+						std::pair{queue_family_idx, types::VulkanQueueCount{family_queues.size()}});
+				}
+
 				return setup::create_device(
 					self.physical_device,
-					FW(self).queue_family_and_counts,
+					std::move(queue_family_and_counts).persistent(),
 					FW(self).device_extension_names);
 			}
 		};
 
 		static constexpr auto operator()(
 			VkPhysicalDevice physical_device,
-			immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
-				queue_family_and_counts,
+			types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues,
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
 		{
 			return IO{action_t{
 				.physical_device = physical_device,
-				.queue_family_and_counts = std::move(queue_family_and_counts),
+				.queues = std::move(queues),
 				.device_extension_names = std::move(device_extension_names)}};
 		}
 	};
@@ -414,7 +423,7 @@ struct create_device_t
 			{
 				return io_t{}(
 					state->physical_device,
-					state->queue_family_and_counts,
+					state->queues,
 					FW(self).device_extension_names);
 			}
 		};
@@ -444,16 +453,13 @@ struct create_device_t
 
 		static constexpr auto operator()(
 			VkPhysicalDevice physical_device,
-			immer::array<std::pair<types::VulkanQueueFamilyIdx, types::VulkanQueueCount>>
-				queue_family_and_counts,
+			types::MapOfVulkanQueueFamilyIdxToVectorOfQueues queues,
 			immer::array<types::AvailableDeviceExtensionNameView> device_extension_names)
 		{
 			using vulkandemo::monad::stateio::lift_io;
 			return lift_io(
 					   io_t{}(
-						   physical_device,
-						   std::move(queue_family_and_counts),
-						   std::move(device_extension_names)))
+						   physical_device, std::move(queues), std::move(device_extension_names)))
 				.store(modify_state_t{});
 		}
 
@@ -645,7 +651,7 @@ struct filter_available_surface_formats_t
 	};
 };
 
-struct select_physical_device_t
+struct [[deprecated]] select_physical_device_t
 {
 	struct io_t
 	{
@@ -1609,7 +1615,7 @@ struct window_drawable_size_t
 		}
 	};
 
-	struct readerio_factory
+	struct readerio_t
 	{
 		struct action_t
 		{
@@ -1819,6 +1825,289 @@ struct create_instance_and_maybe_debug_messenger_t
 	};
 };
 
+struct check_physical_device_has_desired_memory_properties_t
+{
+	struct io_t
+	{
+		static constexpr auto operator()(
+			LoggerPtr logger,
+			VkPhysicalDevice physical_device,
+			VkMemoryPropertyFlags memory_property_flags)
+		{
+			return monadic::query_physical_device_memory_properties_t::io_t{}(
+					   std::move(logger), physical_device)
+				.fmap(
+					memory_properties_filter_by_and_transform_to_memory_type_idx_t::
+						with_memory_property_flags_t{memory_property_flags})
+				.fmap(hof::transform_range_to_check_non_empty_t{})
+				.fmap(hof::transform_bool_to_optional_t{physical_device});
+		}
+
+		struct with_logger_and_memory_property_flags_t
+		{
+			LoggerPtr logger;
+			VkMemoryPropertyFlags memory_property_flags;
+			constexpr auto operator()(this auto && self, VkPhysicalDevice physical_device)
+			{
+				return io_t{}(FW(self).logger, physical_device, FW(self).memory_property_flags);
+			}
+		};
+	};
+};
+
+struct check_physical_device_has_desired_extensions_t
+{
+	struct io_t
+	{
+		constexpr auto operator()(
+			LoggerPtr logger,
+			VkPhysicalDevice physical_device,
+			immer::set<types::DesiredDeviceExtensionNameView> const &
+				desired_device_extension_names) const
+		{
+			return monadic::query_available_device_extensions_t::io_t{}(physical_device)
+				.fmap(
+					extension_properties_filter_by_and_transform_to_device_extension_name_t::
+						with_logger_and_physical_device_and_desired_device_extension_names_t{
+							.logger = std::move(logger),
+							.physical_device = physical_device,
+							.desired_device_extension_names = desired_device_extension_names})
+				.fmap(hof::transform_range_to_check_non_empty_t{})
+				.fmap(hof::transform_bool_to_optional_t{physical_device});
+		}
+
+		struct with_logger_and_desired_extensions_t
+		{
+			LoggerPtr logger;
+			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
+			constexpr auto operator()(this auto && self, VkPhysicalDevice physical_device)
+			{
+				return io_t{}(
+					FW(self).logger, physical_device, FW(self).desired_device_extension_names);
+			}
+		};
+	};
+};
+
+struct maybe_score_for_physical_device_properties_and_queue_family_t
+{
+	constexpr auto operator()(
+		VkPhysicalDevice physical_device,
+		VkPhysicalDeviceProperties const & physical_device_properties,
+		immer::array<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
+	{
+		return maybe_score_physical_device_and_queue_family(
+			physical_device, physical_device_properties, queue_family_idxs);
+	}
+
+	struct with_physical_device_t
+	{
+		VkPhysicalDevice physical_device;
+		constexpr auto operator()(
+			VkPhysicalDeviceProperties const & physical_device_properties,
+			immer::array<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
+		{
+			return maybe_score_for_physical_device_properties_and_queue_family_t{}(
+				physical_device, physical_device_properties, queue_family_idxs);
+		}
+	};
+};
+
+struct queue_family_idxs_for_surface_and_physical_device_and_capabilities_t
+{
+	struct io_t
+	{
+		constexpr auto operator()(
+			types::VulkanSurfacePtr surface,
+			VkPhysicalDevice physical_device,
+			VkQueueFlagBits desired_queue_capabilities) const
+		{
+			return monadic::query_available_queue_family_properties_t::io_t{}(physical_device)
+				.fmap(
+					transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t::
+						with_desired_queue_capabilities_t{desired_queue_capabilities})
+				.filter(
+					monadic::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t::
+						io_t::with_physical_device_and_surface_t{
+							.physical_device = physical_device, .surface = std::move(surface)});
+		}
+	};
+};
+
+struct compute_maybe_score_and_select_queue_family_for_physical_device_t
+{
+	struct io_t
+	{
+		constexpr auto operator()(
+			types::VulkanSurfacePtr surface,
+			VkPhysicalDevice physical_device,
+			VkQueueFlagBits desired_queue_capabilities) const
+		{
+			using monadic::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t;
+			using monadic::query_available_queue_family_properties_t;
+			using monadic::query_physical_device_properties_t;
+			return sequence(
+					   query_physical_device_properties_t::io_t{}(physical_device),
+					   queue_family_idxs_for_surface_and_physical_device_and_capabilities_t::io_t{}(
+						   std::move(surface), physical_device, desired_queue_capabilities))
+				.fmap(
+					maybe_score_for_physical_device_properties_and_queue_family_t::
+						with_physical_device_t{physical_device});
+		}
+
+		struct with_surface_and_queue_capabilities_t
+		{
+			types::VulkanSurfacePtr surface;
+			VkQueueFlagBits desired_queue_capabilities;
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
+			{
+				return io_t{}(surface, physical_device, desired_queue_capabilities);
+			}
+		};
+	};
+};
+
+struct compute_maybe_score_and_select_queue_family_for_physical_devices_t
+{
+	struct io_t
+	{
+		static constexpr auto operator()(
+			types::VulkanSurfacePtr surface,
+			immer::array<VkPhysicalDevice> physical_devices,
+			VkQueueFlagBits desired_queue_capabilities)
+		{
+			using monadic::query_available_queue_family_properties_t;
+			using monadic::query_physical_device_properties_t;
+			using vulkandemo::monad::io::sequence;
+
+			auto const score_ios =
+				physical_devices |
+				ranges::views::transform(
+					compute_maybe_score_and_select_queue_family_for_physical_device_t::io_t::
+						with_surface_and_queue_capabilities_t{
+							.surface = std::move(surface),
+							.desired_queue_capabilities = desired_queue_capabilities}) |
+				ranges::to<immer::array>;
+
+			return sequence(score_ios);
+		}
+
+		struct with_surface_and_queue_capabilities_t
+		{
+			types::VulkanSurfacePtr surface;
+			VkQueueFlagBits desired_queue_capabilities;
+			constexpr auto operator()(
+				this auto && self, immer::array<VkPhysicalDevice> physical_devices)
+			{
+				return io_t{}(
+					FW(self).surface,
+					std::move(physical_devices),
+					FW(self).desired_queue_capabilities);
+			}
+		};
+	};
+};
+
+struct select_physical_device_and_queue_family_t
+{
+	struct io_t
+	{
+		constexpr auto operator()(
+			LoggerPtr const & logger,
+			types::VulkanInstancePtr instance,
+			types::VulkanSurfacePtr surface,
+			VkMemoryPropertyFlags memory_property_flags,
+			immer::set<types::DesiredDeviceExtensionNameView> const &
+				desired_device_extension_names,
+			VkQueueFlagBits desired_queue_capabilities) const
+		{
+			return monadic::enumerate_physical_devices_t::io_t{}(logger, std::move(instance))
+				.filter(
+					check_physical_device_has_desired_memory_properties_t::io_t::
+						with_logger_and_memory_property_flags_t{
+							.logger = logger, .memory_property_flags = memory_property_flags})
+				.filter(
+					check_physical_device_has_desired_extensions_t::io_t::
+						with_logger_and_desired_extensions_t{
+							.logger = logger,
+							.desired_device_extension_names = desired_device_extension_names})
+				.bind(
+					compute_maybe_score_and_select_queue_family_for_physical_devices_t::io_t::
+						with_surface_and_queue_capabilities_t{
+							.surface = std::move(surface),
+							.desired_queue_capabilities = desired_queue_capabilities})
+				.fmap(hof::transform_maybes_to_values_t{})
+				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx);
+		}
+	};
+
+	struct readerio_t
+	{
+		struct action_t
+		{
+			VkMemoryPropertyFlags memory_property_flags;
+			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
+			VkQueueFlagBits desired_queue_capabilities;
+			constexpr auto operator()(this auto && self, auto && state)
+			{
+				return io_t{}(
+					state->logger,
+					state->instance,
+					state->surface,
+					FW(self).memory_property_flags,
+					FW(self).desired_device_extension_names,
+					FW(self).desired_queue_capabilities);
+			}
+		};
+
+		static constexpr auto operator()(
+			VkMemoryPropertyFlags memory_property_flags,
+			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
+			VkQueueFlagBits desired_queue_capabilities)
+		{
+			return readerio::ReaderIO{action_t{
+				.memory_property_flags = memory_property_flags,
+				.desired_device_extension_names = std::move(desired_device_extension_names),
+				.desired_queue_capabilities = desired_queue_capabilities}};
+		}
+	};
+
+	struct stateio_t
+	{
+		struct modify_state_t
+		{
+			static constexpr auto operator()(
+				std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+					maybe_selected_physical_device_and_queue_family_idx,
+				auto && state)
+			{
+				auto const [physical_device, queue_family_idx] =
+					maybe_selected_physical_device_and_queue_family_idx.value();
+
+				return FW(state).update(
+					[&](auto obj)
+					{
+						obj.physical_device = physical_device;
+						obj.queues = std::move(obj.queues).set(queue_family_idx, {{}});
+						return obj;
+					});
+			}
+		};
+
+		static constexpr auto operator()(
+			VkMemoryPropertyFlags memory_property_flags,
+			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
+			VkQueueFlagBits desired_queue_capabilities)
+		{
+			return stateio::lift_readerio(
+					   readerio_t{}(
+						   memory_property_flags,
+						   std::move(desired_device_extension_names),
+						   desired_queue_capabilities))
+				.store(modify_state_t{});
+		}
+	};
+};
 constexpr auto create_window(std::string title, int width, int height)
 {
 	using namespace vulkandemo::monad;
@@ -1833,6 +2122,22 @@ constexpr auto create_instance_and_maybe_debug_messenger(
 {
 	return create_instance_and_maybe_debug_messenger_t::stateio_t{}(
 		std::move(name), std::move(desired_layer_names), std::move(desired_instance_extensions));
+}
+
+constexpr auto create_surface()
+{
+	return create_surface_t::stateio_t{}();
+}
+
+constexpr auto select_physical_device_and_queue_family(
+	VkMemoryPropertyFlags memory_property_flags,
+	immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
+	VkQueueFlagBits desired_queue_capabilities)
+{
+	return select_physical_device_and_queue_family_t::stateio_t{}(
+		memory_property_flags,
+		std::move(desired_device_extension_names),
+		desired_queue_capabilities);
 }
 
 }  // namespace vulkandemo::setup::monadic
