@@ -2,6 +2,7 @@
 #pragma once
 #include <optional>
 #include <ranges>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -30,17 +31,18 @@ struct maybe_t
 
 			using NewStateIO = std::invoke_result_t<Kleisli, Value>;
 			using NewIO = std::invoke_result_t<NewStateIO, State>;
-			using NewIOResult = std::invoke_result_t<NewIO>;
-			using MaybeNewIOResult = std::optional<NewIOResult>;
-			using Ret = std::pair<MaybeNewIOResult, State>;
+			using NewIOResultAndState = std::invoke_result_t<NewIO>;
+			using MaybeNewIOResult = std::optional<std::tuple_element_t<0, NewIOResultAndState>>;
+			using NewState = std::tuple_element_t<1, NewIOResultAndState>;
+			using Ret = std::pair<MaybeNewIOResult, NewState>;
 
 			constexpr Ret operator()(this auto && self)
 			{
 				if (!self.value.has_value())
 					return std::pair{std::nullopt, FW(self).state};
 
-				auto&& new_value = FW(self).kleisli(*FW(self).value)(FW(self).state)();
-				return std::pair{std::optional{FW(new_value)}, self.state};
+				auto [new_value, new_state] = FW(self).kleisli(*FW(self).value)(FW(self).state)();
+				return std::pair{std::optional{std::move(new_value)}, std::move(new_state)};
 			}
 		};
 
@@ -68,6 +70,10 @@ struct maybe_t
 		template <class Value>
 		static constexpr auto operator()(auto && kleisli, std::optional<Value> value)
 		{
+			// Ideally we could either call the kleisli or not depending on value, and if not
+			// return some kind of identity/null StateIO. However, every StateIO has a unique
+			// type (due to template shenanigans) so we must wrap everything in a single custom
+			// IO in order to have a consistent type.
 			return StateIO{action_t{FW(kleisli), std::move(value)}};
 		}
 

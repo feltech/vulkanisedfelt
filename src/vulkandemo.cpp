@@ -70,7 +70,7 @@ void vulkandemo(LoggerPtr const & logger)  // NOLINT(readability-function-cognit
 					"vulkandemo",
 					{types::DesiredInstanceLayerNameView{"VK_LAYER_KHRONOS_validation"}},
 					{types::DesiredInstanceExtensionNameView{VK_EXT_DEBUG_UTILS_EXTENSION_NAME}}))
-			.then(setup::monadic::create_surface());
+			.then(setup::monadic::create_surface_t::stateio_t{}());
 	auto const [result, state] = program(std::move(initial_state))().sync_wait();
 
 	types::SDLWindowPtr const window = setup::create_window("", 100, 100);
