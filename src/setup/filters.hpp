@@ -21,16 +21,19 @@
 namespace vulkandemo::setup
 {
 
-std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
-maybe_select_best_scoring_physical_device_and_queue_family_idx(
-	immer::array<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
+std::optional<std::pair<VkPhysicalDevice, types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap>>
+maybe_select_best_scoring_physical_device_and_queue_family_indices(
+	immer::array<
+		std::tuple<std::size_t, VkPhysicalDevice, types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap>>
 		candidates);
 
-std::optional<std::tuple<std::size_t, VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
-maybe_score_physical_device_and_queue_family(
+std::optional<
+	std::tuple<std::size_t, VkPhysicalDevice, types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap>>
+maybe_score_physical_device_and_queue_families(
 	VkPhysicalDevice physical_device,
 	VkPhysicalDeviceProperties const & physical_device_properties,
-	immer::array<types::VulkanQueueFamilyIdx> const & filtered_queue_family_idxs);
+	std::optional<types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap> const &
+		selected_queue_families);
 
 // Filters available device extensions by desired names and transforms to those present on the
 // device

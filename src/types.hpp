@@ -147,6 +147,9 @@ using VulkanQueueCount = strong::type<
 using MapOfVulkanQueueFamilyIdxToVectorOfQueues =
 	immer::map<VulkanQueueFamilyIdx, immer::array<VkQueue>>;
 
+using RequestedQueueFlagsToVulkanQueueFamilyIdxMap =
+	immer::map<VkQueueFlagBits, VulkanQueueFamilyIdx>;
+
 using AvailableDeviceExtensionNameView = strong::type<
 	std::string_view,
 	struct TagForAvailableDeviceExtensionNameView,

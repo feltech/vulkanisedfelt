@@ -24,7 +24,7 @@ class vulkandemoRecipe(ConanFile):
         "di/1.3.0",
         "reflect-cpp/0.11.1",
         "immer/0.8.1",
-        "libfork/3.8.0"
+        "libfork/3.8.0",
     ]
 
     settings = "build_type", "os"

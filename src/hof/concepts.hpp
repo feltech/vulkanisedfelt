@@ -4,9 +4,11 @@
 #pragma once
 #include <concepts>
 #include <type_traits>
+#include <tuple>
 
 #include <immer/detail/rbts/bits.hpp>
 #include <immer/vector.hpp>
+#include <immer/array.hpp>
 
 namespace vulkandemo::hof
 {
@@ -18,6 +20,13 @@ struct unspecialise_t<Container<OldArgs...>>
 {
 	template <typename... Args>
 	using specialise_t = Container<Args...>;
+};
+
+template <typename T, typename MemoryPolicy>
+struct unspecialise_t<immer::array<T, MemoryPolicy>>
+{
+	template <typename NewT>
+	using specialise_t = immer::array<NewT, MemoryPolicy>;
 };
 
 template <
@@ -51,8 +60,8 @@ template <typename, typename>
 struct is_applicable : std::false_type
 {
 };
-template <typename Func, template <typename...> typename Tuple, typename... Args>
-struct is_applicable<Func, Tuple<Args...>> : std::is_invocable<Func, Args...>
+template <typename Func, typename... Args>
+struct is_applicable<Func, std::tuple<Args...>> : std::is_invocable<Func, Args...>
 {
 };
 }  // namespace detail
@@ -67,17 +76,20 @@ struct apply_result : std::false_type
 {
 };
 
-template <typename Func, template <typename...> typename Tuple, typename... Args>
-struct apply_result<Func, Tuple<Args...>> : std::invoke_result<Func, Args...>
+template <typename Func, typename... Args>
+struct apply_result<Func, std::tuple<Args...>> : std::invoke_result<Func, Args...>
 {
 };
 
 template <class... Args>
-using apply_result_t = apply_result<Args...>;
+using apply_result_t = apply_result<Args...>::type;
 }  // namespace detail
 
 template <class F, class T>
-struct invoke_or_apply_result : detail::apply_result<F, T>
+struct invoke_or_apply_result;
+
+template <class F, class T>
+requires (applicable_with<F, T> && !std::invocable<F, T>) struct invoke_or_apply_result<F, T> : detail::apply_result<F, T>
 {
 };
 

@@ -8,6 +8,9 @@
 #include <string>
 #include <utility>
 
+#include <range/v3/view/zip.hpp>
+#include <range/v3/view/all.hpp>
+#include <range/v3/view/transform.hpp>
 #include <vulkan/vulkan_core.h>
 
 #include <immer/array.hpp>
@@ -1847,9 +1850,9 @@ struct check_physical_device_has_desired_memory_properties_t
 		{
 			LoggerPtr logger;
 			VkMemoryPropertyFlags memory_property_flags;
-			constexpr auto operator()(this auto && self, VkPhysicalDevice physical_device)
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
 			{
-				return io_t{}(FW(self).logger, physical_device, FW(self).memory_property_flags);
+				return io_t{}(logger, physical_device, memory_property_flags);
 			}
 		};
 	};
@@ -1880,24 +1883,25 @@ struct check_physical_device_has_desired_extensions_t
 		{
 			LoggerPtr logger;
 			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
-			constexpr auto operator()(this auto && self, VkPhysicalDevice physical_device)
+			constexpr auto operator()(VkPhysicalDevice physical_device) const
 			{
 				return io_t{}(
-					FW(self).logger, physical_device, FW(self).desired_device_extension_names);
+					logger, physical_device, desired_device_extension_names);
 			}
 		};
 	};
 };
 
-struct maybe_score_for_physical_device_properties_and_queue_family_t
+struct maybe_score_for_physical_device_properties_and_queue_families_t
 {
 	constexpr auto operator()(
 		VkPhysicalDevice physical_device,
 		VkPhysicalDeviceProperties const & physical_device_properties,
-		immer::array<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
+		std::optional<types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap> const &
+			selected_queue_families) const
 	{
-		return maybe_score_physical_device_and_queue_family(
-			physical_device, physical_device_properties, queue_family_idxs);
+		return maybe_score_physical_device_and_queue_families(
+			physical_device, physical_device_properties, selected_queue_families);
 	}
 
 	struct with_physical_device_t
@@ -1905,10 +1909,11 @@ struct maybe_score_for_physical_device_properties_and_queue_family_t
 		VkPhysicalDevice physical_device;
 		constexpr auto operator()(
 			VkPhysicalDeviceProperties const & physical_device_properties,
-			immer::array<types::VulkanQueueFamilyIdx> const & queue_family_idxs) const
+			std::optional<types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap> const &
+				selected_queue_families) const
 		{
-			return maybe_score_for_physical_device_properties_and_queue_family_t{}(
-				physical_device, physical_device_properties, queue_family_idxs);
+			return maybe_score_for_physical_device_properties_and_queue_families_t{}(
+				physical_device, physical_device_properties, selected_queue_families);
 		}
 	};
 };
@@ -1920,16 +1925,48 @@ struct queue_family_idxs_for_surface_and_physical_device_and_capabilities_t
 		constexpr auto operator()(
 			types::VulkanSurfacePtr surface,
 			VkPhysicalDevice physical_device,
-			VkQueueFlagBits desired_queue_capabilities) const
+			immer::array<VkQueueFlagBits> desired_queue_capabilities) const
 		{
-			return monadic::query_available_queue_family_properties_t::io_t{}(physical_device)
-				.fmap(
-					transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t::
-						with_desired_queue_capabilities_t{desired_queue_capabilities})
-				.filter(
-					monadic::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t::
-						io_t::with_physical_device_and_surface_t{
-							.physical_device = physical_device, .surface = std::move(surface)});
+			using monadic::query_available_queue_family_properties_t;
+			using vulkandemo::monad::io::sequence;
+
+			auto const find_family_io = [&](VkQueueFlagBits flags)
+			{
+				return query_available_queue_family_properties_t::io_t{}(physical_device)
+					.fmap(
+						transform_queue_family_properties_to_queue_family_idxs_filtered_by_capability_t::
+							with_desired_queue_capabilities_t{flags})
+					.filter(
+						monadic::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t::
+							io_t::with_physical_device_and_surface_t{
+								.physical_device = physical_device,
+								.surface = surface})
+					.fmap(
+						[](immer::array<types::VulkanQueueFamilyIdx> idxs)
+							-> std::optional<types::VulkanQueueFamilyIdx>
+						{
+							if (idxs.empty()) return std::nullopt;
+							return idxs.front();
+						});
+			};
+
+			auto const family_ios =
+				ranges::views::all(desired_queue_capabilities) |
+				ranges::views::transform(find_family_io) |
+				ranges::to<immer::array>;
+
+			return sequence(family_ios).fmap(
+				[desired_queue_capabilities](immer::array<std::optional<types::VulkanQueueFamilyIdx>> maybes)
+					-> std::optional<types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap>
+				{
+					auto out = types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap{};
+					for (auto const & [flags, maybe_idx] : ranges::views::zip(desired_queue_capabilities, maybes))
+					{
+						if (!maybe_idx) return std::nullopt;
+						out = std::move(out).set(flags, *maybe_idx);
+					}
+					return out;
+				});
 		}
 	};
 };
@@ -1941,7 +1978,7 @@ struct compute_maybe_score_and_select_queue_family_for_physical_device_t
 		constexpr auto operator()(
 			types::VulkanSurfacePtr surface,
 			VkPhysicalDevice physical_device,
-			VkQueueFlagBits desired_queue_capabilities) const
+			immer::array<VkQueueFlagBits> desired_queue_capabilities) const
 		{
 			using monadic::maybe_queue_family_idx_if_supported_by_physical_device_and_surface_t;
 			using monadic::query_available_queue_family_properties_t;
@@ -1951,14 +1988,19 @@ struct compute_maybe_score_and_select_queue_family_for_physical_device_t
 					   queue_family_idxs_for_surface_and_physical_device_and_capabilities_t::io_t{}(
 						   std::move(surface), physical_device, desired_queue_capabilities))
 				.fmap(
-					maybe_score_for_physical_device_properties_and_queue_family_t::
-						with_physical_device_t{physical_device});
+					[physical_device](auto && tuple_of_props_and_families)
+					{
+						return std::apply(
+							maybe_score_for_physical_device_properties_and_queue_families_t::
+								with_physical_device_t{physical_device},
+							tuple_of_props_and_families);
+					});
 		}
 
 		struct with_surface_and_queue_capabilities_t
 		{
 			types::VulkanSurfacePtr surface;
-			VkQueueFlagBits desired_queue_capabilities;
+			immer::array<VkQueueFlagBits> desired_queue_capabilities;
 			constexpr auto operator()(VkPhysicalDevice physical_device) const
 			{
 				return io_t{}(surface, physical_device, desired_queue_capabilities);
@@ -1974,35 +2016,29 @@ struct compute_maybe_score_and_select_queue_family_for_physical_devices_t
 		static constexpr auto operator()(
 			types::VulkanSurfacePtr surface,
 			immer::array<VkPhysicalDevice> physical_devices,
-			VkQueueFlagBits desired_queue_capabilities)
+			immer::array<VkQueueFlagBits> desired_queue_capabilities)
 		{
-			using monadic::query_available_queue_family_properties_t;
-			using monadic::query_physical_device_properties_t;
-			using vulkandemo::monad::io::sequence;
+			using vulkandemo::monad::io::pure;
 
-			auto const score_ios =
-				physical_devices |
-				ranges::views::transform(
-					compute_maybe_score_and_select_queue_family_for_physical_device_t::io_t::
-						with_surface_and_queue_capabilities_t{
-							.surface = std::move(surface),
-							.desired_queue_capabilities = desired_queue_capabilities}) |
-				ranges::to<immer::array>;
+			auto const score_io_fn =
+				[surface, desired_queue_capabilities](VkPhysicalDevice physical_device)
+			{
+				return compute_maybe_score_and_select_queue_family_for_physical_device_t::io_t{}(
+					surface, physical_device, desired_queue_capabilities);
+			};
 
-			return sequence(score_ios);
+			return pure(std::move(physical_devices)).traverse(score_io_fn);
 		}
 
 		struct with_surface_and_queue_capabilities_t
 		{
 			types::VulkanSurfacePtr surface;
-			VkQueueFlagBits desired_queue_capabilities;
-			constexpr auto operator()(
-				this auto && self, immer::array<VkPhysicalDevice> physical_devices)
+			immer::array<VkQueueFlagBits> desired_queue_capabilities;
+
+			auto operator()(immer::array<VkPhysicalDevice> const & physical_devices) const
 			{
 				return io_t{}(
-					FW(self).surface,
-					std::move(physical_devices),
-					FW(self).desired_queue_capabilities);
+					surface, physical_devices, desired_queue_capabilities);
 			}
 		};
 	};
@@ -2019,7 +2055,7 @@ struct select_physical_device_and_queue_family_t
 			VkMemoryPropertyFlags memory_property_flags,
 			immer::set<types::DesiredDeviceExtensionNameView> const &
 				desired_device_extension_names,
-			VkQueueFlagBits desired_queue_capabilities) const
+			immer::array<VkQueueFlagBits> desired_queue_capabilities) const
 		{
 			return monadic::enumerate_physical_devices_t::io_t{}(logger, std::move(instance))
 				.filter(
@@ -2037,7 +2073,7 @@ struct select_physical_device_and_queue_family_t
 							.surface = std::move(surface),
 							.desired_queue_capabilities = desired_queue_capabilities})
 				.fmap(hof::transform_maybes_to_values_t{})
-				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_idx);
+				.fmap(maybe_select_best_scoring_physical_device_and_queue_family_indices);
 		}
 	};
 
@@ -2047,7 +2083,7 @@ struct select_physical_device_and_queue_family_t
 		{
 			VkMemoryPropertyFlags memory_property_flags;
 			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names;
-			VkQueueFlagBits desired_queue_capabilities;
+			immer::array<VkQueueFlagBits> desired_queue_capabilities;
 			constexpr auto operator()(this auto && self, auto && state)
 			{
 				return io_t{}(
@@ -2063,7 +2099,7 @@ struct select_physical_device_and_queue_family_t
 		static constexpr auto operator()(
 			VkMemoryPropertyFlags memory_property_flags,
 			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
-			VkQueueFlagBits desired_queue_capabilities)
+			immer::array<VkQueueFlagBits> desired_queue_capabilities)
 		{
 			return readerio::ReaderIO{action_t{
 				.memory_property_flags = memory_property_flags,
@@ -2077,18 +2113,20 @@ struct select_physical_device_and_queue_family_t
 		struct modify_state_t
 		{
 			static constexpr auto operator()(
-				std::optional<std::pair<VkPhysicalDevice, types::VulkanQueueFamilyIdx>>
-					maybe_selected_physical_device_and_queue_family_idx,
+				std::optional<std::pair<VkPhysicalDevice, types::RequestedQueueFlagsToVulkanQueueFamilyIdxMap>>
+					maybe_selected_physical_device_and_queue_families,
 				auto && state)
 			{
-				auto const [physical_device, queue_family_idx] =
-					maybe_selected_physical_device_and_queue_family_idx.value();
+				auto const [physical_device, selected_queue_families] =
+					maybe_selected_physical_device_and_queue_families.value();
 
 				return FW(state).update(
-					[&](auto obj)
+					[&, physical_device = physical_device, selected_queue_families = selected_queue_families](
+						auto obj)
 					{
 						obj.physical_device = physical_device;
-						obj.queues = std::move(obj.queues).set(queue_family_idx, {{}});
+						for (auto const & [flags, queue_family_idx] : selected_queue_families)
+							obj.queues = std::move(obj.queues).set(queue_family_idx, {{}});
 						return obj;
 					});
 			}
@@ -2097,7 +2135,7 @@ struct select_physical_device_and_queue_family_t
 		static constexpr auto operator()(
 			VkMemoryPropertyFlags memory_property_flags,
 			immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
-			VkQueueFlagBits desired_queue_capabilities)
+			immer::array<VkQueueFlagBits> desired_queue_capabilities)
 		{
 			return stateio::lift_readerio(
 					   readerio_t{}(
@@ -2132,12 +2170,12 @@ constexpr auto create_surface()
 constexpr auto select_physical_device_and_queue_family(
 	VkMemoryPropertyFlags memory_property_flags,
 	immer::set<types::DesiredDeviceExtensionNameView> desired_device_extension_names,
-	VkQueueFlagBits desired_queue_capabilities)
+	immer::array<VkQueueFlagBits> desired_queue_capabilities)
 {
 	return select_physical_device_and_queue_family_t::stateio_t{}(
 		memory_property_flags,
 		std::move(desired_device_extension_names),
-		desired_queue_capabilities);
+		std::move(desired_queue_capabilities));
 }
 
 }  // namespace vulkandemo::setup::monadic

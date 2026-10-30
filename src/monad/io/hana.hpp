@@ -87,7 +87,8 @@ struct chain_impl<io::io_tag_t>
 		using InputIOValue = unwrap_async_t<InputIOResult>;
 		static constexpr bool kIsInputIOAsync = unwrap_async_v<InputIOResult>;
 
-		using KleisliIO = invoke_or_apply_result_t<Kleisli, InputIOValue>;
+		using WrappedKleisli = std::decay_t<Kleisli>;
+		using KleisliIO = invoke_or_apply_result_t<WrappedKleisli, InputIOValue>;
 		using KleisliIOResult = std::invoke_result_t<KleisliIO>;
 		using KleisliIOValue = unwrap_async_t<KleisliIOResult>;
 		static constexpr bool kIsKleisliIOAsync = unwrap_async_v<KleisliIOResult>;
@@ -177,7 +178,8 @@ struct transform_impl<io::io_tag_t>
 		using InputIOValue = unwrap_async_t<InputIOResult>;
 		static constexpr bool kIsInputIOAsync = unwrap_async_v<InputIOResult>;
 
-		using TransformIOValue = invoke_or_apply_result_t<Transform, InputIOValue>;
+		using WrappedTransform = std::decay_t<Transform>;
+		using TransformIOValue = invoke_or_apply_result_t<WrappedTransform, InputIOValue>;
 
 		using IOResultType = TransformIOValue;
 
@@ -198,13 +200,15 @@ struct transform_impl<io::io_tag_t>
 				input_value = input_io();
 			}
 
-			if constexpr (std::invocable<Transform, InputIOValue>)
+			auto && transform_fn_decayed = FW(transform_fn);
+
+			if constexpr (std::invocable<std::decay_t<WrappedTransform>, InputIOValue>)
 			{
-				co_return transform_fn(*std::move(input_value));
+				co_return transform_fn_decayed(*std::move(input_value));
 			}
-			else if constexpr (applicable_with<Transform, InputIOValue>)
+			else if constexpr (applicable_with<std::decay_t<WrappedTransform>, InputIOValue>)
 			{
-				co_return std::apply(transform_fn, *std::move(input_value));
+				co_return std::apply(transform_fn_decayed, *std::move(input_value));
 			}
 			else
 			{
