@@ -10,6 +10,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_enumerate_instance_extension_properties(
+    char const * layer_name, std::uint32_t * count, VkExtensionProperties * properties)
+{
+    return ::vkEnumerateInstanceExtensionProperties(layer_name, count, properties);
+}
 VkResult Api::vk_create_instance(
     VkInstanceCreateInfo const * create_info,
     VkAllocationCallbacks const * allocator,

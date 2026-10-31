@@ -9,6 +9,8 @@
 #pragma once
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <cstdint>
+
 #include <vulkan/vulkan_core.h>
 
 #include <trompeloeil.hpp>
@@ -20,6 +22,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Instance extension enumeration expectations. */
+    MAKE_MOCK3(
+        vk_enumerate_instance_extension_properties,
+        VkResult(char const *, std::uint32_t *, VkExtensionProperties *));
     /** Instance creation expectations. */
     MAKE_MOCK3(
         vk_create_instance,
