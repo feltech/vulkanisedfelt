@@ -4,6 +4,9 @@
 
 add_executable(
   vulkandemo
+  backend/api.cpp
+  backend/mock_api.cpp
+  vulkan/instance.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -17,6 +20,13 @@ target_sources(
           HEADERS
           FILES
           types.hpp
+          backend/api.hpp
+          backend/detail/api.hpp
+          backend/mock_api.hpp
+          vulkan/errors.hpp
+          vulkan/managed_handles.hpp
+          vulkan/instance.hpp
+          vulkan/detail/instance.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
