@@ -26,6 +26,15 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Retrieves queue family properties.
+     *
+     * @param device Borrowed physical device.
+     * @param count Capacity on input and written count on output.
+     * @param properties Output storage, or null for the count.
+     */
+    void vk_get_physical_device_queue_family_properties(
+        VkPhysicalDevice device, std::uint32_t * count, VkQueueFamilyProperties * properties);
+    /**
      * Retrieves physical device properties.
      *
      * @param device Borrowed physical device.
