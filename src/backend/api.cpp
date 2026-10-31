@@ -6,6 +6,11 @@
 
 namespace vulkandemo::backend
 {
+VkResult Api::vk_enumerate_instance_layer_properties(
+    std::uint32_t * count, VkLayerProperties * properties)
+{
+    return ::vkEnumerateInstanceLayerProperties(count, properties);
+}
 VkResult Api::vk_enumerate_instance_extension_properties(
     char const * layer_name, std::uint32_t * count, VkExtensionProperties * properties)
 {

@@ -20,6 +20,9 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Instance layer enumeration expectations. */
+    MAKE_MOCK2(
+        vk_enumerate_instance_layer_properties, VkResult(std::uint32_t *, VkLayerProperties *));
     /** Instance extension enumeration expectations. */
     MAKE_MOCK3(
         vk_enumerate_instance_extension_properties,
