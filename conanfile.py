@@ -14,6 +14,7 @@ class vulkandemoRecipe(ConanFile):
 
     requires = [
         "doctest/2.5.3",
+        "trompeloeil/49",
         "immer/0.9.1",
         "libfork/3.8.0",
         "sdl/2.30.8",
