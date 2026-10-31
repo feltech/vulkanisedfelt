@@ -20,6 +20,10 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Device extension enumeration expectations. */
+    MAKE_MOCK4(
+        vk_enumerate_device_extension_properties,
+        VkResult(VkPhysicalDevice, char const *, std::uint32_t *, VkExtensionProperties *));
     /** Queue family query expectations. */
     MAKE_MOCK3(
         vk_get_physical_device_queue_family_properties,

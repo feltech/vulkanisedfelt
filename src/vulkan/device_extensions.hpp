@@ -1,0 +1,48 @@
+// vulkanisedfelt
+// SPDX-License-Identifier: MIT
+// Copyright 2026 David Feltell
+/**
+ * @file vulkan/device_extensions.hpp
+ *
+ * Deferred enumeration of global Vulkan device extensions.
+ */
+#pragma once
+
+#include <functional>
+#include <utility>
+
+#include <vulkan/vulkan_core.h>
+
+#include <fnfelt/monad/reader_io.hpp>
+
+#include "detail/device_extensions.hpp"
+
+namespace vulkandemo::vulkan
+{
+/**
+ * Plans global device extension enumeration with at most three count/fill attempts.
+ *
+ * Incomplete queries and oversized reported counts retry; exhaustion returns VK_INCOMPLETE.
+ * The API borrowed through the environment's api reference_wrapper must outlive execution.
+ * The physical device's parent instance must outlive execution.
+ *
+ * @param physical_device Borrowed physical device to query.
+ * @tparam TEnvironment Capabilities supplied when building the action.
+ * @return Reusable ReaderIO producing immutable properties or Vulkan error.
+ */
+template <vk_enumerate_device_extension_properties_environment TEnvironment>
+[[nodiscard]] constexpr auto reader_io_vk_enumerate_device_extension_properties(
+    VkPhysicalDevice physical_device)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // Factory producing device-extension IO from an execution environment.
+    auto io_enumerate_device_extension_properties = std::bind_front(
+        detail::io_enumerate_device_extension_properties<TEnvironment>, physical_device);
+
+    // ReaderIO producing an owned device extension snapshot or query failure.
+    return reader_io::create<"vk_enumerate_device_extension_properties"_ss, TEnvironment>(
+        std::move(io_enumerate_device_extension_properties));
+}
+}  // namespace vulkandemo::vulkan
