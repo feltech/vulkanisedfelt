@@ -1,15 +1,29 @@
-cmake_minimum_required(VERSION 3.28)
-project(vulkandemo CXX C)
+# vulkanisedfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
 
-####################################################################################################
-# Options
+cmake_minimum_required(VERSION 3.30)
+project(
+  vulkanisedfelt
+  VERSION 1.0.0
+  LANGUAGES CXX C)
 
-option(${PROJECT_NAME}_ENABLE_TESTS "Enable unit tests" OFF)
+option(${PROJECT_NAME}_ENABLE_DEV "Enable tests and linting" OFF)
 option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" OFF)
 
+if(${PROJECT_NAME}_ENABLE_DEV)
+  enable_testing()
+  include(cmake/linters.cmake)
+endif()
 
-####################################################################################################
-# Dependencies
+# Set the standard before fnfelt's reflection capability probe, which cannot
+# inherit the interface target's compile features before that target exists.
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+# fnfelt owns pinned stdexec through CPM; Conan supplies Immer and libfork.
+add_subdirectory(vendor/fnfelt EXCLUDE_FROM_ALL)
 
 find_package(doctest REQUIRED)
 find_package(SDL2 REQUIRED)
@@ -21,112 +35,11 @@ find_package(range-v3 REQUIRED)
 find_package(frozen REQUIRED)
 find_package(etl REQUIRED)
 find_package(Vulkan REQUIRED)
-add_subdirectory(vendor/lift)
+add_subdirectory(vendor/lift EXCLUDE_FROM_ALL)
 add_library(rollbear::lift ALIAS lift)
 
+add_subdirectory(src)
 
-####################################################################################################
-# Create target
-
-set(_exe_target vulkandemo)
-
-add_executable(
-    ${_exe_target}
-    src/types.cpp
-    src/setup.cpp
-    src/draw.cpp
-    src/Logger.cpp
-    src/vulkandemo.cpp
-    src/vulkandemo.hpp
-    src/main.cpp
-)
-
-install(
-    TARGETS ${_exe_target}
-    DESTINATION "."
-    RUNTIME DESTINATION bin
-    ARCHIVE DESTINATION lib
-    LIBRARY DESTINATION lib
-)
-
-target_compile_features(${_exe_target} PRIVATE cxx_std_23)
-set_target_properties(${_exe_target} PROPERTIES CXX_EXTENSIONS OFF)
-
-target_link_libraries(
-    ${_exe_target}
-    PRIVATE
-    doctest::doctest
-    SDL2::SDL2
-    spdlog::spdlog
-    fmt::fmt
-    Microsoft.GSL::GSL
-    Vulkan::Vulkan
-    rollbear::strong_type
-    rollbear::lift
-    range-v3::range-v3
-    frozen::frozen
-    etl::etl
-)
-
-target_compile_definitions(
-    ${_exe_target}
-    PRIVATE
-    SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_DEBUG,SPDLOG_LEVEL_INFO>
-)
-
-if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(
-            ${_exe_target}
-            PUBLIC
-            -fsanitize=address,undefined
-            -fno-sanitize-recover=all
-            -fno-omit-frame-pointer
-        )
-        target_link_options(
-            ${_exe_target}
-            PUBLIC
-            -fsanitize=address,undefined
-            -fno-sanitize-recover=all
-            -fno-omit-frame-pointer
-        )
-    endif ()
-endif ()
-
-# Testing
-
-if (${PROJECT_NAME}_ENABLE_TESTS)
-    enable_testing()
-
-    add_test(
-        NAME ${_exe_target}
-        COMMAND
-        ${_exe_target}
-        # Do not continue on to run the application after running tests.
-        --exit=true
-        # Also report successful tests (useful due to volume of logging).
-        #        --success=true
-    )
-
-    if (${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
-        # Create a library that stubs out dlclose. This is for two reasons:
-        # * It resolves LSan leak detection false positives in vulkan and nvidia drivers.
-        # * If LSan does detect a leak, the name of the library should be reported in the stack
-        #   trace
-        add_library(dlclose_stub SHARED dlclose_stub.c)
-        target_link_libraries(${_exe_target} PRIVATE dlclose_stub)
-
-        list(APPEND _envvars.lsan_opts "verbosity=1")
-        list(APPEND _envvars.lsan_opts "log_threads=1")
-        list(JOIN _envvars.lsan_opts ":" _envvars.lsan_opts)
-        list(APPEND _envvars "LSAN_OPTIONS=${_envvars.lsan_opts}")
-        # Uncomment below to provide more reporting (but run slower).
-        # list(APPEND _envvars "ASAN_OPTIONS=fast_unwind_on_malloc=0")
-
-        set_tests_properties(${_exe_target} PROPERTIES ENVIRONMENT "${_envvars}")
-    endif ()
-
-else ()
-    target_compile_definitions(${_exe_target} PRIVATE DOCTEST_CONFIG_DISABLE)
-endif ()
-
+if(${PROJECT_NAME}_ENABLE_DEV)
+  add_subdirectory(tests)
+endif()
