@@ -18,6 +18,20 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Enumerates device extensions.
+     *
+     * @param device Borrowed physical device.
+     * @param layer_name Layer name, or null for global extensions.
+     * @param count Capacity on input and property count on output.
+     * @param properties Output storage, or null for the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_enumerate_device_extension_properties(
+        VkPhysicalDevice device,
+        char const * layer_name,
+        std::uint32_t * count,
+        VkExtensionProperties * properties);
+    /**
      * Retrieves queue family properties.
      *
      * @param device Borrowed physical device.
