@@ -16,4 +16,7 @@ namespace vulkandemo::vulkan
 {
 /** Shared instance owner. */
 using instance_ptr = std::shared_ptr<VkInstance_T>;
+
+/** Shared logical device owner. */
+using device_ptr = std::shared_ptr<VkDevice_T>;
 }  // namespace vulkandemo::vulkan

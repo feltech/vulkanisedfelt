@@ -10,6 +10,18 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_create_device(
+    VkPhysicalDevice device,
+    VkDeviceCreateInfo const * create_info,
+    VkAllocationCallbacks const * allocator,
+    VkDevice * output)
+{
+    return ::vkCreateDevice(device, create_info, allocator, output);
+}
+void Api::vk_destroy_device(VkDevice device, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroyDevice(device, allocator);
+}
 VkResult Api::vk_enumerate_device_extension_properties(
     VkPhysicalDevice device,
     char const * layer_name,
