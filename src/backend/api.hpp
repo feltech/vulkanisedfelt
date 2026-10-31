@@ -18,6 +18,15 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Enumerates instance layers.
+     *
+     * @param count Capacity on input and property count on output.
+     * @param properties Output storage, or null to query the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_enumerate_instance_layer_properties(
+        std::uint32_t * count, VkLayerProperties * properties);
+    /**
      * Enumerates instance extensions.
      *
      * @param layer_name Layer name, or null for global extensions.
