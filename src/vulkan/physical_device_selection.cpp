@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <ranges>
 #include <utility>
 
@@ -42,6 +43,17 @@ auto score_physical_devices(immer::array<VkPhysicalDeviceProperties> const & pro
     auto scores = immer::array<PhysicalDeviceScore>{}.transient();
     std::ranges::copy(candidates, std::back_inserter(scores));
     return std::move(scores).persistent();
+}
+
+auto select_physical_device(immer::array<PhysicalDeviceScore> const & scores)
+    -> std::optional<physical_device_index>
+{
+    auto selected = std::ranges::min_element(scores, {}, &PhysicalDeviceScore::score);
+    if (selected == scores.end())
+    {
+        return std::nullopt;
+    }
+    return selected->device_index;
 }
 
 #ifndef DOCTEST_CONFIG_DISABLE
@@ -110,6 +122,61 @@ TEST_CASE("[pure] physical device scoring treats non-discrete types equally")
     CHECK_EQ(scores[0].score, physical_device_score{1});
     CHECK_EQ(retained[0].deviceType, VK_PHYSICAL_DEVICE_TYPE_CPU);
     CHECK_EQ(retained[1].deviceType, VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU);
+}
+
+TEST_CASE("[pure] physical device selection accepts empty scores")
+{
+    immer::array<PhysicalDeviceScore> scores;
+
+    auto selected = select_physical_device(scores);
+
+    CHECK_FALSE(selected.has_value());
+}
+
+TEST_CASE("[pure] physical device selection uses supplied scores and original indices")
+{
+    // A custom policy can rank candidates independently of their array positions.
+    auto scores = immer::array<PhysicalDeviceScore>{
+        {physical_device_index{9}, physical_device_score{4}},
+        {physical_device_index{7}, physical_device_score{1}},
+        {physical_device_index{2}, physical_device_score{1}}};
+
+    auto selected = select_physical_device(scores);
+
+    REQUIRE(selected.has_value());
+    CHECK_EQ(*selected, physical_device_index{7});
+}
+
+TEST_CASE("[pure] physical device selection accepts maximum scores")
+{
+    // No numeric score is reserved as an ineligible-candidate sentinel.
+    auto scores = immer::array<PhysicalDeviceScore>{
+        {physical_device_index{5}, physical_device_score{UINT32_MAX}},
+        {physical_device_index{3}, physical_device_score{UINT32_MAX}}};
+
+    auto selected = select_physical_device(scores);
+
+    REQUIRE(selected.has_value());
+    CHECK_EQ(*selected, physical_device_index{5});
+}
+
+TEST_CASE("[pure] physical device scoring and selection preserve policy and ties")
+{
+    auto properties = immer::array<VkPhysicalDeviceProperties>{
+        device_properties(VK_PHYSICAL_DEVICE_TYPE_CPU),
+        device_properties(VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)};
+    physical_device_index expected_index{0};
+    SUBCASE("discrete GPUs are preferred")
+    {
+        properties = properties.push_back(device_properties(VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU));
+        expected_index = physical_device_index{2};
+    }
+    SUBCASE("equally ranked non-discrete GPUs retain snapshot order") {}
+
+    auto selected = select_physical_device(score_physical_devices(properties));
+
+    REQUIRE(selected.has_value());
+    CHECK_EQ(*selected, expected_index);
 }
 #endif  // DOCTEST_CONFIG_DISABLE
 }  // namespace vulkandemo::vulkan
