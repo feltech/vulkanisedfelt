@@ -24,4 +24,13 @@ struct QueueFamilyScoreTag;
 /** A lower-is-better queue-family policy cost. */
 using queue_family_score =
     strong::type<std::uint32_t, QueueFamilyScoreTag, strong::regular, strong::strongly_ordered>;
+
+struct PhysicalDeviceIndexTag;
+/** An index in an instance's physical-device snapshot. */
+using physical_device_index = strong::type<std::uint32_t, PhysicalDeviceIndexTag, strong::regular>;
+
+struct PhysicalDeviceScoreTag;
+/** A lower-is-better physical-device policy cost. */
+using physical_device_score =
+    strong::type<std::uint32_t, PhysicalDeviceScoreTag, strong::regular, strong::strongly_ordered>;
 }  // namespace vulkandemo::vulkan
