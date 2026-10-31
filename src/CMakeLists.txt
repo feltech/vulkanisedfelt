@@ -12,6 +12,7 @@ add_executable(
   vulkan/physical_devices.cpp
   vulkan/physical_device_properties.cpp
   vulkan/queue_family_properties.cpp
+  vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
   types.cpp
@@ -45,6 +46,7 @@ target_sources(
           vulkan/detail/physical_device_properties.hpp
           vulkan/queue_family_properties.hpp
           vulkan/detail/queue_family_properties.hpp
+          vulkan/queue_family_selection.hpp
           vulkan/device_extensions.hpp
           vulkan/detail/device_extensions.hpp
           vulkan/device.hpp
