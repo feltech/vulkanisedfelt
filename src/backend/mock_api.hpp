@@ -22,6 +22,9 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Instance layer enumeration expectations. */
+    MAKE_MOCK2(
+        vk_enumerate_instance_layer_properties, VkResult(std::uint32_t *, VkLayerProperties *));
     /** Instance extension enumeration expectations. */
     MAKE_MOCK3(
         vk_enumerate_instance_extension_properties,

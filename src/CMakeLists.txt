@@ -11,6 +11,7 @@ add_executable(
   vulkan/api_version.cpp
   vulkan/instance_version.cpp
   vulkan/instance_extensions.cpp
+  vulkan/instance_layers.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -39,6 +40,8 @@ target_sources(
           vulkan/detail/instance_version.hpp
           vulkan/instance_extensions.hpp
           vulkan/detail/instance_extensions.hpp
+          vulkan/instance_layers.hpp
+          vulkan/detail/instance_layers.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
