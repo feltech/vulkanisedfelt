@@ -8,10 +8,14 @@ class vulkandemoRecipe(ConanFile):
     package_type = "application"
 
     # Sources are located in the same place as this recipe, copy them to the recipe
-    exports_sources = "CMakeLists.txt", "src/*"
+    exports_sources = (
+        "CMakeLists.txt", "src/*", "cmake/*", "vendor/*", "dlclose_stub.c",
+    )
 
     requires = [
-        "doctest/2.4.11",
+        "doctest/2.5.3",
+        "immer/0.9.1",
+        "libfork/3.8.0",
         "sdl/2.30.8",
         "spdlog/1.14.1",
         "fmt/10.2.1",
@@ -22,7 +26,7 @@ class vulkandemoRecipe(ConanFile):
         "etl/20.39.4"
     ]
 
-    settings = "build_type", "os"
+    settings = "build_type", "os", "arch", "compiler"
 
     def layout(self):
         cmake_layout(self)
@@ -44,7 +48,3 @@ class vulkandemoRecipe(ConanFile):
     def package(self):
         cmake = CMake(self)
         cmake.install()
-
-    
-
-    

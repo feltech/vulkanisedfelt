@@ -1,0 +1,3 @@
+[submodule "vendor/fnfelt"]
+	path = vendor/fnfelt
+	url = https://github.com/feltech/fnfelt.git
