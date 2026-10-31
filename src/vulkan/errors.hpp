@@ -20,7 +20,17 @@ enum class FallibleVulkanOperation
     /// Instance API version query.
     enumerate_instance_version,
     /// Instance creation.
-    create_instance
+    create_instance,
+    /// Instance extension enumeration.
+    enumerate_instance_extensions,
+    /// Instance layer enumeration.
+    enumerate_instance_layers,
+    /// Physical device enumeration.
+    enumerate_physical_devices,
+    /// Device extension enumeration.
+    enumerate_device_extensions,
+    /// Logical device creation.
+    create_device
 };
 
 /// A failed Vulkan operation and its original status.
