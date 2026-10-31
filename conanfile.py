@@ -28,6 +28,13 @@ class vulkandemoRecipe(ConanFile):
 
     settings = "build_type", "os", "arch", "compiler"
 
+    # The demo initializes SDL video only. Avoid pulling in audio servers and
+    # codec libraries; these backends can still be enabled with Conan options.
+    default_options = {
+        "sdl/*:alsa": False,
+        "sdl/*:pulse": False,
+    }
+
     def layout(self):
         cmake_layout(self)
 
