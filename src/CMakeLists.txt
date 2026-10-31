@@ -9,6 +9,7 @@ add_executable(
   vulkan/instance.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
+  vulkan/physical_devices.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -33,6 +34,8 @@ target_sources(
           vulkan/detail/instance_extensions.hpp
           vulkan/instance_layers.hpp
           vulkan/detail/instance_layers.hpp
+          vulkan/physical_devices.hpp
+          vulkan/detail/physical_devices.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp

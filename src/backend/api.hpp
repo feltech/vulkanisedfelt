@@ -18,6 +18,16 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Enumerates physical devices belonging to an instance.
+     *
+     * @param instance Instance to query.
+     * @param count Capacity on input and device count on output.
+     * @param devices Output storage, or null for the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_enumerate_physical_devices(
+        VkInstance instance, std::uint32_t * count, VkPhysicalDevice * devices);
+    /**
      * Enumerates instance layers.
      *
      * @param count Capacity on input and property count on output.
