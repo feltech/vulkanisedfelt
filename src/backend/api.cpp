@@ -10,6 +10,14 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_enumerate_device_extension_properties(
+    VkPhysicalDevice device,
+    char const * layer_name,
+    std::uint32_t * count,
+    VkExtensionProperties * properties)
+{
+    return ::vkEnumerateDeviceExtensionProperties(device, layer_name, count, properties);
+}
 void Api::vk_get_physical_device_queue_family_properties(
     VkPhysicalDevice device, std::uint32_t * count, VkQueueFamilyProperties * properties)
 {
