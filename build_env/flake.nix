@@ -2,8 +2,6 @@
   description = "A Nix-flake-based C/C++ development environment";
   nixConfig.bash-prompt-suffix = "(vulkanisedfelt) ";
 
-  #inputs.nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-
   outputs = { self, nixpkgs }:
     let
       supportedSystems = [ "x86_64-linux" ];
@@ -16,7 +14,7 @@
         default = pkgs.mkShell.override
           {
             # Override stdenv in order to change compiler:
-            # stdenv = pkgs.clangStdenv;
+             stdenv = pkgs.gcc16Stdenv;
           }
           {
 
@@ -25,60 +23,90 @@
               conan
               ninja
               ccache
-              icecream # Distributed build
               vulkan-loader
               vulkan-headers
               vulkan-validation-layers
               vulkan-utility-libraries
-              # For clang-tidy
-              llvmPackages_19.clang-tools
+              # System dependencies used by Conan's SDL/X11 recipes.
+              libGL
+              xkeyboard_config
+              libx11
+              libfontenc
+              libice
+              libsm
+              libxau
+              libxaw
+              libxcomposite
+              libxcursor
+              libxdamage
+              libxdmcp
+              libxext
+              libxfixes
+              libxi
+              libxinerama
+              libxmu
+              libxpm
+              libxrandr
+              libxrender
+              libxres
+              libxscrnsaver
+              libxt
+              libxtst
+              libxv
+              libxxf86vm
+              libxcb
+              libxkbfile
+              libxcb-util
+              libxcb-wm
+              libxcb-image
+              libxcb-keysyms
+              libxcb-render-util
+              xcb-util-cursor
+              libuuid
               # For conan */system packages. Hint: nix-locate --whole-name dependency_name.pc | grep -v "^("
               pkg-config
-              # For Conan egl/system
-              libGL
-              # For Conan xkeyboard-config/system
-              xkeyboard_config
-              # For Conan xorg/system
-              xorg.libX11
-              xorg.libfontenc
-              xorg.libICE
-              xorg.libSM
-              xorg.libXau
-              xorg.libXaw
-              xorg.libXcomposite
-              xorg.libXcursor
-              xorg.libXdamage
-              xorg.libXdmcp
-              xorg.libXext
-              xorg.libXfixes
-              xorg.libXi
-              xorg.libXinerama
-              xorg.libXinerama
-              xorg.libXmu
-              xorg.libXpm
-              xorg.libXrandr
-              xorg.libXrender
-              xorg.libXres
-              xorg.libXScrnSaver
-              xorg.libXt
-              xorg.libXtst
-              xorg.libXv
-              xorg.libXxf86vm
-              xorg.libxcb
-              xorg.libxkbfile
-              xorg.xcbutil
-              xorg.xcbutilwm
-              xorg.xcbutilimage
-              xorg.xcbutilkeysyms
-              xorg.xcbutilrenderutil
-              xcb-util-cursor
-              libuuid # Also provided by util-linux
+              # Distributed build
+              icecream
+              # Lint CMake
+              cmake-format
+              # Lint/generate docstrings
+              doxygen
+              # For clang-format and clang-tidy
+              clang-tools
+              # Lint/format markdown (plugins combined into mdformat's Python env so
+              # they are visible to the mdformat app; buildEnv gives a bin/ wrapper)
+              (pkgs.buildEnv {
+                name = "mdformat-env";
+                paths = [
+                  (python314.withPackages (ps: [
+                    ps.mdformat
+                    ps.mdformat-gfm
+                    ps.mdformat-gfm-alerts
+                    ps.mdformat-front-matters
+                  ]))
+                ];
+              })
+              # Lint commit messages
+              gitlint
+              # Simple Python based Google Style Guide linter
+              cpplint
+
+              # For agents:
+              # JSON parser
+              jq
+              # html parser
+              pup
+              # YAML, JSON, INI and XML processor
+              yq
+              # GitHub CLI
+              gh
+              # Image manipulation (e.g. icon)
+              imagemagick
             ];
 
             env = {
               # Vulkan loads driver libraries at runtime.
               LD_LIBRARY_PATH = "/run/opengl-driver/lib";
-#              ICECC_DEBUG = "debug";
             };
           };
       });
