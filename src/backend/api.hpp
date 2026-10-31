@@ -18,6 +18,14 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Retrieves physical device properties.
+     *
+     * @param device Borrowed physical device.
+     * @param properties Receives device properties.
+     */
+    void vk_get_physical_device_properties(
+        VkPhysicalDevice device, VkPhysicalDeviceProperties * properties);
+    /**
      * Enumerates physical devices belonging to an instance.
      *
      * @param instance Instance to query.
