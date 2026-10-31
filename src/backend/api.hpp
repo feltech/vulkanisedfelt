@@ -8,6 +8,8 @@
  */
 #pragma once
 
+#include <cstdint>
+
 #include <vulkan/vulkan_core.h>
 
 namespace vulkandemo::backend
@@ -15,6 +17,16 @@ namespace vulkandemo::backend
 /** Real Vulkan command implementation. */
 struct Api
 {
+    /**
+     * Enumerates instance extensions.
+     *
+     * @param layer_name Layer name, or null for global extensions.
+     * @param count Capacity on input and property count on output.
+     * @param properties Output storage, or null to query the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_enumerate_instance_extension_properties(
+        char const * layer_name, std::uint32_t * count, VkExtensionProperties * properties);
     /**
      * Creates a Vulkan instance.
      *
