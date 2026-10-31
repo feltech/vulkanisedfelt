@@ -6,6 +6,11 @@
 
 namespace vulkandemo::backend
 {
+void Api::vk_get_physical_device_properties(
+    VkPhysicalDevice device, VkPhysicalDeviceProperties * properties)
+{
+    ::vkGetPhysicalDeviceProperties(device, properties);
+}
 VkResult Api::vk_enumerate_physical_devices(
     VkInstance instance, std::uint32_t * count, VkPhysicalDevice * devices)
 {

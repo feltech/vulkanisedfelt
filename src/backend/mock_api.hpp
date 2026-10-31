@@ -20,6 +20,9 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Physical device property expectations. */
+    MAKE_MOCK2(
+        vk_get_physical_device_properties, void(VkPhysicalDevice, VkPhysicalDeviceProperties *));
     /** Physical device enumeration expectations. */
     MAKE_MOCK3(
         vk_enumerate_physical_devices, VkResult(VkInstance, std::uint32_t *, VkPhysicalDevice *));
