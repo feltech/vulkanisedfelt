@@ -1,3 +1,7 @@
+# vulkanisedfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
 # Exclusions
 # - llvmlibc-*
 #     Seems very vendor-specific.
@@ -13,10 +17,23 @@
 #     De-facto standard #pragma once is preferred.
 # - *-default-arguments-declaration
 #     Default arguments are useful.
-# - -clion-misra-cpp2023-19-6-1
+# - clion-misra-cpp2023-19-6-1
 #     Allow `#pragma once`.
 # - llvm-namespace-comment
 #     Conflicts with google-readability-namespace-comments, apparently.
+# - fuchsia-overloaded-operator
+#     Operator overload is useful, especially `operator()` for named lambdas.
+# - portability-avoid-pragma-once
+#     De-facto standard #pragma once is preferred.
+# - hicpp-invalid-access-moved
+#     Duplicate of bugprone-use-after-move. Disabled to allow easier inline suppression.
+# - fuchsia-trailing-return
+#     False positive flagging lambdas as disallowed for trailing return in clang-tidy 22.
+# - llvm-prefer-static-over-anonymous-namespace
+#     Conflicts with misc-use-anonymous-namespace. The C++ standard recommendation
+#     is anonymous namespaces for TU-local definitions; static is a C-ism.
+# - readability-trailing-comma
+#     Initializers are more readable without trailing commas.
 Checks: >
     *,
     -llvmlibc-*,
@@ -27,8 +44,16 @@ Checks: >
     -*-use-trailing-return-type,
     -llvm-header-guard,
     -*-default-arguments-declarations,
-    -clion-misra-cpp2023-19-6-1
-    -llvm-namespace-comment
+    -clion-misra-cpp2023-19-6-1,
+    -llvm-namespace-comment,
+    -fuchsia-overloaded-operator,
+    -portability-avoid-pragma-once,
+    -hicpp-invalid-access-moved,
+    -fuchsia-trailing-return,
+    -llvm-prefer-static-over-anonymous-namespace,
+    -clang-analyzer-core.uninitialized.Branch,
+    -clang-diagnostic-deprecated-declarations,
+    -readability-trailing-comma
 WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 FormatStyle: file
@@ -44,57 +69,62 @@ CheckOptions:
         value: 1
     -   key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor
         value: true
+    -   key: readability-identifier-length.IgnoredParameterNames
+        value: fn|x
+    -   key: readability-identifier-length.IgnoredVariableNames
+        value: fn|x
+    # Naming rules. DefaultCase is deliberately NOT configured: any decl kind
+    # without a dedicated option falls back to DefaultCase, so a DefaultCase
+    # would flag e.g. `using ns::CamelCaseName;` (UsingDecl has no naming kind
+    # and hits undefinedStyle()). Enforce each kind explicitly instead.
+    # See LLVM PR #198517 for the analogous template-wrapper fix.
+    -   key: readability-identifier-naming.NamespaceCase
+        value: lower_case
+    -   key: readability-identifier-naming.InlineNamespaceCase
+        value: lower_case
     -   key: readability-identifier-naming.ClassCase
         value: CamelCase
-    -   key: readability-identifier-naming.ClassMemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.ClassConstantCase
+    -   key: readability-identifier-naming.StructCase
         value: CamelCase
-    -   key: readability-identifier-naming.ClassConstantPrefix
-        value: k
-    #  - key:             readability-identifier-naming.ConstexprVariableCase
-    #    value:           CamelCase
-    #  - key:             readability-identifier-naming.ConstexprVariablePrefix
-    #    value:           k
+    -   key: readability-identifier-naming.UnionCase
+        value: CamelCase
+    -   key: readability-identifier-naming.AbstractClassCase
+        value: CamelCase
     -   key: readability-identifier-naming.EnumCase
         value: CamelCase
     -   key: readability-identifier-naming.EnumConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.EnumConstantPrefix
-        value: k
+        value: lower_case
+    -   key: readability-identifier-naming.ScopedEnumConstantCase
+        value: lower_case
+    -   key: readability-identifier-naming.ConceptCase
+        value: lower_case
+    -   key: readability-identifier-naming.TypeAliasCase
+        value: lower_case
+    -   key: readability-identifier-naming.TypedefCase
+        value: lower_case
     -   key: readability-identifier-naming.FunctionCase
         value: lower_case
-    -   key: readability-identifier-naming.GlobalConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.GlobalConstantPrefix
-        value: k
-    -   key: readability-identifier-naming.StaticConstantCase
-        value: CamelCase
-    -   key: readability-identifier-naming.StaticConstantPrefix
-        value: k
-    -   key: readability-identifier-naming.StaticVariableCase
+    -   key: readability-identifier-naming.MethodCase
         value: lower_case
-    -   key: readability-identifier-naming.MacroDefinitionCase
-        value: UPPER_CASE
-    -   key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
-        value: '^[A-Z]+(_[A-Z]+)*_$'
     -   key: readability-identifier-naming.MemberCase
-        value: lower_case
-    -   key: readability-identifier-naming.PrivateMemberCase
         value: lower_case
     -   key: readability-identifier-naming.PrivateMemberSuffix
         value: _
-    -   key: readability-identifier-naming.PublicMemberCase
+    -   key: readability-identifier-naming.VariableCase
         value: lower_case
-    -   key: readability-identifier-naming.PublicMemberSuffix
-        value: ''
-    -   key: readability-identifier-naming.NamespaceCase
+    -   key: readability-identifier-naming.ConstantCase
+        value: lower_case
+    -   key: readability-identifier-naming.ConstexprVariableCase
         value: lower_case
     -   key: readability-identifier-naming.ParameterCase
         value: lower_case
-    -   key: readability-identifier-naming.TypeAliasCase
+    -   key: readability-identifier-naming.MacroDefinitionCase
+        value: UPPER_CASE
+    -   key: readability-identifier-naming.TemplateParameterCase
         value: CamelCase
-    -   key: readability-identifier-naming.TypedefCase
-        value: CamelCase
-    -   key: readability-identifier-naming.VariableCase
+    -   key: readability-identifier-naming.TemplateParameterPrefix
+        value: T
+    -   key: readability-identifier-naming.TemplateParameterIgnoredRegexp
+        value: ^T$
+    -   key: readability-identifier-naming.ValueTemplateParameterCase
         value: lower_case
