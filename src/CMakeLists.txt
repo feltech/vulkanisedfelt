@@ -42,6 +42,7 @@ target_compile_definitions(
   vulkandemo PRIVATE SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_DEBUG,SPDLOG_LEVEL_INFO>)
 
 if(${PROJECT_NAME}_ENABLE_DEV)
+  target_link_libraries(vulkandemo PRIVATE trompeloeil::trompeloeil)
   vulkanisedfelt_target_linters(vulkandemo)
 endif()
 if(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN)
