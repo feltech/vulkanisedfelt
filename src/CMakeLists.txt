@@ -7,6 +7,7 @@ add_executable(
   backend/api.cpp
   backend/mock_api.cpp
   vulkan/instance.cpp
+  vulkan/instance_extensions.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -27,6 +28,8 @@ target_sources(
           vulkan/managed_handles.hpp
           vulkan/instance.hpp
           vulkan/detail/instance.hpp
+          vulkan/instance_extensions.hpp
+          vulkan/detail/instance_extensions.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp

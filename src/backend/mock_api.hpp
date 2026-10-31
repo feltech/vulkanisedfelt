@@ -9,6 +9,8 @@
 #pragma once
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <cstdint>
+
 #include <vulkan/vulkan_core.h>
 
 #include <trompeloeil.hpp>
@@ -18,6 +20,10 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Instance extension enumeration expectations. */
+    MAKE_MOCK3(
+        vk_enumerate_instance_extension_properties,
+        VkResult(char const *, std::uint32_t *, VkExtensionProperties *));
     /** Instance creation expectations. */
     MAKE_MOCK3(
         vk_create_instance,
