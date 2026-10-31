@@ -8,13 +8,14 @@
  */
 #pragma once
 
-#include <cstdint>
+#include <optional>
 
 #include <vulkan/vulkan_core.h>
 
 #include <immer/array.hpp>
 
 #include "./physical_device_selection_types.hpp"
+#include "./physical_devices_types.hpp"
 
 namespace vulkandemo::vulkan
 {
@@ -29,4 +30,13 @@ namespace vulkandemo::vulkan
 [[nodiscard]] auto score_physical_devices(
     immer::array<VkPhysicalDeviceProperties> const & properties)
     -> immer::array<PhysicalDeviceScore>;
+
+/**
+ * Selects the first entry with the lowest supplied score.
+ *
+ * @param scores Physical-device policy scores.
+ * @return Original device index, or an empty value when no scores are supplied.
+ */
+[[nodiscard]] auto select_physical_device(immer::array<PhysicalDeviceScore> const & scores)
+    -> std::optional<physical_device_index>;
 }  // namespace vulkandemo::vulkan
