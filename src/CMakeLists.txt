@@ -11,6 +11,7 @@ add_executable(
   vulkan/instance_layers.cpp
   vulkan/physical_devices.cpp
   vulkan/physical_device_properties.cpp
+  vulkan/queue_family_properties.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -39,6 +40,8 @@ target_sources(
           vulkan/detail/physical_devices.hpp
           vulkan/physical_device_properties.hpp
           vulkan/detail/physical_device_properties.hpp
+          vulkan/queue_family_properties.hpp
+          vulkan/detail/queue_family_properties.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
@@ -62,6 +65,9 @@ target_link_libraries(
           etl::etl)
 target_compile_definitions(
   vulkandemo PRIVATE SPDLOG_ACTIVE_LEVEL=$<IF:$<CONFIG:Debug>,SPDLOG_LEVEL_DEBUG,SPDLOG_LEVEL_INFO>)
+target_compile_options(
+  vulkandemo PRIVATE -fcontracts
+                     -fcontract-evaluation-semantic=${VULKANISED_FELT_CONTRACT_SEMANTIC})
 
 if(${PROJECT_NAME}_ENABLE_DEV)
   target_link_libraries(vulkandemo PRIVATE trompeloeil::trompeloeil)

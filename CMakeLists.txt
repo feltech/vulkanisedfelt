@@ -10,6 +10,22 @@ project(
 
 option(${PROJECT_NAME}_ENABLE_DEV "Enable tests and linting" OFF)
 option(${PROJECT_NAME}_ENABLE_SANITIZER_ASAN "Enable ASan and UBSan" OFF)
+set(VULKANISED_FELT_CONTRACT_SEMANTIC
+    "enforce"
+    CACHE STRING "Contract evaluation semantic")
+set_property(
+  CACHE VULKANISED_FELT_CONTRACT_SEMANTIC
+  PROPERTY STRINGS
+           ignore
+           observe
+           enforce
+           quick_enforce)
+if(NOT
+   VULKANISED_FELT_CONTRACT_SEMANTIC
+   MATCHES
+   "^(ignore|observe|enforce|quick_enforce)$")
+  message(FATAL_ERROR "Invalid contract evaluation semantic: ${VULKANISED_FELT_CONTRACT_SEMANTIC}")
+endif()
 
 if(${PROJECT_NAME}_ENABLE_DEV)
   enable_testing()
