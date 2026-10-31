@@ -1,8 +1,13 @@
+# vulkanisedfelt
+# SPDX-License-Identifier: MIT
+# Copyright 2026 David Feltell
+
 BasedOnStyle: Google
 Language: Cpp
 Standard: c++17
 ColumnLimit: 100
-UseTab: Always
+ReflowComments: Always
+UseTab: Never
 TabWidth: 4
 IndentWidth: 4
 AccessModifierOffset: -4
