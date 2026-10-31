@@ -13,6 +13,7 @@ add_executable(
   vulkan/physical_device_properties.cpp
   vulkan/queue_family_properties.cpp
   vulkan/device_extensions.cpp
+  vulkan/device.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -31,6 +32,7 @@ target_sources(
           backend/mock_api.hpp
           vulkan/errors.hpp
           vulkan/managed_handles.hpp
+          vulkan/strong_types.hpp
           vulkan/instance.hpp
           vulkan/detail/instance.hpp
           vulkan/instance_extensions.hpp
@@ -45,6 +47,8 @@ target_sources(
           vulkan/detail/queue_family_properties.hpp
           vulkan/device_extensions.hpp
           vulkan/detail/device_extensions.hpp
+          vulkan/device.hpp
+          vulkan/detail/device.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp

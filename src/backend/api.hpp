@@ -18,6 +18,27 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Creates a logical device.
+     *
+     * @param device Borrowed physical device.
+     * @param create_info Device description.
+     * @param allocator Callbacks, or null for default allocation.
+     * @param output Receives the created device.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_device(
+        VkPhysicalDevice device,
+        VkDeviceCreateInfo const * create_info,
+        VkAllocationCallbacks const * allocator,
+        VkDevice * output);
+    /**
+     * Destroys a logical device.
+     *
+     * @param device Device to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_device(VkDevice device, VkAllocationCallbacks const * allocator);
+    /**
      * Enumerates device extensions.
      *
      * @param device Borrowed physical device.
