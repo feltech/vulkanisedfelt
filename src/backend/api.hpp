@@ -26,6 +26,14 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Retrieves physical device properties.
+     *
+     * @param device Borrowed physical device.
+     * @param properties Receives device properties.
+     */
+    void vk_get_physical_device_properties(
+        VkPhysicalDevice device, VkPhysicalDeviceProperties * properties);
+    /**
      * Enumerates physical devices belonging to an instance.
      *
      * @param instance Instance to query.
