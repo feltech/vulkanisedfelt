@@ -15,6 +15,7 @@ add_executable(
   vulkan/physical_devices.cpp
   vulkan/physical_device_properties.cpp
   vulkan/queue_family_properties.cpp
+  vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
   types.cpp
@@ -37,7 +38,6 @@ target_sources(
           vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
           vulkan/managed_handles_types.hpp
-          vulkan/queue_types.hpp
           vulkan/instance.hpp
           vulkan/detail/instance.hpp
           vulkan/api_version.hpp
@@ -54,6 +54,9 @@ target_sources(
           vulkan/detail/physical_device_properties.hpp
           vulkan/queue_family_properties.hpp
           vulkan/detail/queue_family_properties.hpp
+          vulkan/queue_family_selection.hpp
+          vulkan/queue_family_selection_types.hpp
+          vulkan/queue_types.hpp
           vulkan/device_extensions.hpp
           vulkan/detail/device_extensions.hpp
           vulkan/device.hpp
