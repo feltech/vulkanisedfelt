@@ -1,12 +1,20 @@
+// vulkanisedfelt
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
+
+/**
+ * @file draw.hpp
+ *
+ * Frame submission and presentation operations.
+ */
+
 #pragma once
 #include <optional>
 
 #include <vulkan/vulkan_core.h>
 
+#include "./types.hpp"
 #include "draw/detail.hpp"
-#include "types.hpp"
 
 namespace vulkandemo::draw
 {
@@ -24,10 +32,10 @@ using detail::create_exclusive_vertex_buffer_and_memory;
  * @return
  */
 bool submit_present_image_cmd(
-	VkQueue queue,
-	types::VulkanSwapchainPtr const & swapchain,
-	types::VulkanImageIdx image_idx,
-	types::VulkanSemaphorePtr const & wait_semaphore);
+    VkQueue queue,
+    types::VulkanSwapchainPtr const & swapchain,
+    types::VulkanImageIdx image_idx,
+    types::VulkanSemaphorePtr const & wait_semaphore);
 
 /**
  * Submit a single command buffer to a queue, with a single wait/signal semaphore pair.
@@ -38,10 +46,10 @@ bool submit_present_image_cmd(
  * @param signal_semaphore
  */
 void submit_command_buffer(
-	VkQueue queue,
-	VkCommandBuffer command_buffer,
-	types::VulkanSemaphorePtr const & wait_semaphore,
-	types::VulkanSemaphorePtr const & signal_semaphore);
+    VkQueue queue,
+    VkCommandBuffer command_buffer,
+    types::VulkanSemaphorePtr const & wait_semaphore,
+    types::VulkanSemaphorePtr const & signal_semaphore);
 
 /**
  * Populate a command buffer with a render pass that simply clears the frame buffer.
@@ -53,11 +61,11 @@ void submit_command_buffer(
  * @param clear_colour
  */
 void populate_cmd_render_pass(
-	VkCommandBuffer command_buffer,
-	types::VulkanRenderPassPtr const & render_pass,
-	types::VulkanFramebufferPtr const & frame_buffer,
-	VkExtent2D extent,
-	types::VulkanClearColour const & clear_colour);
+    VkCommandBuffer command_buffer,
+    types::VulkanRenderPassPtr const & render_pass,
+    types::VulkanFramebufferPtr const & frame_buffer,
+    VkExtent2D extent,
+    types::VulkanClearColour const & clear_colour);
 
 /**
  * Acquire next swapchain image, returning empty optional if the swapchain is out of date and
@@ -69,8 +77,8 @@ void populate_cmd_render_pass(
  * @return
  */
 std::optional<types::VulkanImageIdx> acquire_next_swapchain_image(
-	types::VulkanDevicePtr const & device,
-	types::VulkanSwapchainPtr const & swapchain,
-	types::VulkanSemaphorePtr const & semaphore);
+    types::VulkanDevicePtr const & device,
+    types::VulkanSwapchainPtr const & swapchain,
+    types::VulkanSemaphorePtr const & semaphore);
 
 }  // namespace vulkandemo::draw

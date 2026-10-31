@@ -1,5 +1,13 @@
+// vulkanisedfelt
 // SPDX-License-Identifier: MIT
 // Copyright 2024 David Feltell
+
+/**
+ * @file detail.hpp
+ *
+ * Internal frame drawing helpers.
+ */
+
 #pragma once
 
 #include <algorithm>
@@ -28,63 +36,68 @@ namespace vulkandemo::draw::detail
  */
 std::tuple<types::VulkanBufferPtr, types::VulkanDeviceMemoryPtr>
 create_exclusive_vertex_buffer_and_memory(
-	types::VulkanDevicePtr const & device,
-	types::VulkanMemoryTypeIdx const memory_type_idx,
-	types::ContiguousContainer auto const & vertices)
+    types::VulkanDevicePtr const & device,
+    types::VulkanMemoryTypeIdx const memory_type_idx,
+    types::ContiguousContainer auto const & vertices)
 {
-	std::span const host_vertex_memory = std::as_bytes(std::span{vertices});
+    std::span const host_vertex_memory = std::as_bytes(std::span{vertices});
 
-	types::VulkanBufferPtr buffer_ptr = [&]
-	{
-		VkBufferCreateInfo const buffer_create_info{
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.flags = 0,
-			.size = host_vertex_memory.size(),
-			.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		};
+    types::VulkanBufferPtr buffer_ptr = [&]
+    {
+        VkBufferCreateInfo const buffer_create_info{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .size = host_vertex_memory.size(),
+            .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr,
+        };
 
-		VkBuffer out = nullptr;
-		VK_CHECK(
-			vkCreateBuffer(device.get(), &buffer_create_info, nullptr, &out),
-			"Failed to create buffer");
+        VkBuffer out = nullptr;
+        VK_CHECK(
+            vkCreateBuffer(device.get(), &buffer_create_info, nullptr, &out),
+            "Failed to create buffer");
 
-		return types::make_buffer_ptr(device, out);
-	}();
+        return types::make_buffer_ptr(device, out);
+    }();
 
-	VkMemoryRequirements const memory_requirements = [&]
-	{
-		VkMemoryRequirements out;
-		vkGetBufferMemoryRequirements(device.get(), buffer_ptr.get(), &out);
-		return out;
-	}();
+    VkMemoryRequirements const memory_requirements = [&]
+    {
+        VkMemoryRequirements out;
+        vkGetBufferMemoryRequirements(device.get(), buffer_ptr.get(), &out);
+        return out;
+    }();
 
-	auto device_memory = [&]
-	{
-		VkMemoryAllocateInfo const memory_allocate_info{
-			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			.allocationSize = memory_requirements.size,
-			.memoryTypeIndex = memory_type_idx,
-		};
+    auto device_memory = [&]
+    {
+        VkMemoryAllocateInfo const memory_allocate_info{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = memory_requirements.size,
+            .memoryTypeIndex = memory_type_idx,
+        };
 
-		VkDeviceMemory out = nullptr;
-		VK_CHECK(
-			vkAllocateMemory(device.get(), &memory_allocate_info, nullptr, &out),
-			"Failed to allocate memory");
+        VkDeviceMemory out = nullptr;
+        VK_CHECK(
+            vkAllocateMemory(device.get(), &memory_allocate_info, nullptr, &out),
+            "Failed to allocate memory");
 
-		return types::make_device_memory_ptr(device, out);
-	}();
+        return types::make_device_memory_ptr(device, out);
+    }();
 
-	std::byte * const mapped_memory = [&]
-	{
-		void * out = nullptr;
-		VK_CHECK(
-			vkMapMemory(device.get(), device_memory.get(), 0, memory_requirements.size, 0, &out),
-			"Failed to map memory");
-		return static_cast<std::byte *>(out);
-	}();
+    std::byte * const mapped_memory = [&]
+    {
+        void * out = nullptr;
+        VK_CHECK(
+            vkMapMemory(device.get(), device_memory.get(), 0, memory_requirements.size, 0, &out),
+            "Failed to map memory");
+        return static_cast<std::byte *>(out);
+    }();
 
-	std::ranges::copy(host_vertex_memory, mapped_memory);
+    std::ranges::copy(host_vertex_memory, mapped_memory);
 
-	return {std::move(buffer_ptr), std::move(device_memory)};
+    return {std::move(buffer_ptr), std::move(device_memory)};
 }
 }  // namespace vulkandemo::draw::detail
