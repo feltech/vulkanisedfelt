@@ -24,6 +24,11 @@ struct VulkanOperationFailure
     VulkanFailure cause;
 };
 
+/// No discovered device satisfies the requirements.
+struct NoSuitablePhysicalDevice
+{
+};
+
 /** The instance implementation does not support the required Vulkan API version. */
 struct UnsupportedVulkanVersion
 {
@@ -34,7 +39,8 @@ struct UnsupportedVulkanVersion
 };
 
 /// Common failures of renderer workflows.
-using renderer_error = std::variant<VulkanOperationFailure, UnsupportedVulkanVersion>;
+using renderer_error =
+    std::variant<VulkanOperationFailure, UnsupportedVulkanVersion, NoSuitablePhysicalDevice>;
 
 /**
  * Converts a Vulkan failure into a renderer error.
