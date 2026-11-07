@@ -33,6 +33,7 @@ target_sources(
           backend/detail/api.hpp
           backend/mock_api.hpp
           vulkan/errors.hpp
+          vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
           vulkan/strong_types.hpp
           vulkan/instance.hpp
