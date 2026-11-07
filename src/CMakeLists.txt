@@ -23,6 +23,7 @@ target_sources(
           backend/detail/api.hpp
           backend/mock_api.hpp
           vulkan/errors.hpp
+          vulkan/renderer_errors.hpp
           vulkan/api_version_types.hpp
           setup.hpp
           draw.hpp
