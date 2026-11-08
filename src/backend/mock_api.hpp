@@ -20,6 +20,8 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Device queue retrieval expectations. */
+    MAKE_MOCK4(vk_get_device_queue, void(VkDevice, std::uint32_t, std::uint32_t, VkQueue *));
     /** Device creation expectations. */
     MAKE_MOCK4(
         vk_create_device,

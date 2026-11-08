@@ -33,4 +33,8 @@ struct PhysicalDeviceScoreTag;
 /** A lower-is-better physical-device policy cost. */
 using physical_device_score =
     strong::type<std::uint32_t, PhysicalDeviceScoreTag, strong::regular, strong::strongly_ordered>;
+
+struct QueueIndexTag;
+/** An index within a device's requested queues in one family. */
+using queue_index = strong::type<std::uint32_t, QueueIndexTag, strong::regular>;
 }  // namespace vulkandemo::vulkan
