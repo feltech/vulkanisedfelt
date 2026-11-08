@@ -273,6 +273,14 @@ reusable public headers under `include/vulkanisedfelt/` and mirror that hierarch
 Vulkan actions small and compose them with fnfelt; the `monads` branch in this repo (vulkanisedfelt)
 is a reference rather than a second framework to revive.
 
+Place public domain data and aliases in the corresponding `_types.hpp` header, keeping operation
+factories in `.hpp` and implementations and embedded tests in `.cpp`. Type headers should depend on
+other type headers rather than operation or ownership-factory headers. Shared vocabulary may have a
+standalone domain type header, such as `queue_types.hpp`; do not collect unrelated strong types in a
+generic header. Keep private implementation types under `detail/` and cohesive behavioral classes
+with their interfaces. Existing standalone error and resource-aggregate headers need no empty
+operation counterpart.
+
 When adding compile-fail tests (code that must NOT compile), place them under `tests/compile_fail/`
 and drive them with CMake. Use a subdirectory per source file, with test cases as files under that
 subdirectory. Use corresponding `.` delimiter in CMake test names.
@@ -317,6 +325,9 @@ rare exception is if an umbrella header is explicitly part of the design (i.e. w
 contain `// IWYU pragma: private, include`).
 
 `constexpr` All The Things.
+
+Load the `strong-type` skill (`.agents/skills/strong-type/SKILL.md`) when adding or changing
+rollbear strong types. It documents the library API and its modifiers.
 
 Use Immer containers (often `immer::array`) for all containers passed as arguments, returned from
 functions, or stored in objects, so copies share immutable data cheaply. Standard containers may be
