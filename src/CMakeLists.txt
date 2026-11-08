@@ -19,6 +19,7 @@ add_executable(
   vulkan/device_extensions.cpp
   vulkan/device.cpp
   vulkan/device_queue.cpp
+  vulkan/headless_device.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -65,6 +66,9 @@ target_sources(
           vulkan/detail/device.hpp
           vulkan/device_queue.hpp
           vulkan/detail/device_queue.hpp
+          vulkan/headless_device.hpp
+          vulkan/headless_device_types.hpp
+          vulkan/detail/headless_device.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
