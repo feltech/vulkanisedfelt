@@ -318,6 +318,9 @@ contain `// IWYU pragma: private, include`).
 
 `constexpr` All The Things.
 
+Load the `strong-type` skill (`.agents/skills/strong-type/SKILL.md`) when adding or changing
+rollbear strong types. It records the pinned library API and migrated domain conventions.
+
 Use Immer containers (often `immer::array`) for all containers passed as arguments, returned from
 functions, or stored in objects, so copies share immutable data cheaply. Standard containers may be
 used as function-local implementation details when they make the implementation cleaner or more
