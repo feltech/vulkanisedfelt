@@ -26,6 +26,19 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Retrieves a queue created with a logical device.
+     *
+     * @param device Logical device owning the queue.
+     * @param queue_family_index Family requested during device creation.
+     * @param queue_index Index within the family's requested queues.
+     * @param queue Receives the borrowed queue handle.
+     */
+    void vk_get_device_queue(
+        VkDevice device,
+        std::uint32_t queue_family_index,
+        std::uint32_t queue_index,
+        VkQueue * queue);
+    /**
      * Creates a logical device.
      *
      * @param device Borrowed physical device.

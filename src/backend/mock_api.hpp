@@ -22,6 +22,8 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Device queue retrieval expectations. */
+    MAKE_MOCK4(vk_get_device_queue, void(VkDevice, std::uint32_t, std::uint32_t, VkQueue *));
     /** Device creation expectations. */
     MAKE_MOCK4(
         vk_create_device,
