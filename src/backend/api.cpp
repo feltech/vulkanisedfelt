@@ -6,6 +6,11 @@
 
 namespace vulkandemo::backend
 {
+void Api::vk_get_device_queue(
+    VkDevice device, std::uint32_t queue_family_index, std::uint32_t queue_index, VkQueue * queue)
+{
+    ::vkGetDeviceQueue(device, queue_family_index, queue_index, queue);
+}
 VkResult Api::vk_create_device(
     VkPhysicalDevice device,
     VkDeviceCreateInfo const * create_info,

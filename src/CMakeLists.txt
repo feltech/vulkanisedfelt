@@ -18,6 +18,7 @@ add_executable(
   vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
+  vulkan/device_queue.cpp
   types.cpp
   setup.cpp
   draw.cpp
@@ -62,6 +63,8 @@ target_sources(
           vulkan/detail/device_extensions.hpp
           vulkan/device.hpp
           vulkan/detail/device.hpp
+          vulkan/device_queue.hpp
+          vulkan/detail/device_queue.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
