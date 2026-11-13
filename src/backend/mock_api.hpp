@@ -23,6 +23,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** SDL window creation expectations. */
+    MAKE_MOCK6(sdl_create_window, SDL_Window *(char const *, int, int, int, int, Uint32));
+    /** SDL window destruction expectations. */
+    MAKE_MOCK1(sdl_destroy_window, void(SDL_Window *));
     /** SDL initialization expectations. */
     MAKE_MOCK1(sdl_init_sub_system, auto(Uint32)->int);
     /** SDL subsystem release expectations. */

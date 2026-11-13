@@ -24,5 +24,7 @@ struct SdlResources
 {
     /** Main-thread video subsystem ownership. */
     video_keepalive video_owner;
+    /** Main-thread window ownership. */
+    window_ptr window_owner;
 };
 }  // namespace vulkandemo::sdl

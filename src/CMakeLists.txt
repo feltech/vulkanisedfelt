@@ -10,6 +10,7 @@ add_executable(
   execution/main_thread.cpp
   execution/managed_resources.cpp
   sdl/video.cpp
+  sdl/window.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
   vulkan/api_version.cpp
@@ -44,8 +45,12 @@ target_sources(
           text/string.hpp
           backend/mock_api.hpp
           sdl/video.hpp
+          sdl/window.hpp
+          sdl/window_types.hpp
+          sdl/detail/window.hpp
           sdl/errors.hpp
           sdl/resources.hpp
+          sdl/managed_handles.hpp
           sdl/managed_handles_types.hpp
           execution/main_thread.hpp
           execution/managed_resources.hpp
@@ -53,6 +58,7 @@ target_sources(
           execution/detail/managed_resources.hpp
           sdl/detail/video.hpp
           sdl/detail/main_thread.hpp
+          sdl/detail/managed_handles.hpp
           sdl/detail/errors.hpp
           sdl/detail/test_runtime.hpp
           vulkan/errors.hpp

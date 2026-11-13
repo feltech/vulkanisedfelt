@@ -10,6 +10,15 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+SDL_Window * Api::sdl_create_window(
+    char const * title, int position_x, int position_y, int width, int height, Uint32 flags)
+{
+    return ::SDL_CreateWindow(title, position_x, position_y, width, height, flags);
+}
+void Api::sdl_destroy_window(SDL_Window * window)
+{
+    ::SDL_DestroyWindow(window);
+}
 int Api::sdl_init_sub_system(Uint32 flags)
 {
     return ::SDL_InitSubSystem(flags);
