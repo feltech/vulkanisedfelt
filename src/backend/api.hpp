@@ -19,6 +19,16 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Retrieves instance extensions required by an SDL Vulkan window.
+     *
+     * @param window Borrowed Vulkan-capable window.
+     * @param count Capacity on input and extension count on output.
+     * @param names Receives borrowed names, or null to query the count.
+     * @return SDL_TRUE on success, or SDL_FALSE with an SDL error.
+     */
+    SDL_bool sdl_vulkan_get_instance_extensions(
+        SDL_Window * window, unsigned int * count, char const ** names);
+    /**
      * Creates an SDL window.
      *
      * @param title NUL-terminated UTF-8 title.
