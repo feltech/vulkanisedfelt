@@ -19,7 +19,9 @@ enum class FallibleSdlOperation
     /** Video subsystem initialization. */
     initialize_video,
     /** Window creation. */
-    create_window
+    create_window,
+    /** Required Vulkan instance-extension discovery. */
+    enumerate_instance_extensions
 };
 
 /** An SDL failure with an owned copy of the calling thread's error text. */

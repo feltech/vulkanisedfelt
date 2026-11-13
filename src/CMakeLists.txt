@@ -10,6 +10,7 @@ add_executable(
   sdl/main_thread.cpp
   sdl/video.cpp
   sdl/window.cpp
+  sdl/instance_extensions.cpp
   vulkan/instance.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
@@ -43,6 +44,8 @@ target_sources(
           sdl/window.hpp
           sdl/window_types.hpp
           sdl/detail/window.hpp
+          sdl/instance_extensions.hpp
+          sdl/detail/instance_extensions.hpp
           sdl/errors.hpp
           sdl/resources.hpp
           sdl/managed_handles.hpp

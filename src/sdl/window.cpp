@@ -258,6 +258,13 @@ namespace vulkandemo::backend
 namespace
 {
 template <class TApi>
+struct SdlQueryEnvironment
+{
+    std::reference_wrapper<TApi> api;
+    lf::worker_context * main_context;
+};
+
+template <class TApi>
 struct SdlResourceEnvironment
 {
     std::reference_wrapper<TApi> api;
@@ -266,6 +273,7 @@ struct SdlResourceEnvironment
 };
 
 static_assert(sdl::sdl_create_window_environment<SdlResourceEnvironment<MockApi> const &>);
+static_assert(!sdl::sdl_create_window_environment<SdlQueryEnvironment<Api>>);
 }  // namespace
 }  // namespace vulkandemo::backend
 #endif  // DOCTEST_CONFIG_DISABLE

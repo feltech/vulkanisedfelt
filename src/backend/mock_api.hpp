@@ -21,6 +21,9 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** SDL Vulkan extension-query expectations. */
+    MAKE_MOCK3(
+        sdl_vulkan_get_instance_extensions, SDL_bool(SDL_Window *, unsigned int *, char const **));
     /** SDL window creation expectations. */
     MAKE_MOCK6(sdl_create_window, SDL_Window *(char const *, int, int, int, int, Uint32));
     /** SDL window destruction expectations. */
