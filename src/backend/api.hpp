@@ -4,17 +4,18 @@
 /**
  * @file backend/api.hpp
  *
- * Vulkan commands available to effectful actions.
+ * Vulkan and SDL commands available to effectful actions.
  */
 #pragma once
 
 #include <cstdint>
 
+#include <SDL.h>
 #include <vulkan/vulkan_core.h>
 
 namespace vulkandemo::backend
 {
-/** Real Vulkan command implementation. */
+/** Real command implementation. */
 struct Api
 {
     /**
@@ -25,6 +26,25 @@ struct Api
      * @return Command address, or null when unavailable.
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
+    /**
+     * Acquires references to SDL subsystems.
+     *
+     * @param flags Subsystems to initialize.
+     * @return Zero on success, or a negative error status.
+     */
+    int sdl_init_sub_system(Uint32 flags);
+    /**
+     * Releases references to SDL subsystems.
+     *
+     * @param flags Subsystems to release.
+     */
+    void sdl_quit_sub_system(Uint32 flags);
+    /**
+     * Reads the calling thread's last SDL error.
+     *
+     * @return Borrowed error text, valid until another SDL operation changes it.
+     */
+    char const * sdl_get_error();
     /**
      * Retrieves a queue created with a logical device.
      *

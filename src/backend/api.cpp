@@ -10,6 +10,18 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+int Api::sdl_init_sub_system(Uint32 flags)
+{
+    return ::SDL_InitSubSystem(flags);
+}
+void Api::sdl_quit_sub_system(Uint32 flags)
+{
+    ::SDL_QuitSubSystem(flags);
+}
+char const * Api::sdl_get_error()
+{
+    return ::SDL_GetError();
+}
 void Api::vk_get_device_queue(
     VkDevice device, std::uint32_t queue_family_index, std::uint32_t queue_index, VkQueue * queue)
 {
