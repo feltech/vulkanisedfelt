@@ -17,7 +17,9 @@ namespace vulkandemo::sdl
 enum class FallibleSdlOperation
 {
     /** Video subsystem initialization. */
-    initialize_video
+    initialize_video,
+    /** Window creation. */
+    create_window
 };
 
 /** An SDL failure with an owned copy of the calling thread's error text. */
