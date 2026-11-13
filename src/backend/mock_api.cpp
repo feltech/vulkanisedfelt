@@ -43,7 +43,7 @@ consteval std::string_view validate_api(
         }
         if (!has_match)
         {
-            return "missing public Vulkan command with matching signature";
+            return "missing public API command with matching signature";
         }
     }
     return {};
