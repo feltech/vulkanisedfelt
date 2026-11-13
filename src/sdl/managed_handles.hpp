@@ -13,7 +13,10 @@
 #include <type_traits>
 #include <utility>
 
+#include <SDL_video.h>
 #include <libfork/core/defer.hpp>
+
+#include "./main_thread.hpp"
 
 namespace vulkandemo::sdl
 {
@@ -42,4 +45,32 @@ auto make_deferred(TCleanup && cleanup) noexcept
     return std::make_shared<guard_type>(std::forward<TCleanup>(cleanup));
 }
 
+/** Shared main-thread window ownership. */
+using window_ptr = std::shared_ptr<SDL_Window>;
+
+/**
+ * Owns a window whose final release destroys it on main.
+ *
+ * Video remains initialized until the window is destroyed. The borrowed API must
+ * outlive every owner copy.
+ *
+ * @tparam TApi Command implementation type.
+ * @param window Acquired window.
+ * @param api Borrowed SDL implementation.
+ * @param video Shared video subsystem lifetime.
+ * @return Shared window owner.
+ */
+template <class TApi>
+auto make_window_ptr(SDL_Window * window, TApi & api, video_keepalive video) -> window_ptr
+{
+    return window_ptr{
+        window,
+        [&api, video = std::move(video)](SDL_Window * owned) mutable noexcept
+        {
+            contract_assert(is_main_thread());
+            api.sdl_destroy_window(owned);
+            // Weak window observers must not extend the video subsystem's lifetime.
+            video.reset();
+        }};
+}
 }  // namespace vulkandemo::sdl

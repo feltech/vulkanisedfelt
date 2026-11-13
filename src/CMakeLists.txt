@@ -9,6 +9,7 @@ add_executable(
   backend/mock_api.cpp
   sdl/main_thread.cpp
   sdl/video.cpp
+  sdl/window.cpp
   vulkan/instance.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
@@ -39,6 +40,9 @@ target_sources(
           text/string.hpp
           backend/mock_api.hpp
           sdl/video.hpp
+          sdl/window.hpp
+          sdl/window_types.hpp
+          sdl/detail/window.hpp
           sdl/errors.hpp
           sdl/resources.hpp
           sdl/managed_handles.hpp

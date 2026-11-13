@@ -19,6 +19,25 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Creates an SDL window.
+     *
+     * @param title NUL-terminated UTF-8 title.
+     * @param position_x Horizontal position or SDL positioning constant.
+     * @param position_y Vertical position or SDL positioning constant.
+     * @param width Horizontal size in screen coordinates.
+     * @param height Vertical size in screen coordinates.
+     * @param flags SDL window creation flags.
+     * @return Window handle, or null on failure.
+     */
+    SDL_Window * sdl_create_window(
+        char const * title, int position_x, int position_y, int width, int height, Uint32 flags);
+    /**
+     * Destroys an SDL window.
+     *
+     * @param window Window to destroy.
+     */
+    void sdl_destroy_window(SDL_Window * window);
+    /**
      * Acquires references to SDL subsystems.
      *
      * @param flags Subsystems to initialize.
