@@ -41,9 +41,11 @@ exhaustion. Mocked tests and real headless instance and enumeration smoke tests 
 renderer remains intact; the broader inventory, execution contracts and ordered migration phases are
 still pending.
 
-- fnfelt is a Git submodule at `vendor/fnfelt`, linked through `fnfelt::fnfelt`. The handoff pin is
-  `c97e6f785258a03878b14d02f2365877a05aa3b6`. That exact SHA was successfully fetched from GitHub,
-  although the standalone local checkout and upstream main had different rewritten histories.
+- fnfelt is a Git submodule at `vendor/fnfelt`, linked through `fnfelt::fnfelt`. The current pin is
+  `b421fd36b53e7b1db3183347ecd7524871b6c3ff`, including `io::on` and the standalone main-thread
+  dispatch demo. The library tests establish context entry/restoration for values, Result outcomes,
+  exceptions and move-only values. The demo establishes the successful dispatch path, not complete
+  renderer shutdown or resource cleanup.
 - Git submodule consumption is the selected approach. Retain it for this work. For joint library
   development, commit changes in fnfelt and then update the parent gitlink deliberately. Do not
   silently switch the build to an unrelated local checkout or a moving dependency revision.
@@ -150,7 +152,7 @@ Use three layers:
    atomic wrapper normally represents one operation; enumeration and acquisition rollback need
    clearly specified multi-call protocols around those operations.
 3. Application orchestration: ReaderIO supplies capabilities, StateIO threads logical transitions,
-   and an explicit outer execution/session boundary runs the program and its cleanup.
+   and a small application execution boundary runs the program while main services platform work.
 
 Maintain a command inventory covering loading, global/instance/device queries, creation, recording,
 synchronization, presentation and destruction. Every actual Vulkan invocation belongs inside the
@@ -272,10 +274,10 @@ owned plans inside the action that consumes them. Preserve the acquired image in
 `VK_SUBOPTIMAL_KHR`; out-of-date acquisition supplies no image to render. Inspect presentation
 results, timeout/not-ready and device loss according to each command's contract.
 
-Start with a project-local scoped IO session. The active run owns the resource graph while
-Reader/State values borrow views. Register cleanup before publishing a successfully acquired
-resource. If registration/allocation throws after creation, an action-local rollback guard destroys
-that resource inside the active effect scope before propagating the failure.
+Choose ownership with each concrete resource slice rather than requiring a generic session or
+cleanup registry. Acquire and destroy resources on their required context. If owner allocation or
+publication throws after acquisition, action-local rollback destroys the resource before failure
+escapes. Reader/State values may borrow views only while the concrete owner remains alive.
 
 Normal completion, returned errors, exceptions and cooperative stop must share explicit cleanup:
 
@@ -295,17 +297,18 @@ scope, routed through observable dispatch. Async cleanup must run through an exp
 path; destructors cannot `co_await`. Preserve the original failure when cleanup also fails and
 report cleanup errors separately. Preserve allocation-callback compatibility and parent lifetimes.
 
-Reusable factory plans acquire fresh resources on every run. Session-bound draw actions are valid
+Reusable factory plans acquire fresh resources on every run. Generation-bound draw actions are valid
 only for their live generation. If an action consumes state and is single-use, document and reject
 reuse deliberately. Test discarded plans, repeated runs, stale generation use and every partial
-acquisition/registration failure, including allocation exceptions and late failures.
+acquisition/owner-publication failure, including allocation exceptions and late failures.
 
 ### Platform threading and execution topology
 
-The selected initial topology is an ordinary launcher thread running the root `sync_wait`, while the
-main OS thread pumps SDL events and a libfork main-thread worker context. This is a planned
-integration, not something proven by the current CPU smoke test. Verify the pinned libfork APIs and
-implement a focused execution spike before porting window ownership.
+The selected topology follows fnfelt's `tests/demo/main_thread_dispatch.cpp`: an ordinary background
+thread calls `sync_wait` on a libfork pool while the main OS thread services a libfork worker
+context. Do not add another generic project-local runner, session or outcome-report framework.
+Integrate this small boundary with the migrated SDL path when that path needs it; keep the legacy
+entry point unchanged until replacement is ready.
 
 The previously inspected libfork 3.8 mechanism is:
 
@@ -313,18 +316,38 @@ The previously inspected libfork 3.8 mechanism is:
   `lf::worker_init(lf::nullary_function_t{notification})` from `<libfork/core.hpp>`.
 - On that same thread, drain `main_context->try_pop_all()` and pass returned jobs to `lf::resume`.
   Drain outside an already running libfork coroutine; resumption requires an empty worker stack.
-- Immediately before each platform operation, `co_await lf::resume_on(main_context)`. Keep that
-  operation short and non-suspending. Later suspension/fork/join can move execution again; the hop
-  does not establish permanent affinity. Cleanup needs its own explicit hop.
+- Wrap each actual short platform operation in `fnfelt::monad::io::on(main_context, operation)`.
+  ReaderIO can obtain the context from its environment and return that IO. `io::on` executes the
+  source on the target and restores the originating context before returning its value, Result
+  outcome or exception. Child suspension/fork/join can still migrate; wrapping a whole renderer
+  subtree does not establish permanent affinity. Cleanup needs its own placement.
 - The notification runs inline on the submitting thread and may be invoked concurrently. It must be
   thread-safe and non-throwing; wake the main loop there, rather than touching SDL objects or
   resuming libfork jobs. A no-op requires bounded polling, not an indefinitely blocking event wait.
+- Use an atomic `should_main_thread_awake` doorbell: notification exchanges true with release
+  ordering and calls `notify_one`; main exchanges false with acquire ordering before checking the
+  queue, then uses `wait(false, relaxed)` when no completion is pending. Clear before checking so a
+  racing submission cannot lose its notification. The next acquiring exchange observes submitted
+  work publication after a relaxed wait.
 - The initialized main thread is a libfork worker. Calling `lf::schedule`/`lf::sync_wait` there can
   throw `schedule_in_worker`. The launcher must be an ordinary thread, not another initialized
   libfork worker. `sync_wait` does not itself pin its program to the calling thread.
-- On quit/error, request shutdown but keep pumping until the root and cleanup finish. Only then join
-  the launcher and call `lf::finalize(main_context)` on the owning main thread. Never block the main
-  thread waiting for work that still needs its queue.
+- Main-loop completion is a runtime concern, outside StateIO/ReaderIO state. After the background
+  `sync_wait` and all cleanup needing dispatch finish, set a separate atomic completion flag with
+  relaxed ordering and ring the same doorbell. Main joins the background thread before reading its
+  result, releasing main-owned SDL resources and finalizing its context, in that order. The join
+  supplies result synchronization. Never stop dispatch or block main waiting for work that still
+  needs its queue.
+
+The demo's final `and_then` is success-only: Result errors and stopped outcomes bypass it. The
+application boundary must signal completion regardless of the returned Result state. Do this after
+the ordinary background wait rather than adding a terminal IO solely to stop main. Unexpected
+exceptions require either deliberate fail-fast behavior or a small completion guard before future
+propagation; they do not justify a new outcome framework.
+
+Application cancellation is distinct from runtime completion. SDL quit should request cooperative
+stop through a token available to the program, checked at frame boundaries and before/after long
+work. It must not stop main dispatch while outstanding operations or cleanup still need it.
 
 Publish owned SDL event/resize data through a synchronized mailbox. An atomic quit flag does not
 make the rest of the renderer thread-safe. Only the main thread accesses platform-alive state;
@@ -346,12 +369,15 @@ every synchronous Vulkan call.
 
 Inside a libfork task, immediately await with the current `self.context()`; do not cache that
 context across suspension or a main-thread hop. The bridge outcome is
-`Result<Value, std::expected<Error, std::exception_ptr>>`: distinguish stopped, successful value,
-sender error and completion-storage exception. Map the opaque error payload into application
-outcomes with `transform_error`. Returning the `Result` from an action enables the usual error/stop
-propagation through its continuations; awaiting it inside a coroutine does not itself request
-shutdown or run cleanup. Stop tokens affect their sender only. Keep external services, callback
-state and borrowed payload referents alive through completion.
+`fnfelt::interop::sender_outcome_t<Sender, Environment>`, a `Result<Value, Error>` with
+sender-provided error payloads, using a variant when several distinct alternatives are advertised
+and Infallible when none are advertised. Map sender errors into application outcomes with
+`transform_error`. Returning the Result from an action enables the usual error/stop propagation
+through its continuations; awaiting it inside a coroutine does not itself request shutdown or run
+cleanup. Stop tokens affect their sender only. Completion is noexcept: storing owned completion
+values or errors must not throw, otherwise execution terminates. Connection and result-move
+exceptions propagate normally. Keep external services, callback state and borrowed payload referents
+alive through completion.
 
 The bridge does not supply SDL affinity or a main-thread scheduler. A blocking stdexec run loop
 cannot simply be inserted into the SDL polling loop. Prefer the explicit libfork context hop above
@@ -372,12 +398,12 @@ name lookup and errors inside callback bodies cannot all become friendly static 
 
 The following are candidates, not existing APIs or blanket requirements:
 
-| Candidate                   | Trigger and required contract                                                                                                                                                                                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scoped acquire/use/release  | Correct cleanup is required immediately; a generic library primitive is conditional on proven reusable semantics. Acquire/release once per run, handle partial acquisition and exceptions, join children, preserve original failures and support repeat execution without construction-time effects. |
-| Explicit serial composition | Add only if existing dependent chaining is insufficient. Preserve Reader environment and distinguish ordering from Result propagation; never change existing parallel `sequence` semantics.                                                                                                          |
-| Main-thread dispatch helper | Start project-local. Promote only after tests establish the advertised per-operation affinity, wakeup and shutdown guarantees.                                                                                                                                                                       |
-| Validation/name propagation | Fix when representative migrated failures bypass useful diagnostics. Validate before instantiating dependent types and preserve the nearest named stage.                                                                                                                                             |
+| Candidate                    | Trigger and required contract                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scoped acquire/use/release   | Correct cleanup is required immediately; a generic library primitive is conditional on proven reusable semantics. Acquire/release once per run, handle partial acquisition and exceptions, join children, preserve original failures and support repeat execution without construction-time effects. |
+| Explicit serial composition  | Add only if existing dependent chaining is insufficient. Preserve Reader environment and distinguish ordering from Result propagation; never change existing parallel `sequence` semantics.                                                                                                          |
+| Further dispatch convenience | `io::on` already supplies context entry/return. ReaderIO/StateIO overloads or `and_then_on` are optional only when concrete composition demonstrates a need.                                                                                                                                         |
+| Validation/name propagation  | Fix when representative migrated failures bypass useful diagnostics. Validate before instantiating dependent types and preserve the nearest named stage.                                                                                                                                             |
 
 Keep additions Vulkan-independent and narrowly justified. Follow fnfelt's own `AGENTS.md`, its
 reflection/Immer skills and injected-validator pattern; list new public headers in its FILE_SET. Run
@@ -394,26 +420,25 @@ untested composition. Proposed module names are responsibility areas, not a fixe
    its prototype counterpart, ownership/ordering requirements, intended module and test tier.
    Inventory assets and unused pipeline/vertex helpers without assuming shaders exist in the demo.
    Prove environment/state copying, common-type error branching, repeated execution and partial
-   acquisition cleanup. Build the worker-launched root/main-context spike above, including thread
-   identity after suspension/fork/join, notifications, exceptions and quit without deadlock.
-   Acceptance: runnable focused tests and recorded ownership/executor contracts before moving window
-   or resource ownership. No broad framework changes yet.
+   acquisition cleanup. Reuse fnfelt's dispatch demo and `io::on` tests, then prove application
+   shutdown for successful, error and stopped results when the SDL path is integrated. Acceptance:
+   runnable focused tests and recorded ownership/executor contracts before moving window or resource
+   ownership. No broad framework changes yet.
 2. **Pure types, outcomes and dispatch seam.** Introduce owning capability snapshots, selection
-   plans, command-specific outcomes, the borrowed API environment, mock implementation and
-   scoped-session scaffolding. Retain useful prototype policy while eliminating borrowed C-string
-   lifetimes. Acceptance: pure/fake tests make no real API calls and need no GPU or display;
-   environment copies share one mock and its expectations; constructing/discarding plans records
-   zero calls; required and optional missing dispatch paths are tested; named diagnostics are
-   checked at a small boundary.
+   plans, command-specific outcomes, the borrowed API environment and mock implementation. Retain
+   useful prototype policy while eliminating borrowed C-string lifetimes. Acceptance: pure/fake
+   tests make no real API calls and need no GPU or display; environment copies share one mock and
+   its expectations; constructing/discarding plans records zero calls; required and optional missing
+   dispatch paths are tested; named diagnostics are checked at a small boundary.
 3. **First complete vertical slice, SDL-free.** Enumerate layers/extensions, select requirements,
    create an instance and optional debug messenger, and tear down deterministically. ReaderIO
    supplies the borrowed API/configuration and StateIO records successful transitions. Use this
    slice to evaluate the real/mock API design with trompeloeil, including deferred calls and API
    lifetime through cleanup. Acceptance: fake coverage for empty/changing enumeration, missing
-   requirements, creation/registration failures, failure bypass, exceptions, cleanup order and two
-   independent runs with isolated mock expectations; a real headless instance smoke test. Assess
-   template plumbing before expanding the API, and use Result-aware binding, error mapping and
-   caller-selected recovery rather than duplicating failure branches.
+   requirements, acquisition/owner-publication failures, failure bypass, exceptions, cleanup order
+   and two independent runs with isolated mock expectations; a real headless instance smoke test.
+   Assess template plumbing before expanding the API, and use Result-aware binding, error mapping
+   and caller-selected recovery rather than duplicating failure branches.
 4. **Devices and queues.** Snapshot capabilities, preserve/test scoring and queue-family policy,
    create the logical device and retrieve queues. Introduce surface-dependent suitability only once
    the platform boundary is proven. Acceptance: unsuitable/missing requirements, split queue
@@ -453,15 +478,15 @@ selection and CMake/CTest filtering plumbing. A future CMake configuration varia
 exclude integration tests. Filtering controls execution, not linkage: pure and mocked impure tests
 must avoid real API calls but may link Vulkan and SDL.
 
-| Tier                     | Required evidence                                                                                                                                                                                 |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pure doctests            | Owning names/snapshots; capability and device/queue policy; swapchain decisions; frame/lifecycle state transitions; result classification.                                                        |
-| Fake dispatch            | Laziness, calls/arguments, bounded enumeration, failure bypass, partial acquisition/registration exceptions, parent lifetime, reverse cleanup, repeat runs, stale generations, no unsafe overlap. |
-| Execution spike          | Main-thread identity at platform calls and cleanup, re-dispatch after suspension, concurrent wakeups, launcher/loop exceptions, quit while work remains, join/finalize ordering.                  |
-| Compile-time diagnostics | Positive counterparts and a small set of negative callback/state/capability/non-monad boundaries with useful names and reasons.                                                                   |
-| Headless real Vulkan     | Instance/debug setup, device/queue setup and deterministic teardown; validation enabled where available.                                                                                          |
-| Windowed real Vulkan     | Bounded clear/present, synchronization, minimize/resize/recreation and close; no validation errors or hangs.                                                                                      |
-| fnfelt changes           | Library DEV/regression gates plus the downstream consumer; forwarding, error/state retention, lifetime and diagnostic contracts of each new primitive.                                            |
+| Tier                     | Required evidence                                                                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pure doctests            | Owning names/snapshots; capability and device/queue policy; swapchain decisions; frame/lifecycle state transitions; result classification.                                                             |
+| Fake dispatch            | Laziness, calls/arguments, bounded enumeration, failure bypass, partial acquisition/owner-publication exceptions, parent lifetime, reverse cleanup, repeat runs, stale generations, no unsafe overlap. |
+| Execution spike          | Main-thread identity at platform calls and cleanup, re-dispatch after suspension, concurrent wakeups, launcher/loop exceptions, quit while work remains, join/finalize ordering.                       |
+| Compile-time diagnostics | Positive counterparts and a small set of negative callback/state/capability/non-monad boundaries with useful names and reasons.                                                                        |
+| Headless real Vulkan     | Instance/debug setup, device/queue setup and deterministic teardown; validation enabled where available.                                                                                               |
+| Windowed real Vulkan     | Bounded clear/present, synchronization, minimize/resize/recreation and close; no validation errors or hangs.                                                                                           |
+| fnfelt changes           | Library DEV/regression gates plus the downstream consumer; forwarding, error/state retention, lifetime and diagnostic contracts of each new primitive.                                                 |
 
 Review each slice for hidden effects in pure functions/destructors, escaped borrowed storage,
 unnamed composition boundaries, ignored statuses, resource release before CPU/GPU completion,
@@ -470,17 +495,21 @@ to a portable synchronization guarantee.
 
 ## Next session and working practices
 
-Start with step 1, not more dependency plumbing. Read `AGENTS.md`, this plan, `src/vulkandemo.cpp`,
-`src/setup.*`, `src/draw.*`, `src/types.*`, and the corresponding prototype responsibilities. Read
-fnfelt's README/demo and relevant headers when selecting exact APIs. Load the reflection skill
-before reflection code and the Immer skill before changing Immer behavior. Use subagents for
-targeted exploration, implementation and review rather than loading every wrapper into one context.
+The next slice is SDL video initialization and window ownership, required instance-extension
+discovery and configurable Vulkan instance creation. Use main-owned resource anchors while worker
+ReaderIO programs borrow views. Pause before Vulkan surface creation for review. Keep the legacy
+implementation static as a reference until migration is complete.
+
+Read `AGENTS.md`, this plan, the legacy responsibilities and fnfelt's main-thread demo when
+selecting exact APIs. Load the reflection skill before reflection code and the Immer skill before
+changing Immer behavior. Use subagents for targeted exploration, implementation and review rather
+than loading every wrapper into one context.
 
 Settle bounded open questions with evidence or the user: minimum supported Vulkan/platform version,
-validation policy, first supported device/queue topology, exact state/environment shape,
-scoped-session error channels, and polling/wakeup bounds. The initial main-loop topology is already
-selected; its integration and shutdown details still need proof. Safe scoped cleanup must be settled
-before porting resource ownership, not postponed until the final loop.
+validation policy, first supported device/queue topology, exact state/environment shape, concrete
+resource ownership and polling/wakeup bounds. The initial main-loop topology is already selected;
+its application integration and shutdown details still need proof. Settle cleanup for each resource
+slice rather than postponing it until the final loop or introducing a generic session in advance.
 
 Keep atomic Conventional Commits focused on responsibilities and minimize overlapping files across
 commits so future fixups/rebases stay manageable. Use `fixup!` commits when refining an existing
