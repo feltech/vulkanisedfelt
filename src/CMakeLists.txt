@@ -11,6 +11,7 @@ add_executable(
   execution/managed_resources.cpp
   sdl/video.cpp
   sdl/window.cpp
+  sdl/instance_extensions.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
   vulkan/api_version.cpp
@@ -48,6 +49,8 @@ target_sources(
           sdl/window.hpp
           sdl/window_types.hpp
           sdl/detail/window.hpp
+          sdl/instance_extensions.hpp
+          sdl/detail/instance_extensions.hpp
           sdl/errors.hpp
           sdl/resources.hpp
           sdl/managed_handles.hpp
@@ -72,6 +75,7 @@ target_sources(
           vulkan/instance_version.hpp
           vulkan/detail/instance_version.hpp
           vulkan/instance_extensions.hpp
+          vulkan/extension_types.hpp
           vulkan/detail/instance_extensions.hpp
           vulkan/instance_layers.hpp
           vulkan/detail/instance_layers.hpp

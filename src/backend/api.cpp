@@ -4,11 +4,18 @@
 
 #include "./api.hpp"
 
+#include <SDL_vulkan.h>
+
 namespace vulkandemo::backend
 {
 PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char const * name)
 {
     return ::vkGetInstanceProcAddr(instance, name);
+}
+SDL_bool Api::sdl_vulkan_get_instance_extensions(
+    SDL_Window * window, unsigned int * count, char const ** names)
+{
+    return ::SDL_Vulkan_GetInstanceExtensions(window, count, names);
 }
 SDL_Window * Api::sdl_create_window(
     char const * title, int position_x, int position_y, int width, int height, Uint32 flags)
