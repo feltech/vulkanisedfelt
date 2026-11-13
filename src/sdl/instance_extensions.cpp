@@ -21,6 +21,8 @@
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
 #include "../vulkan/extension_types.hpp"
+#include "../vulkan/instance.hpp"
+#include "../vulkan/renderer_errors.hpp"
 #include "./video.hpp"
 #include "./window.hpp"
 #include "./window_types.hpp"
@@ -202,6 +204,34 @@ TEST_CASE("[integration][windowed] SDL required extension names outlive the wind
     }
 }
 
+TEST_CASE("[integration][windowed] SDL required extensions configure a Vulkan instance")
+{
+    backend::Api api;
+    using environment_type = detail::TestState<backend::Api>;
+    using state_type = immer::box<environment_type>;
+    detail::TestRuntime runtime{api};
+    sdl_result<void> video = runtime.run(state_io_sdl_initialize_video<state_type>());
+    REQUIRE(fnfelt::result::is_success(video));
+    WindowOptions options{
+        .width = window_width{64},
+        .height = window_height{48},
+        .flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)};
+    sdl_result<SDL_Window *> window = runtime.run(state_io_sdl_create_window<state_type>(options));
+    REQUIRE(fnfelt::result::is_success(window));
+
+    // The SDL snapshot owns the names supplied to Vulkan, with no surface created yet.
+    sdl_result<immer::array<vulkan::extension_name>> extensions = runtime.run(
+        reader_io_sdl_vulkan_get_instance_extensions<environment_type>(
+            fnfelt::result::get_success(window)));
+    REQUIRE(fnfelt::result::is_success(extensions));
+    vulkan::renderer_result<vulkan::instance_ptr> instance = runtime.run(
+        vulkan::reader_io_vk_create_instance<environment_type>(
+            fnfelt::result::get_success(extensions)));
+
+    REQUIRE(fnfelt::result::is_success(instance));
+    CHECK(fnfelt::result::get_success(instance).get() != VK_NULL_HANDLE);
+    // The instance owner leaves scope before the main-owned window and video anchors.
+}
 }  // namespace vulkandemo::sdl
 
 namespace vulkandemo::backend

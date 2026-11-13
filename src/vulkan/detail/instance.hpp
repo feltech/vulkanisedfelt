@@ -9,19 +9,23 @@
 #pragma once
 
 #include <concepts>
+#include <cstdint>
 #include <functional>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <vulkan/vulkan_core.h>
 
 #include <fnfelt/monad/io.hpp>
 #include <fnfelt/monad/reader_io.hpp>
 #include <fnfelt/result.hpp>
+#include <immer/array.hpp>
 
 #include "../../backend/detail/api.hpp"
 #include "../api_version_types.hpp"
 #include "../errors.hpp"
+#include "../extension_types.hpp"
 #include "../managed_handles.hpp"
 #include "../renderer_errors.hpp"
 #include "./instance_version.hpp"
@@ -31,7 +35,7 @@ namespace vulkandemo::vulkan::detail
 /** Commands needed to acquire and release an instance. */
 template <class TEnvironment>
 concept vk_create_instance_environment = vk_enumerate_instance_version_environment<TEnvironment> &&
-    requires(TEnvironment environment,
+    requires(TEnvironment const & environment,
              VkInstanceCreateInfo const * info,
              VkAllocationCallbacks const * allocator,
              VkInstance * instance)
@@ -48,17 +52,28 @@ concept vk_create_instance_environment = vk_enumerate_instance_version_environme
  */
 renderer_result<void> require_instance_api_version(api_version available);
 /**
- * Acquires a minimal Vulkan instance.
+ * Acquires a Vulkan instance with the requested extensions.
  *
  * @tparam TApi Command implementation type.
  * @param api Borrowed command implementation.
+ * @param extension_names Owned extension names.
  * @return An instance owner or acquisition failure.
  */
 template <class TApi>
-auto create_instance(std::reference_wrapper<TApi> api) -> vulkan_result<instance_ptr>
+auto create_instance(
+    std::reference_wrapper<TApi> api, immer::array<extension_name> const & extension_names)
+    -> vulkan_result<instance_ptr>
 {
     namespace result = fnfelt::result;
     using result_type = vulkan_result<instance_ptr>;
+
+    // Stable C-string pointers borrowed from the immutable owned names.
+    std::vector<char const *> name_pointers;
+    name_pointers.reserve(extension_names.size());
+    for (extension_name const & name : extension_names)
+    {
+        name_pointers.push_back(value_of(name).c_str());
+    }
 
     VkApplicationInfo application_info{};
     application_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -66,6 +81,8 @@ auto create_instance(std::reference_wrapper<TApi> api) -> vulkan_result<instance
     VkInstanceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     create_info.pApplicationInfo = &application_info;
+    create_info.enabledExtensionCount = static_cast<std::uint32_t>(name_pointers.size());
+    create_info.ppEnabledExtensionNames = name_pointers.empty() ? nullptr : name_pointers.data();
     VkInstance instance = VK_NULL_HANDLE;
     VkResult const status = api.get().vk_create_instance(&create_info, nullptr, &instance);
     if (status != VK_SUCCESS)
@@ -80,18 +97,21 @@ auto create_instance(std::reference_wrapper<TApi> api) -> vulkan_result<instance
  * Supplies the API to deferred instance acquisition.
  *
  * @tparam TEnvironment Execution environment type.
+ * @param extension_names Owned extension names.
  * @param environment Execution capabilities.
  * @return Deferred instance-acquisition operation.
  */
 template <class TEnvironment>
-constexpr auto io_create_instance(TEnvironment environment)
+constexpr auto create_instance_reader_io_action(
+    immer::array<extension_name> const & extension_names, TEnvironment const & environment)
 {
     using fnfelt::literals::operator""_ss;
     using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
     namespace io = fnfelt::monad::io;
 
     // Callable producing an instance owner or acquisition failure.
-    auto acquire_instance = std::bind_front(create_instance<api_type>, environment.api);
+    auto acquire_instance =
+        std::bind_front(create_instance<api_type>, environment.api, extension_names);
 
     // IO producing an instance owner or acquisition failure.
     return io::create<"vk_create_instance"_ss>(std::move(acquire_instance));
@@ -101,20 +121,22 @@ constexpr auto io_create_instance(TEnvironment environment)
  * Plans native instance creation in the renderer error domain.
  *
  * @tparam TEnvironment Execution environment type.
+ * @param extension_names Owned extension names.
  * @return ReaderIO producing an instance owner or renderer failure.
  */
 template <class TEnvironment>
-constexpr auto reader_io_create_instance()
+constexpr auto reader_io_create_instance(immer::array<extension_name> extension_names)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // Factory providing native instance-acquisition IO.
-    auto io_acquire_instance = io_create_instance<TEnvironment>;
+    // Action providing native instance-acquisition IO.
+    auto create_instance =
+        std::bind_front(create_instance_reader_io_action<TEnvironment>, std::move(extension_names));
 
     // ReaderIO providing the native owner or original Vulkan status.
     auto acquire_instance =
-        reader_io::create<"vk_create_instance"_ss, TEnvironment>(std::move(io_acquire_instance));
+        reader_io::create<"vk_create_instance"_ss, TEnvironment>(std::move(create_instance));
 
     // ReaderIO providing the same owner with renderer-domain failures.
     return reader_io::transform_error<"instance_creation_error"_ss>(

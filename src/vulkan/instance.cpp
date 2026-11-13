@@ -14,10 +14,12 @@
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
 #include <fnfelt/result.hpp>
+#include <immer/array.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
 
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
+#include "./extension_types.hpp"
 #include "./renderer_errors.hpp"
 
 // Complete the opaque dispatchable handle only for test-owned fake instances.
@@ -126,6 +128,61 @@ TEST_CASE("[impure] vk_create_instance preserves failure without destruction")
         std::get<VulkanOperationFailure>(fnfelt::result::get_error(result)).cause;
     CHECK(failure.result == VK_ERROR_INCOMPATIBLE_DRIVER);
     CHECK(failure.operation == FallibleVulkanOperation::create_instance);
+}
+
+TEST_CASE("[impure] vk_create_instance owns extension names for deferred replay")
+{
+    MockApi api;
+    REQUIRE_CALL(api, vk_get_instance_proc_addr(nullptr, trompeloeil::_))
+        .RETURN(reinterpret_cast<PFN_vkVoidFunction>(&supported_instance_version))
+        .TIMES(2);
+    ALLOW_CALL(api, vk_destroy_instance(trompeloeil::_, trompeloeil::_))
+        .SIDE_EFFECT(DOCTEST_FAIL_CHECK("unexpected instance destruction"));
+    TestEnvironment<MockApi> environment{std::ref(api)};
+    VkInstance_T first;
+    VkInstance_T second;
+    trompeloeil::sequence calls;
+
+    // The reusable plan retains names after the construction inputs leave scope.
+    auto plan = []
+    {
+        immer::array names{
+            extension_name{"VK_test_first"}, extension_name{"VK_test_second_long_extension_name"}};
+        return reader_io_vk_create_instance<TestEnvironment<MockApi>>(std::move(names));
+    }();
+    auto deferred = plan.build(environment);
+
+    // Vulkan receives terminated strings while the project-owned names contain bytes only.
+    REQUIRE_CALL(api, vk_create_instance(trompeloeil::_, nullptr, trompeloeil::_))
+        .WITH(
+            _1->enabledExtensionCount == 2 && _1->ppEnabledExtensionNames != nullptr &&
+            std::strcmp(_1->ppEnabledExtensionNames[0], "VK_test_first") == 0 &&
+            std::strcmp(_1->ppEnabledExtensionNames[1], "VK_test_second_long_extension_name") == 0)
+        .LR_SIDE_EFFECT(*_3 = &first)
+        .RETURN(VK_SUCCESS)
+        .IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_destroy_instance(&first, nullptr)).IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_create_instance(trompeloeil::_, nullptr, trompeloeil::_))
+        .WITH(
+            _1->enabledExtensionCount == 2 && _1->ppEnabledExtensionNames != nullptr &&
+            std::strcmp(_1->ppEnabledExtensionNames[0], "VK_test_first") == 0 &&
+            std::strcmp(_1->ppEnabledExtensionNames[1], "VK_test_second_long_extension_name") == 0)
+        .LR_SIDE_EFFECT(*_3 = &second)
+        .RETURN(VK_SUCCESS)
+        .IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_destroy_instance(&second, nullptr)).IN_SEQUENCE(calls);
+
+    renderer_result<instance_ptr> first_result = std::move(deferred).sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(first_result));
+    CHECK(fnfelt::result::get_success(first_result).get() == &first);
+
+    fnfelt::result::get_success(first_result).reset();
+    renderer_result<instance_ptr> second_result =
+        plan.build(environment).sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(second_result));
+    CHECK(fnfelt::result::get_success(second_result).get() == &second);
 }
 
 TEST_CASE("[impure] vk_create_instance rejects unsupported implementations before creation")
