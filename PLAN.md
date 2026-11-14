@@ -495,10 +495,18 @@ to a portable synchronization guarantee.
 
 ## Next session and working practices
 
-The next slice is SDL video initialization and window ownership, required instance-extension
-discovery and configurable Vulkan instance creation. Use main-owned resource anchors while worker
-ReaderIO programs borrow views. Pause before Vulkan surface creation for review. Keep the legacy
-implementation static as a reference until migration is complete.
+SDL video initialization, window ownership, required instance-extension discovery and configurable
+Vulkan instance creation are implemented. Main-owned resource holders retain cleanup guards while
+worker ReaderIO programs borrow views. Lexical destruction releases the window before video. Mocked
+tests cover errors, ownership and main-thread calls; windowed integration tests cover SDL
+initialization, a hidden Vulkan window, extension discovery and Vulkan instance creation with those
+extensions. No Vulkan surface is created yet: pause here for review before adding surface creation
+and ownership. Keep the legacy implementation static as a reference until migration is complete.
+
+The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
+`sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
+Joining the worker precedes releasing SDL resources on main and finalizing its context. Application
+event polling, cooperative cancellation and the production runtime remain future work.
 
 Read `AGENTS.md`, this plan, the legacy responsibilities and fnfelt's main-thread demo when
 selecting exact APIs. Load the reflection skill before reflection code and the Immer skill before
