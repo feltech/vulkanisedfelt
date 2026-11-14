@@ -7,6 +7,7 @@ add_executable(
   backend/api.cpp
   text/string.cpp
   backend/mock_api.cpp
+  execution/main_thread.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
   vulkan/api_version.cpp
@@ -40,6 +41,7 @@ target_sources(
           backend/detail/api.hpp
           text/string.hpp
           backend/mock_api.hpp
+          execution/main_thread.hpp
           vulkan/errors.hpp
           vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
