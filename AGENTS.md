@@ -308,6 +308,19 @@ skill can be updated.
 
 C++ `concept`s should be used for overload resolution and as boolean utilities. Avoid using concepts
 purely to constrain a type or function (the errors are difficult to read) - use reflection instead.
+Public functions accepting generic environments are an exception: constrain each environment with a
+function-specific concept describing only the capabilities that function requires.
+
+Use C++26 contracts for programming invariants and fatal logic errors, rather than exceptions or
+explicit termination. Configure contract evaluation at build time; enforcement is the default.
+Express entry and exit requirements with `pre` and `post`; keep `contract_assert` for invariants
+established inside a function. Coroutine preconditions run before initial suspension, so check
+execution-thread affinity inside the coroutine body when it depends on resumption.
+
+ReaderIO environments are read-only logical state, including through borrowed references. API
+effects may use borrowed command implementations. Express logical state updates through StateIO and
+immutable Immer snapshots rather than mutating a shared environment. Box the whole resource-owning
+state aggregate rather than its individual branches.
 
 Use ADL (argument-dependent lookup) where possible, for cleaner code, e.g.
 
@@ -351,6 +364,8 @@ Commits follow the Conventional Commit standard, as enforced by `gitlint`.
 Prefer autosquash-style commits - `fixup!`/`squash!`/`amend!` - a clean git history is a goal of
 project. Rewriting history is encouraged. However, do not attempt to rebase unless instructed – the
 user will do that.
+
+Keep changes to PLAN.md in their own commits, separate from source changes.
 
 ## Documentation
 
