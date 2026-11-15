@@ -13,6 +13,7 @@ add_executable(
   sdl/window.cpp
   sdl/instance_extensions.cpp
   vulkan/instance.cpp
+  vulkan/managed_handles.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
   vulkan/physical_devices.cpp
@@ -65,6 +66,7 @@ target_sources(
           vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
           vulkan/managed_handles_types.hpp
+          vulkan/detail/managed_handles.hpp
           vulkan/instance.hpp
           vulkan/detail/instance.hpp
           vulkan/instance_extensions.hpp

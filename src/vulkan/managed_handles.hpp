@@ -8,15 +8,49 @@
  */
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <utility>
 
 #include <vulkan/vulkan_core.h>
 
+#include "../execution/managed_resources.hpp"
+#include "../sdl/managed_handles_types.hpp"
 #include "./managed_handles_types.hpp"
+#include "detail/managed_handles.hpp"
 
 namespace vulkandemo::vulkan
 {
+/**
+ * Owns a surface whose final release destroys it on main before its parents.
+ *
+ * The borrowed API and serviced context must outlive every owner. Surface users
+ * and dependent swapchains must finish before final release.
+ *
+ * @tparam TApi Command implementation type.
+ * @param surface Acquired surface using the default allocator.
+ * @param instance Instance owning the surface.
+ * @param window Window associated with the surface.
+ * @param api Command implementation alive through cleanup.
+ * @param main_context Serviced main-thread context alive through cleanup.
+ * @return Shared surface owner retaining both parents.
+ */
+template <class TApi>
+[[nodiscard]] auto make_surface_ptr(
+    VkSurfaceKHR surface,
+    instance_ptr instance,
+    sdl::window_ptr window,
+    TApi & api,
+    lf::worker_context * main_context) noexcept -> surface_ptr pre(surface != VK_NULL_HANDLE)
+    pre(instance != nullptr) pre(window != nullptr)
+{
+    return execution::make_main_thread_ptr(
+        surface,
+        main_context,
+        std::bind_front(
+            detail::destroy_surface<TApi>, std::ref(api), std::move(instance), std::move(window)));
+}
+
 /**
  * Owns an instance created with the default allocator.
  *
