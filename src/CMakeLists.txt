@@ -8,6 +8,7 @@ add_executable(
   text/string.cpp
   backend/mock_api.cpp
   execution/main_thread.cpp
+  execution/managed_resources.cpp
   vulkan/instance.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
@@ -39,6 +40,9 @@ target_sources(
           text/string.hpp
           backend/mock_api.hpp
           execution/main_thread.hpp
+          execution/managed_resources.hpp
+          execution/managed_resources_types.hpp
+          execution/detail/managed_resources.hpp
           vulkan/errors.hpp
           vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
