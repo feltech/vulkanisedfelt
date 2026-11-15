@@ -46,6 +46,7 @@ target_sources(
           execution/managed_resources.hpp
           execution/managed_resources_types.hpp
           execution/detail/managed_resources.hpp
+          sdl/detail/main_thread.hpp
           sdl/detail/errors.hpp
           sdl/errors.hpp
           vulkan/errors.hpp
