@@ -8,6 +8,11 @@
 
 namespace vulkandemo::backend
 {
+VkResult Api::vk_get_physical_device_surface_support_khr(
+    VkPhysicalDevice device, std::uint32_t family_index, VkSurfaceKHR surface, VkBool32 * supported)
+{
+    return ::vkGetPhysicalDeviceSurfaceSupportKHR(device, family_index, surface, supported);
+}
 SDL_bool Api::sdl_vulkan_create_surface(
     SDL_Window * window, VkInstance instance, VkSurfaceKHR * surface)
 {
