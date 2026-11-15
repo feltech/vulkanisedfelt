@@ -19,6 +19,16 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Creates a Vulkan presentation surface for an SDL window.
+     *
+     * @param window Vulkan-capable window.
+     * @param instance Instance with SDL's required extensions enabled.
+     * @param surface Receives the created surface.
+     * @return SDL_TRUE on success, or SDL_FALSE with an SDL error.
+     */
+    SDL_bool sdl_vulkan_create_surface(
+        SDL_Window * window, VkInstance instance, VkSurfaceKHR * surface);
+    /**
      * Destroys a presentation surface.
      *
      * @param instance Instance owning the surface.

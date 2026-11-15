@@ -8,6 +8,11 @@
 
 namespace vulkandemo::backend
 {
+SDL_bool Api::sdl_vulkan_create_surface(
+    SDL_Window * window, VkInstance instance, VkSurfaceKHR * surface)
+{
+    return ::SDL_Vulkan_CreateSurface(window, instance, surface);
+}
 void Api::vk_destroy_surface_khr(
     VkInstance instance, VkSurfaceKHR surface, VkAllocationCallbacks const * allocator)
 {
