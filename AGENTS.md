@@ -193,6 +193,14 @@ Boolean variables should use qualifiers such as `is_`, `has_`, `should_`, e.g. `
 Avoid names that clash with an existing name. For example, avoid variable name `io`, if it clashes
 with namespace `io` - use a more descriptive name instead.
 
+Choose variable names for their semantic role, such as `selected_queue_family_for_graphics` rather
+than `graphics`.
+
+Prefer variable names that follow the type name when there is no obvious other semantic meaning,
+e.g. the natural variable name for type of `PhysicalDeviceAssessment` would be
+`physical_device_assessment`, (or `assessment` if frequently used and so shorthand is preferred) -
+NOT `probe`.
+
 ### Casing
 
 These are the casings configured in `.clang-tidy` (`readability-identifier-naming`).
@@ -339,6 +347,8 @@ contain `// IWYU pragma: private, include`).
 
 `constexpr` All The Things.
 
+Use `std::ranges` / `std::views`.
+
 Load the `strong-type` skill (`.agents/skills/strong-type/SKILL.md`) when adding or changing
 rollbear strong types. It documents the library API and its modifiers.
 
@@ -351,6 +361,23 @@ satisfy this rule. Choose local construction strategies based on performance.
 
 Prefer function and class template argument deduction when arguments determine the types. Keep
 explicit arguments or deduction guides when needed to preserve exact cv/ref qualification.
+
+Use explicit function return types when they are reasonably simple; trailing return types are also
+explicit. Keep `auto` deduction for complex composed IO types, binders, views and generic
+forwarding; and when the type is obvious from initialization e.g.
+`auto flags = immer::array<bool>{}.transient();`. Prefer typed local declarations over `auto` when
+the type conveys useful domain information, using class template argument deduction when it
+preserves the intended type. Preserve references and cv-qualification when changing declaration
+style.
+
+```c++
+immer::array<QueueFamilyScore> score_queue_families(/* ... */);
+immer::array graphics_scores{score_queue_families(families, VK_QUEUE_GRAPHICS_BIT)};
+std::optional selected_queue_family_for_graphics{select_queue_family(graphics_scores)};
+
+// Iterator pairs need the element type: CTAD would create an array of two iterators.
+immer::array<QueueFamilyScore> presentation_scores{candidates.begin(), candidates.end()};
+```
 
 For simple stored IO actions, use free functions and `std::bind_front` to bind owned values or
 explicit reference wrappers. When an action needs a struct, use a deducing-this call operator,
