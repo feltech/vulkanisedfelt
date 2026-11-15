@@ -42,4 +42,19 @@ namespace vulkandemo::vulkan
  */
 [[nodiscard]] auto select_queue_family(immer::array<QueueFamilyScore> const & scores)
     -> std::optional<queue_family_index>;
+
+/**
+ * Selects graphics and presentation families, preferring a shared family.
+ *
+ * Each role prefers the fewest additional capabilities, retaining snapshot order on ties.
+ * Presentation support must describe the same complete queue-family snapshot.
+ *
+ * @param families Queue-family capability snapshot.
+ * @param presentation_support Support flags in matching family order.
+ * @return Selected families, or no value when either role is unavailable.
+ */
+[[nodiscard]] auto select_presentation_queue_families(
+    immer::array<VkQueueFamilyProperties> const & families,
+    immer::array<bool> const & presentation_support)
+    -> std::optional<PresentationQueueFamilies> pre(families.size() == presentation_support.size());
 }  // namespace vulkandemo::vulkan
