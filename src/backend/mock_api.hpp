@@ -23,6 +23,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Queue-family presentation-support expectations. */
+    MAKE_MOCK4(
+        vk_get_physical_device_surface_support_khr,
+        VkResult(VkPhysicalDevice, std::uint32_t, VkSurfaceKHR, VkBool32 *));
     /** SDL Vulkan surface creation expectations. */
     MAKE_MOCK3(sdl_vulkan_create_surface, SDL_bool(SDL_Window *, VkInstance, VkSurfaceKHR *));
     /** Presentation surface destruction expectations. */

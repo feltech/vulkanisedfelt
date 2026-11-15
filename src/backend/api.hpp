@@ -27,6 +27,20 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Queries whether a queue family can present to a surface.
+     *
+     * @param device Physical device from the surface's parent instance.
+     * @param family_index Queue-family index.
+     * @param surface Presentation surface.
+     * @param supported Receives presentation support on success.
+     * @return Vulkan query status.
+     */
+    VkResult vk_get_physical_device_surface_support_khr(
+        VkPhysicalDevice device,
+        std::uint32_t family_index,
+        VkSurfaceKHR surface,
+        VkBool32 * supported);
+    /**
      * Creates a Vulkan presentation surface for an SDL window.
      *
      * @param window Vulkan-capable window.
