@@ -5,6 +5,7 @@
 add_executable(
   vulkandemo
   backend/api.cpp
+  text/string.cpp
   backend/mock_api.cpp
   vulkan/instance.cpp
   vulkan/instance_extensions.cpp
@@ -31,6 +32,7 @@ target_sources(
           types.hpp
           backend/api.hpp
           backend/detail/api.hpp
+          text/string.hpp
           backend/mock_api.hpp
           vulkan/errors.hpp
           vulkan/renderer_errors.hpp
