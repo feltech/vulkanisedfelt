@@ -16,6 +16,7 @@ add_executable(
   vulkan/detail/instance.cpp
   vulkan/api_version.cpp
   vulkan/instance_version.cpp
+  vulkan/managed_handles.cpp
   vulkan/instance_extensions.cpp
   vulkan/instance_layers.cpp
   vulkan/physical_devices.cpp
@@ -68,6 +69,7 @@ target_sources(
           vulkan/renderer_errors.hpp
           vulkan/managed_handles.hpp
           vulkan/managed_handles_types.hpp
+          vulkan/detail/managed_handles.hpp
           vulkan/instance.hpp
           vulkan/detail/instance.hpp
           vulkan/api_version.hpp
