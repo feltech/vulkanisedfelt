@@ -17,6 +17,7 @@ target_sources(
           HEADERS
           FILES
           types.hpp
+          backend/detail/api.hpp
           setup.hpp
           draw.hpp
           draw/detail.hpp
