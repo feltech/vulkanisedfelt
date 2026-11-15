@@ -27,6 +27,15 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Destroys a presentation surface.
+     *
+     * @param instance Instance owning the surface.
+     * @param surface Surface to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_surface_khr(
+        VkInstance instance, VkSurfaceKHR surface, VkAllocationCallbacks const * allocator);
+    /**
      * Retrieves instance extensions required by an SDL Vulkan window.
      *
      * @param window Borrowed Vulkan-capable window.
