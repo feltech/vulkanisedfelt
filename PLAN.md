@@ -508,8 +508,17 @@ Surface acquisition is a read-only ReaderIO effect with owning window and instan
 shared surface owner retains both parents until main-thread surface destruction completes. The owner
 stores the native pointer-shaped surface handle directly, matching the supported Vulkan ABI. Mocked
 tests cover deferred creation, immediate SDL errors, retained parents, weak observers and final
-worker release. Next add presentation-support queries and presentation-capable queue/device
-selection. Keep the legacy implementation static as a reference until migration is complete.
+worker release. Presentation-support queries now retain the surface throughout deferred execution.
+Pure queue selection prefers a shared graphics/presentation family, then supports separate families
+using the existing minimum-capabilities policy. Presentation-aware physical-device selection
+requires `VK_KHR_swapchain` and any additional extension names, preserves original enumeration
+indices in failures, and retains both instance and surface in its selected value. All independent
+queries finish before unsuccessful outcomes are inspected in snapshot order. Mocked tests cover
+unsupported queues, missing extensions, failures, repeated execution and retained owners; a windowed
+smoke test selects a device for a real SDL surface. Next configure logical-device creation for the
+selected queue families and enable the swapchain extension. Surface format, present-mode and
+capability queries remain part of the later swapchain slice. Keep the legacy implementation static
+as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
