@@ -495,17 +495,21 @@ to a portable synchronization guarantee.
 
 ## Next session and working practices
 
-SDL video initialization, window ownership, required instance-extension discovery and configurable
-Vulkan instance creation are implemented. SDL acquisition uses StateIO to retain cleanup guards in
-an immutable box around the whole execution state; ReaderIO only reads execution capabilities. Final
-release on a worker waits for cleanup on main through a temporary submission thread; release on main
-executes directly. Window cleanup retains video until the window is destroyed. Mocked tests cover
-errors, ownership, intermediate worker release and main-thread calls. StateIO tests preserve earlier
-snapshots and retain updated resources through error and stopped results; windowed integration tests
-cover SDL initialization, a hidden Vulkan window, extension discovery and Vulkan instance creation
-with those extensions. No Vulkan surface is created yet: pause here for review before adding surface
-creation and ownership. Keep the legacy implementation static as a reference until migration is
-complete.
+SDL video initialization, window ownership, required instance-extension discovery, configurable
+Vulkan instance creation and SDL Vulkan surface ownership are implemented. Video/window acquisition
+uses StateIO to retain cleanup guards in an immutable box around the whole execution state; ReaderIO
+only reads execution capabilities. Final release on a worker waits for cleanup on main through a
+temporary submission thread; release on main executes directly. Window cleanup retains video until
+the window is destroyed. Mocked tests cover errors, ownership, intermediate worker release and
+main-thread calls. StateIO tests preserve earlier snapshots and retain updated resources through
+error and stopped results; windowed integration tests cover SDL initialization, a hidden Vulkan
+window, extension discovery, Vulkan instance creation with those extensions and surface creation.
+Surface acquisition is a read-only ReaderIO effect with owning window and instance inputs; the
+shared surface owner retains both parents until main-thread surface destruction completes. The owner
+stores the native pointer-shaped surface handle directly, matching the supported Vulkan ABI. Mocked
+tests cover deferred creation, immediate SDL errors, retained parents, weak observers and final
+worker release. Next add presentation-support queries and presentation-capable queue/device
+selection. Keep the legacy implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
