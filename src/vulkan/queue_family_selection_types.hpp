@@ -31,4 +31,13 @@ struct QueueFamilyScore
     /** Policy cost; lower values are preferred. */
     queue_family_score score;
 };
+
+/** Queue families providing graphics and surface presentation. */
+struct PresentationQueueFamilies
+{
+    /** Family supporting graphics commands. */
+    queue_family_index graphics_family_index;
+    /** Family supporting presentation to the queried surface. */
+    queue_family_index present_family_index;
+};
 }  // namespace vulkandemo::vulkan
