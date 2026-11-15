@@ -25,13 +25,146 @@
 #include "../queue_types.hpp"
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <memory>
 #include <variant>
 
 #include <doctest/doctest.h>
+
+struct VkInstance_T
+{
+};
+struct VkPhysicalDevice_T
+{
+};
 #endif  // DOCTEST_CONFIG_DISABLE
 
 namespace vulkandemo::vulkan::detail
 {
+auto select_presentation_queues_from_support(
+    immer::array<VkQueueFamilyProperties> const & families,
+    immer::array<vulkan_result<bool>> const & support)
+    -> vulkan_result<std::optional<PresentationQueueFamilies>> pre(
+        families.size() == support.size())
+{
+    namespace result = fnfelt::result;
+    using result_type = vulkan_result<std::optional<PresentationQueueFamilies>>;
+    if (std::ranges::any_of(
+            support, [](auto const & outcome) { return result::is_stopped(outcome); }))
+    {
+        return result::stopped<result_type>();
+    }
+    auto flags = immer::array<bool>{}.transient();
+    for (vulkan_result<bool> const & outcome : support)
+    {
+        if (result::is_error(outcome))
+        {
+            return result::error<result_type>(result::get_error(outcome));
+        }
+        flags.push_back(result::get_success(outcome));
+    }
+    return result::success<result_type>(
+        select_presentation_queue_families(families, std::move(flags).persistent()));
+}
+
+auto sequence_presentation_device_query_results(
+    VkPhysicalDeviceProperties properties,
+    vulkan_result<immer::array<VkExtensionProperties>> extensions,
+    vulkan_result<std::optional<PresentationQueueFamilies>> queues)
+    -> vulkan_result<presentation_device_query_values>
+{
+    namespace result = fnfelt::result;
+    using result_type = vulkan_result<presentation_device_query_values>;
+
+    // Any stop takes precedence; otherwise query order determines the first failure.
+    if (result::is_stopped(extensions) || result::is_stopped(queues))
+    {
+        return result::stopped<result_type>();
+    }
+    if (result::is_error(extensions))
+    {
+        return result::error<result_type>(result::get_error(std::move(extensions)));
+    }
+    if (result::is_error(queues))
+    {
+        return result::error<result_type>(result::get_error(std::move(queues)));
+    }
+
+    return result::success<result_type>(
+        properties,
+        result::get_success(std::move(extensions)),
+        result::get_success(std::move(queues)));
+}
+
+auto assess_presentation_device_suitability(
+    immer::array<text::String> const & names,
+    VkPhysicalDeviceProperties const & properties,
+    immer::array<VkExtensionProperties> extensions,
+    std::optional<PresentationQueueFamilies> queues) -> PresentationDeviceAssessment
+{
+    auto has_extension = [&](std::string_view name)
+    {
+        return std::ranges::any_of(
+            extensions,
+            [&](auto const & extension)
+            { return name == std::string_view{extension.extensionName}; });
+    };
+    bool has_extensions = has_extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME) &&
+        std::ranges::all_of(names,
+                            [&](text::String const & name) { return has_extension(name.view()); });
+    return {properties, std::move(queues), has_extensions};
+}
+
+auto select_presentation_device_from_assessments(
+    instance_ptr const & instance,
+    surface_ptr const & surface,
+    immer::array<VkPhysicalDevice> const & handles,
+    immer::array<presentation_device_assessment_result> const & assessments)
+    -> presentation_physical_device_selection_result
+    pre(instance != nullptr && surface != nullptr && handles.size() == assessments.size())
+{
+    namespace result = fnfelt::result;
+    using result_type = presentation_physical_device_selection_result;
+    if (std::ranges::any_of(
+            assessments, [](auto const & assessment) { return result::is_stopped(assessment); }))
+    {
+        return result::stopped<result_type>();
+    }
+    auto properties = immer::array<VkPhysicalDeviceProperties>{}.transient();
+
+    // Without cancellation, enumeration order determines the first failure before ranking.
+    for (auto const & assessment : assessments)
+    {
+        if (result::is_error(assessment))
+        {
+            return result::error<result_type>(
+                renderer_error_from_vulkan_failure(result::get_error(assessment)));
+        }
+        properties.push_back(result::get_success(assessment).properties);
+    }
+    // Retain original indices when unsuitable devices are removed from the scored candidates.
+    auto candidates = immer::array<PhysicalDeviceScore>{}.transient();
+    for (PhysicalDeviceScore score : score_physical_devices(std::move(properties).persistent()))
+    {
+        PresentationDeviceAssessment const & assessment =
+            result::get_success(assessments[value_of(score.device_index)]);
+        if (assessment.queue_families && assessment.has_required_extensions)
+        {
+            candidates.push_back(score);
+        }
+    }
+    std::optional<physical_device_index> selected_device_index =
+        select_physical_device(std::move(candidates).persistent());
+    if (!selected_device_index)
+    {
+        return result::error<result_type>(renderer_error{NoSuitablePhysicalDevice{}});
+    }
+
+    std::uint32_t index = value_of(*selected_device_index);
+    PresentationDeviceAssessment const & assessment = result::get_success(assessments[index]);
+    return result::success<result_type>(SelectedPresentationPhysicalDevice{
+        instance, surface, handles[index], *assessment.queue_families});
+}
+
 auto sequence_physical_device_query_results(
     VkPhysicalDeviceProperties properties,
     immer::array<VkQueueFamilyProperties> queues,
@@ -214,6 +347,219 @@ TEST_CASE("[pure] collected device assessments prioritise stops over errors")
     {
         CHECK(fnfelt::result::is_stopped(result));
     }
+}
+
+namespace
+{
+auto queue(VkQueueFlags flags) -> VkQueueFamilyProperties
+{
+    VkQueueFamilyProperties properties{};
+    properties.queueCount = 1;
+    properties.queueFlags = flags;
+    return properties;
+}
+
+auto extension(char const * name) -> VkExtensionProperties
+{
+    VkExtensionProperties properties{};
+    std::ranges::copy(std::string_view{name}, properties.extensionName);
+    return properties;
+}
+
+}  // namespace
+
+TEST_CASE("[pure] presentation result sequencing preserves stopped and error outcomes")
+{
+    namespace result = fnfelt::result;
+    VulkanFailure failure{
+        FallibleVulkanOperation::get_physical_device_surface_support, VK_ERROR_SURFACE_LOST_KHR};
+    immer::array<vulkan_result<bool>> support{
+        result::success<vulkan_result<bool>>(false), result::error<vulkan_result<bool>>(failure)};
+    SUBCASE("support failure") {}
+    SUBCASE("stopped support")
+    {
+        support = {
+            result::success<vulkan_result<bool>>(false), result::stopped<vulkan_result<bool>>()};
+    }
+
+    vulkan_result<std::optional<PresentationQueueFamilies>> queues =
+        detail::select_presentation_queues_from_support({queue(0), queue(0)}, support);
+    vulkan_result<detail::presentation_device_query_values> assessment =
+        detail::sequence_presentation_device_query_results(
+            {},
+            result::success<vulkan_result<immer::array<VkExtensionProperties>>>(
+                immer::array<VkExtensionProperties>{}),
+            std::move(queues));
+
+    if (result::is_stopped(support[1]))
+    {
+        CHECK(result::is_stopped(assessment));
+    }
+    else
+    {
+        REQUIRE(result::is_error(assessment));
+        CHECK_EQ(result::get_error(assessment).result, VK_ERROR_SURFACE_LOST_KHR);
+    }
+}
+
+TEST_CASE("[pure] presentation support collection prioritises stops over errors")
+{
+    namespace result = fnfelt::result;
+    using support_result = vulkan_result<bool>;
+    using queues_result = vulkan_result<std::optional<PresentationQueueFamilies>>;
+    VulkanFailure first_failure{
+        FallibleVulkanOperation::get_physical_device_surface_support, VK_ERROR_SURFACE_LOST_KHR};
+    VulkanFailure later_failure{
+        FallibleVulkanOperation::get_physical_device_surface_support, VK_ERROR_OUT_OF_HOST_MEMORY};
+    support_result failed = result::error<support_result>(first_failure);
+    support_result stopped = result::stopped<support_result>();
+    immer::array<support_result> support{failed, stopped};
+    bool has_stopped = true;
+    bool has_failed = true;
+    SUBCASE("error before stop") {}
+    SUBCASE("stop before error")
+    {
+        support = {stopped, failed};
+    }
+    SUBCASE("first error without a stop")
+    {
+        support = {failed, result::error<support_result>(later_failure)};
+        has_stopped = false;
+    }
+    SUBCASE("empty support snapshot")
+    {
+        support = {};
+        has_stopped = false;
+        has_failed = false;
+    }
+    immer::array<VkQueueFamilyProperties> families = support.empty()
+        ? immer::array<VkQueueFamilyProperties>{}
+        : immer::array<VkQueueFamilyProperties>{queue(0), queue(0)};
+
+    queues_result collected = detail::select_presentation_queues_from_support(families, support);
+
+    if (has_stopped)
+    {
+        CHECK(result::is_stopped(collected));
+    }
+    else if (has_failed)
+    {
+        REQUIRE(result::is_error(collected));
+        CHECK_EQ(result::get_error(collected).operation, first_failure.operation);
+        CHECK_EQ(result::get_error(collected).result, first_failure.result);
+    }
+    else
+    {
+        REQUIRE(result::is_success(collected));
+        CHECK_FALSE(result::get_success(collected).has_value());
+    }
+}
+
+TEST_CASE("[pure] presentation assessment collection prioritises stops over errors")
+{
+    namespace result = fnfelt::result;
+    using detail::presentation_device_assessment_result;
+    VulkanFailure first_failure{
+        FallibleVulkanOperation::enumerate_device_extensions, VK_ERROR_OUT_OF_HOST_MEMORY};
+    VulkanFailure later_failure{
+        FallibleVulkanOperation::get_physical_device_surface_support, VK_ERROR_SURFACE_LOST_KHR};
+    presentation_device_assessment_result failed =
+        result::error<presentation_device_assessment_result>(first_failure);
+    presentation_device_assessment_result stopped =
+        result::stopped<presentation_device_assessment_result>();
+    immer::array<presentation_device_assessment_result> assessments{failed, stopped};
+    bool has_stopped = true;
+    SUBCASE("error before stop") {}
+    SUBCASE("stop before error")
+    {
+        assessments = {stopped, failed};
+    }
+    SUBCASE("first error without a stop")
+    {
+        assessments = {failed, result::error<presentation_device_assessment_result>(later_failure)};
+        has_stopped = false;
+    }
+    // A successful prefix does not alter which subsequent failure is propagated.
+    presentation_device_assessment_result prefix =
+        result::success<presentation_device_assessment_result>(
+            detail::PresentationDeviceAssessment{});
+    assessments = {prefix, assessments[0], assessments[1]};
+    VkInstance_T native_instance;
+    VkPhysicalDevice_T first_device, second_device, third_device;
+    char surface_storage{};
+    instance_ptr instance{&native_instance, [](auto) {}};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&surface_storage), [](auto) {}};
+
+    presentation_physical_device_selection_result collected =
+        detail::select_presentation_device_from_assessments(
+            instance, surface, {&first_device, &second_device, &third_device}, assessments);
+
+    if (has_stopped)
+    {
+        CHECK(result::is_stopped(collected));
+    }
+    else
+    {
+        REQUIRE(result::is_error(collected));
+        VulkanOperationFailure const & failure =
+            std::get<VulkanOperationFailure>(result::get_error(collected));
+        CHECK_EQ(failure.cause.operation, first_failure.operation);
+        CHECK_EQ(failure.cause.result, first_failure.result);
+    }
+}
+
+TEST_CASE("[pure] presentation result sequencing prioritises stops over errors")
+{
+    namespace result = fnfelt::result;
+    using extensions_result = vulkan_result<immer::array<VkExtensionProperties>>;
+    using queues_result = vulkan_result<std::optional<PresentationQueueFamilies>>;
+    VulkanFailure extension_failure{
+        FallibleVulkanOperation::enumerate_device_extensions, VK_ERROR_OUT_OF_HOST_MEMORY};
+    VulkanFailure queue_failure{
+        FallibleVulkanOperation::get_physical_device_surface_support, VK_ERROR_SURFACE_LOST_KHR};
+    extensions_result extensions = result::error<extensions_result>(extension_failure);
+    queues_result queues = result::stopped<queues_result>();
+    bool has_stopped = true;
+    SUBCASE("extension error precedes queue stop") {}
+    SUBCASE("extension stop precedes queue error")
+    {
+        extensions = result::stopped<extensions_result>();
+        queues = result::error<queues_result>(queue_failure);
+    }
+    SUBCASE("extension error precedes queue error")
+    {
+        queues = result::error<queues_result>(queue_failure);
+        has_stopped = false;
+    }
+
+    vulkan_result<detail::presentation_device_query_values> collected =
+        detail::sequence_presentation_device_query_results(
+            {}, std::move(extensions), std::move(queues));
+
+    if (has_stopped)
+    {
+        CHECK(result::is_stopped(collected));
+    }
+    else
+    {
+        REQUIRE(result::is_error(collected));
+        CHECK_EQ(result::get_error(collected).operation, extension_failure.operation);
+        CHECK_EQ(result::get_error(collected).result, extension_failure.result);
+    }
+}
+
+TEST_CASE("[pure] presentation assessment uses successful capability snapshots")
+{
+    PresentationQueueFamilies queues{queue_family_index{1}, queue_family_index{2}};
+
+    detail::PresentationDeviceAssessment assessment =
+        detail::assess_presentation_device_suitability(
+            {}, {}, {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)}, queues);
+
+    CHECK(assessment.has_required_extensions);
+    REQUIRE(assessment.queue_families.has_value());
+    CHECK_EQ(assessment.queue_families->graphics_family_index, queues.graphics_family_index);
+    CHECK_EQ(assessment.queue_families->present_family_index, queues.present_family_index);
 }
 
 }  // namespace vulkandemo::vulkan
