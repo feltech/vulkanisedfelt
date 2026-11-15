@@ -21,6 +21,9 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Presentation surface destruction expectations. */
+    MAKE_MOCK3(
+        vk_destroy_surface_khr, void(VkInstance, VkSurfaceKHR, VkAllocationCallbacks const *));
     /** SDL Vulkan extension-query expectations. */
     MAKE_MOCK3(
         sdl_vulkan_get_instance_extensions, SDL_bool(SDL_Window *, unsigned int *, char const **));
