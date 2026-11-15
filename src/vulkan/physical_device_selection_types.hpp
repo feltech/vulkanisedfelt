@@ -18,6 +18,7 @@
 
 #include "./managed_handles_types.hpp"
 #include "./physical_devices_types.hpp"
+#include "./queue_family_selection_types.hpp"
 #include "./queue_types.hpp"
 #include "./renderer_errors.hpp"
 
@@ -50,4 +51,21 @@ struct SelectedPhysicalDevice
 
 /// Outcome of headless device selection.
 using physical_device_selection_result = renderer_result<SelectedPhysicalDevice>;
+
+/** A presentation-capable physical device retaining its instance and surface. */
+struct SelectedPresentationPhysicalDevice
+{
+    /** Parent instance; its borrowed API must outlive this value. */
+    instance_ptr instance;
+    /** Surface whose presentation requirements were assessed. */
+    surface_ptr surface;
+    /** Physical device belonging to the retained instance. */
+    VkPhysicalDevice physical_device;
+    /** Graphics and presentation queue families. */
+    PresentationQueueFamilies queue_families;
+};
+
+/** Outcome of presentation-aware physical-device selection. */
+using presentation_physical_device_selection_result =
+    renderer_result<SelectedPresentationPhysicalDevice>;
 }  // namespace vulkandemo::vulkan

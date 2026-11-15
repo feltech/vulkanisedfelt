@@ -91,4 +91,48 @@ template <detail::select_headless_physical_device_environment TEnvironment>
     return reader_io::and_then<"discover_headless_physical_device"_ss>(
         std::move(enumeration), std::move(select_headless_physical_device));
 }
+
+/**
+ * Discovers a Vulkan 1.1 graphics and presentation device supporting the swapchain extension.
+ *
+ * The surface and instance must share the same parent Vulkan instance. All independent assessments
+ * finish before any stop takes precedence over errors; otherwise the first error in enumeration
+ * order wins. The borrowed API and main-thread cleanup context must outlive retained owners and
+ * outstanding queries.
+ * Surface formats, present modes and swapchain creation are separate operations.
+ *
+ * @tparam TEnvironment Execution environment type.
+ * @param instance Nonempty parent instance owner.
+ * @param surface Nonempty surface owner from that instance.
+ * @param required_extension_names Additional required complete extension names.
+ * @return Reusable ReaderIO producing an owning selection or discovery error.
+ */
+template <detail::select_presentation_physical_device_environment TEnvironment>
+[[nodiscard]] constexpr auto reader_io_select_presentation_physical_device(
+    instance_ptr instance,
+    surface_ptr surface,
+    immer::array<text::String> required_extension_names = {})
+{
+    // GCC currently rejects preconditions on this deduced-return factory.
+    contract_assert(instance.get() != VK_NULL_HANDLE && surface.get() != VK_NULL_HANDLE);
+
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // ReaderIO providing handles belonging to the retained instance.
+    auto enumeration = reader_io::transform_error<"presentation_device_enumeration_error"_ss>(
+        reader_io_vk_enumerate_physical_devices<TEnvironment>(instance.get()),
+        renderer_error_from_vulkan_failure);
+
+    // Continuation providing swapchain-aware assessments for the enumerated devices.
+    auto select_presentation_device = std::bind_front(
+        detail::reader_io_select_from_presentation_devices<TEnvironment>,
+        std::move(instance),
+        std::move(surface),
+        std::move(required_extension_names));
+
+    // ReaderIO providing the selected device and both parent lifetimes.
+    return reader_io::and_then<"discover_presentation_physical_device"_ss>(
+        std::move(enumeration), std::move(select_presentation_device));
+}
 }  // namespace vulkandemo::vulkan
