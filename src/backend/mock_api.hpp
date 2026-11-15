@@ -23,6 +23,8 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** SDL Vulkan surface creation expectations. */
+    MAKE_MOCK3(sdl_vulkan_create_surface, SDL_bool(SDL_Window *, VkInstance, VkSurfaceKHR *));
     /** Presentation surface destruction expectations. */
     MAKE_MOCK3(
         vk_destroy_surface_khr, void(VkInstance, VkSurfaceKHR, VkAllocationCallbacks const *));

@@ -12,6 +12,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+SDL_bool Api::sdl_vulkan_create_surface(
+    SDL_Window * window, VkInstance instance, VkSurfaceKHR * surface)
+{
+    return ::SDL_Vulkan_CreateSurface(window, instance, surface);
+}
 void Api::vk_destroy_surface_khr(
     VkInstance instance, VkSurfaceKHR surface, VkAllocationCallbacks const * allocator)
 {
