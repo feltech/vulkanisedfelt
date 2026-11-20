@@ -19,6 +19,17 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Retrieves the presentable images owned by a swapchain.
+     *
+     * @param device Logical device owning the swapchain.
+     * @param swapchain Swapchain to query.
+     * @param count Capacity on input and image count on output.
+     * @param images Output storage, or null to query the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_get_swapchain_images_khr(
+        VkDevice device, VkSwapchainKHR swapchain, std::uint32_t * count, VkImage * images);
+    /**
      * Creates a presentation swapchain.
      *
      * @param device Logical device with VK_KHR_swapchain enabled.

@@ -17,6 +17,8 @@ namespace vulkandemo::vulkan
 /// Wrapped Vulkan operations that can report a failure.
 enum class FallibleVulkanOperation
 {
+    /// Swapchain image query.
+    get_swapchain_images,
     /// Swapchain creation.
     create_swapchain,
     /// Image-format support query.
