@@ -27,6 +27,20 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a presentation swapchain.
+     *
+     * @param device Logical device with VK_KHR_swapchain enabled.
+     * @param info Swapchain description.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param swapchain Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_swapchain_khr(
+        VkDevice device,
+        VkSwapchainCreateInfoKHR const * info,
+        VkAllocationCallbacks const * allocator,
+        VkSwapchainKHR * swapchain);
+    /**
      * Queries support limits for an image description.
      *
      * @param device Borrowed physical device.
