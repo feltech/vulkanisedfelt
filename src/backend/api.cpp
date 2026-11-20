@@ -8,6 +8,14 @@
 
 namespace vulkandemo::backend
 {
+VkResult Api::vk_create_swapchain_khr(
+    VkDevice device,
+    VkSwapchainCreateInfoKHR const * info,
+    VkAllocationCallbacks const * allocator,
+    VkSwapchainKHR * swapchain)
+{
+    return ::vkCreateSwapchainKHR(device, info, allocator, swapchain);
+}
 VkResult Api::vk_get_physical_device_image_format_properties(
     VkPhysicalDevice device,
     VkFormat format,
