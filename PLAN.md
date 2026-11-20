@@ -547,9 +547,15 @@ error domain, and preserves cancellation and operational Vulkan failures. It ret
 swapchain with its configuration and presentation device. Mocked tests cover deferred execution,
 replay after prior release, failure bypass, image limits and retained parents; a windowed smoke test
 creates and releases the initial swapchain without acquiring images or submitting GPU work. Initial
-creation does not replace an existing swapchain; resize/recreation remains future work. Next
-retrieve swapchain images while retaining their owning swapchain, then build image views. Keep the
-legacy implementation static as a reference until migration is complete.
+creation does not replace an existing swapchain; resize/recreation remains future work.
+
+Swapchain image retrieval is implemented with bounded count/fill retries and original Vulkan error
+reporting. Borrowed image handles travel with their swapchain owner; presentation-image bootstrap
+also retains configuration, queues and parents. Images are neither acquired for rendering nor
+destroyed individually. Mocked tests cover lazy ownership, written order and count, retries,
+failures and cleanup after retrieval failure; a windowed smoke test retrieves real images. Next
+build image views with ownership retaining the swapchain. Keep the legacy implementation static as a
+reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
