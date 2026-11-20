@@ -19,6 +19,8 @@ enum class FallibleVulkanOperation
 {
     /// Instance API version query.
     enumerate_instance_version,
+    /// Image-format support query.
+    get_physical_device_image_format_properties,
     /// Instance creation.
     create_instance,
     /// Instance extension enumeration.

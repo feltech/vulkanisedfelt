@@ -27,6 +27,26 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Queries support limits for an image description.
+     *
+     * @param device Borrowed physical device.
+     * @param format Image format.
+     * @param type Image dimensionality.
+     * @param tiling Image memory layout.
+     * @param usage Required image usages.
+     * @param flags Image creation flags.
+     * @param properties Receives supported limits.
+     * @return Vulkan query status.
+     */
+    VkResult vk_get_physical_device_image_format_properties(
+        VkPhysicalDevice device,
+        VkFormat format,
+        VkImageType type,
+        VkImageTiling tiling,
+        VkImageUsageFlags usage,
+        VkImageCreateFlags flags,
+        VkImageFormatProperties * properties);
+    /**
      * Destroys a swapchain after its GPU work and child resources finish.
      *
      * @param device Logical device owning the swapchain.

@@ -32,6 +32,7 @@ add_executable(
   vulkan/surface_present_modes.cpp
   vulkan/swapchain_support.cpp
   vulkan/detail/swapchain_support.cpp
+  vulkan/image_format_properties.cpp
   vulkan/surface_format_selection.cpp
   vulkan/present_mode_selection.cpp
   vulkan/swapchain_extent_selection.cpp
@@ -120,6 +121,8 @@ target_sources(
           vulkan/surface_present_modes.hpp
           vulkan/detail/surface_present_modes.hpp
           vulkan/swapchain_support.hpp
+          vulkan/image_format_properties.hpp
+          vulkan/detail/image_format_properties.hpp
           vulkan/swapchain_support_types.hpp
           vulkan/surface_format_selection.hpp
           vulkan/present_mode_selection.hpp
