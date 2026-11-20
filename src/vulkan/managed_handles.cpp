@@ -20,6 +20,102 @@
 
 namespace vulkandemo::vulkan
 {
+TEST_CASE("[impure] swapchain final release destroys it before either retained parent")
+{
+    backend::MockApi api;
+    char device_storage{};
+    char surface_storage{};
+    char swapchain_storage{};
+    VkDevice device_handle = reinterpret_cast<VkDevice>(&device_storage);
+    VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
+    VkSwapchainKHR swapchain_handle = reinterpret_cast<VkSwapchainKHR>(&swapchain_storage);
+    bool is_destroyed = false;
+    device_ptr device{device_handle, [&](VkDevice) { CHECK(is_destroyed); }};
+    surface_ptr surface{surface_handle, [&](VkSurfaceKHR) { CHECK(is_destroyed); }};
+    std::weak_ptr device_observer{device};
+    std::weak_ptr surface_observer{surface};
+    REQUIRE_CALL(api, vk_destroy_swapchain_khr(device_handle, swapchain_handle, nullptr))
+        .LR_SIDE_EFFECT(CHECK_FALSE(device_observer.expired()))
+        .LR_SIDE_EFFECT(CHECK_FALSE(surface_observer.expired()))
+        .LR_SIDE_EFFECT(is_destroyed = true);
+    swapchain_ptr swapchain =
+        make_swapchain_ptr(swapchain_handle, std::move(device), std::move(surface), api);
+    std::weak_ptr observer{swapchain};
+    swapchain_ptr retained = swapchain;
+
+    swapchain.reset();
+
+    CHECK_FALSE(is_destroyed);
+    CHECK_EQ(retained.get(), swapchain_handle);
+
+    retained.reset();
+
+    CHECK(is_destroyed);
+    CHECK(observer.expired());
+    CHECK(device_observer.expired());
+    CHECK(surface_observer.expired());
+}
+
+TEST_CASE("[impure] worker swapchain release completes main-thread surface cleanup")
+{
+    using fnfelt::literals::operator""_ss;
+    namespace io = fnfelt::monad::io;
+    namespace reader_io = fnfelt::monad::reader_io;
+    using environment_type = sdl::detail::TestState<backend::MockApi>;
+    backend::MockApi api;
+    sdl::detail::TestRuntime runtime{api};
+    std::thread::id const main_thread = std::this_thread::get_id();
+    char instance_storage{};
+    char window_storage{};
+    char surface_storage{};
+    char device_storage{};
+    char swapchain_storage{};
+    VkInstance instance_handle = reinterpret_cast<VkInstance>(&instance_storage);
+    SDL_Window * window_handle = reinterpret_cast<SDL_Window *>(&window_storage);
+    VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
+    VkDevice device_handle = reinterpret_cast<VkDevice>(&device_storage);
+    VkSwapchainKHR swapchain_handle = reinterpret_cast<VkSwapchainKHR>(&swapchain_storage);
+    trompeloeil::sequence calls;
+    REQUIRE_CALL(api, vk_destroy_swapchain_khr(device_handle, swapchain_handle, nullptr))
+        .WITH(std::this_thread::get_id() != main_thread)
+        .IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_destroy_device(device_handle, nullptr)).IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_destroy_surface_khr(instance_handle, surface_handle, nullptr))
+        .WITH(std::this_thread::get_id() == main_thread)
+        .IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, vk_destroy_instance(instance_handle, nullptr)).IN_SEQUENCE(calls);
+    REQUIRE_CALL(api, sdl_destroy_window(window_handle))
+        .WITH(std::this_thread::get_id() == main_thread)
+        .IN_SEQUENCE(calls);
+    instance_ptr instance = make_instance_ptr(instance_handle, api);
+    surface_ptr surface = make_surface_ptr(
+        surface_handle,
+        instance,
+        sdl::make_window_ptr(window_handle, api, {}, runtime.environment().main_context),
+        api,
+        runtime.environment().main_context);
+    swapchain_ptr swapchain = make_swapchain_ptr(
+        swapchain_handle,
+        make_device_ptr(device_handle, std::move(instance), api),
+        std::move(surface),
+        api);
+    auto release = reader_io::create<"release_swapchain"_ss, environment_type>(
+        [&](environment_type)
+        {
+            return io::create<"release_swapchain_owner"_ss>(
+                [&]
+                {
+                    swapchain.reset();
+                    return true;
+                });
+        });
+
+    // Returning from release guarantees the dispatched surface/window destruction has completed.
+    CHECK(runtime.run(release));
+
+    CHECK_FALSE(swapchain);
+}
+
 TEST_CASE("[impure] surface owners retain parents until final main-thread destruction")
 {
     backend::MockApi api;

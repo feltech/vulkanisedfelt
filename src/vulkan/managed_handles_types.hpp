@@ -26,4 +26,10 @@ static_assert(
 
 /** Shared surface owner exposing its native Vulkan handle through get(). */
 using surface_ptr = std::shared_ptr<std::remove_pointer_t<VkSurfaceKHR>>;
+
+static_assert(
+    std::is_pointer_v<VkSwapchainKHR>, "Swapchain owners require pointer-shaped Vulkan handles");
+
+/** Shared swapchain owner exposing its native Vulkan handle through get(). */
+using swapchain_ptr = std::shared_ptr<std::remove_pointer_t<VkSwapchainKHR>>;
 }  // namespace vulkandemo::vulkan

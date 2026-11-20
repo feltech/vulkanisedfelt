@@ -19,6 +19,15 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Destroys a swapchain after its GPU work and child resources finish.
+     *
+     * @param device Logical device owning the swapchain.
+     * @param swapchain Swapchain to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_swapchain_khr(
+        VkDevice device, VkSwapchainKHR swapchain, VkAllocationCallbacks const * allocator);
+    /**
      * Retrieves the Vulkan drawable size in pixels.
      *
      * @param window Vulkan-capable window.

@@ -21,6 +21,9 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Swapchain destruction expectations. */
+    MAKE_MOCK3(
+        vk_destroy_swapchain_khr, void(VkDevice, VkSwapchainKHR, VkAllocationCallbacks const *));
     /** Vulkan drawable-size query expectations. */
     MAKE_MOCK3(sdl_vulkan_get_drawable_size, void(SDL_Window *, int *, int *));
     /** Surface present-mode query expectations. */

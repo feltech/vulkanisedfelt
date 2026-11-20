@@ -22,6 +22,36 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns a swapchain while retaining its logical device and presentation surface.
+ *
+ * The borrowed API must outlive every owner. Finish GPU work and release swapchain children
+ * before final release. Synchronize final destruction against other host access. Cleanup may
+ * run on any thread; releasing the surface can dispatch its own cleanup to main.
+ *
+ * @param swapchain Acquired handle using the default allocator.
+ * @param device Logical device owning the swapchain.
+ * @param surface Presentation surface associated with the swapchain.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared swapchain owner retaining both parents.
+ */
+template <class TApi>
+[[nodiscard]] auto make_swapchain_ptr(
+    VkSwapchainKHR swapchain, device_ptr device, surface_ptr surface, TApi & api) -> swapchain_ptr
+    pre(swapchain != VK_NULL_HANDLE) pre(device != nullptr && surface != nullptr)
+{
+    return swapchain_ptr{
+        swapchain,
+        [device = std::move(device), surface = std::move(surface), &api](
+            VkSwapchainKHR handle) mutable noexcept
+        {
+            api.vk_destroy_swapchain_khr(device.get(), handle, nullptr);
+            // Weak swapchain observers must not prolong either parent after native cleanup.
+            device.reset();
+            surface.reset();
+        }};
+}
+
+/**
  * Owns a surface whose final release destroys it on main before its parents.
  *
  * The borrowed API and serviced context must outlive every owner. Surface users
