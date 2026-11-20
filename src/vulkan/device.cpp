@@ -8,16 +8,19 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
 #include <fnfelt/result.hpp>
+#include <immer/array.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
 
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
+#include "../text/string.hpp"
 #include "./instance.hpp"
 #include "./managed_handles.hpp"
 #include "./physical_devices.hpp"
@@ -62,7 +65,7 @@ TEST_CASE("[impure] device plans retain their parent without eagerly creating a 
 
     {
         auto plan = reader_io_vk_create_device<decltype(environment)>(
-            parent, &physical_device, queue_family_index{2});
+            parent, &physical_device, immer::array{queue_family_index{2}});
         [[maybe_unused]] auto deferred = plan.build(environment);
         parent.reset();
 
@@ -86,10 +89,11 @@ TEST_CASE("[impure] device creation preserves failure without destroying a devic
         .RETURN(VK_ERROR_INITIALIZATION_FAILED);
     instance_ptr parent = make_instance_ptr(&instance, api);
 
-    vulkan_result<device_ptr> result = reader_io_vk_create_device<decltype(environment)>(
-                                           parent, &physical_device, queue_family_index{1})
-                                           .build(environment)
-                                           .sync_wait(lf::lazy_pool{2});
+    vulkan_result<device_ptr> result =
+        reader_io_vk_create_device<decltype(environment)>(
+            parent, &physical_device, immer::array{queue_family_index{1}})
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
 
     REQUIRE(fnfelt::result::is_error(result));
     CHECK_EQ(fnfelt::result::get_error(result).result, VK_ERROR_INITIALIZATION_FAILED);
@@ -141,7 +145,7 @@ TEST_CASE("[impure] device owners release the parent before weak owners expire")
     {
         instance_ptr parent = make_instance_ptr(&instance, api);
         auto plan = reader_io_vk_create_device<decltype(environment)>(
-            std::move(parent), &physical_device, queue_family_index{7});
+            std::move(parent), &physical_device, immer::array{queue_family_index{7}});
         vulkan_result<device_ptr> result = plan.build(environment).sync_wait(lf::lazy_pool{2});
         REQUIRE(fnfelt::result::is_success(result));
         owner = fnfelt::result::get_success(result);
@@ -191,7 +195,7 @@ TEST_CASE("[impure] repeated device creation acquires independent owners")
         .IN_SEQUENCE(calls);
     instance_ptr parent = make_instance_ptr(&instance, api);
     auto plan = reader_io_vk_create_device<decltype(environment)>(
-        parent, &physical_device, queue_family_index{0});
+        parent, &physical_device, immer::array{queue_family_index{0}});
 
     vulkan_result<device_ptr> first = plan.build(environment).sync_wait(lf::lazy_pool{2});
     vulkan_result<device_ptr> second = plan.build(environment).sync_wait(lf::lazy_pool{2});
@@ -200,6 +204,51 @@ TEST_CASE("[impure] repeated device creation acquires independent owners")
     REQUIRE(fnfelt::result::is_success(second));
     CHECK(fnfelt::result::get_success(first).get() == &first_device);
     CHECK(fnfelt::result::get_success(second).get() == &second_device);
+}
+
+TEST_CASE("[impure] configured device plans retain names and request each family once")
+{
+    backend::MockApi api;
+    DeviceEnvironment environment{std::ref(api)};
+    VkInstance_T instance;
+    VkPhysicalDevice_T physical_device;
+    VkDevice_T device;
+    REQUIRE_CALL(api, vk_destroy_instance(&instance, nullptr));
+    REQUIRE_CALL(api, vk_destroy_device(&device, nullptr)).TIMES(2);
+    REQUIRE_CALL(api, vk_create_device(&physical_device, trompeloeil::_, nullptr, trompeloeil::_))
+        .WITH(_2 != nullptr && _4 != nullptr)
+        .WITH(_2->sType == VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO && _2->pNext == nullptr)
+        .WITH(_2->flags == 0 && _2->pEnabledFeatures == nullptr)
+        .WITH(_2->enabledLayerCount == 0 && _2->ppEnabledLayerNames == nullptr)
+        .WITH(_2->queueCreateInfoCount == 2 && _2->pQueueCreateInfos != nullptr)
+        .WITH(_2->pQueueCreateInfos[0].queueFamilyIndex == 7)
+        .WITH(_2->pQueueCreateInfos[1].queueFamilyIndex == 2)
+        .WITH(_2->pQueueCreateInfos[0].queueCount == 1 && _2->pQueueCreateInfos[1].queueCount == 1)
+        .WITH(_2->pQueueCreateInfos[0].pQueuePriorities[0] == 1.0f)
+        .WITH(_2->pQueueCreateInfos[1].pQueuePriorities[0] == 1.0f)
+        .WITH(_2->enabledExtensionCount == 2 && _2->ppEnabledExtensionNames != nullptr)
+        .WITH(std::string_view{_2->ppEnabledExtensionNames[0]} == "VK_KHR_swapchain")
+        .WITH(std::string_view{_2->ppEnabledExtensionNames[1]} == "VK_example_feature")
+        .LR_SIDE_EFFECT(*_4 = &device)
+        .RETURN(VK_SUCCESS)
+        .TIMES(2);
+    instance_ptr parent = make_instance_ptr(&instance, api);
+
+    // The reusable plan owns both temporary lists after this statement completes.
+    auto plan = reader_io_vk_create_device<decltype(environment)>(
+        parent,
+        &physical_device,
+        immer::array{queue_family_index{7}, queue_family_index{2}, queue_family_index{7}},
+        immer::array{text::String{"VK_KHR_swapchain"}, text::String{"VK_example_feature"}});
+
+    vulkan_result<device_ptr> first = plan.build(environment).sync_wait(lf::lazy_pool{2});
+    vulkan_result<device_ptr> second = plan.build(environment).sync_wait(lf::lazy_pool{2});
+
+    // Each execution uses the same configuration and produces an independent device owner.
+    REQUIRE(fnfelt::result::is_success(first));
+    REQUIRE(fnfelt::result::is_success(second));
+    CHECK(fnfelt::result::get_success(first).get() == &device);
+    CHECK(fnfelt::result::get_success(second).get() == &device);
 }
 
 TEST_CASE("[integration][headless] a device can be created and destroyed")
@@ -232,7 +281,7 @@ TEST_CASE("[integration][headless] a device can be created and destroyed")
     vulkan_result<device_ptr> device = reader_io_vk_create_device<decltype(environment)>(
                                            fnfelt::result::get_success(instance),
                                            fnfelt::result::get_success(devices)[0],
-                                           queue_family_index{family_index})
+                                           immer::array{queue_family_index{family_index}})
                                            .build(environment)
                                            .sync_wait(lf::lazy_pool{2});
 

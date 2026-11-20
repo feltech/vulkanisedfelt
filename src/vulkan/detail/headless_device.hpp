@@ -16,6 +16,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <fnfelt/monad/reader_io.hpp>
+#include <immer/array.hpp>
 
 #include "../device.hpp"
 #include "../device_queue.hpp"
@@ -96,7 +97,9 @@ constexpr auto reader_io_create_selected_headless_device(SelectedPhysicalDevice 
 
     // ReaderIO providing a device owner for the selected physical device and queue family.
     auto create_device = reader_io_vk_create_device<TEnvironment>(
-        std::move(selected.instance), selected.physical_device, selected.queue_family_index);
+        std::move(selected.instance),
+        selected.physical_device,
+        immer::array{selected.queue_family_index});
 
     // ReaderIO providing the acquired device or a renderer-domain creation failure.
     auto acquire_device = reader_io::transform_error<"headless_device_creation_error"_ss>(

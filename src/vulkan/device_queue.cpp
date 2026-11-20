@@ -14,6 +14,7 @@
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
 #include <fnfelt/result.hpp>
+#include <immer/array.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
 
 #include "../backend/api.hpp"
@@ -164,7 +165,7 @@ TEST_CASE("[integration][headless] a logical device queue can be retrieved")
     SelectedPhysicalDevice const & selected = fnfelt::result::get_success(selection);
     vulkan_result<device_ptr> device =
         reader_io_vk_create_device<decltype(environment)>(
-            selected.instance, selected.physical_device, selected.queue_family_index)
+            selected.instance, selected.physical_device, immer::array{selected.queue_family_index})
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
     REQUIRE(fnfelt::result::is_success(device));

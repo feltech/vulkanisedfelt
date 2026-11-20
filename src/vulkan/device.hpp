@@ -4,7 +4,7 @@
 /**
  * @file vulkan/device.hpp
  *
- * Deferred creation of a minimal Vulkan device.
+ * Deferred creation of a configured Vulkan device.
  */
 #pragma once
 
@@ -14,7 +14,9 @@
 #include <vulkan/vulkan_core.h>
 
 #include <fnfelt/monad/reader_io.hpp>
+#include <immer/array.hpp>
 
+#include "../text/string.hpp"
 #include "./managed_handles_types.hpp"
 #include "./queue_types.hpp"
 #include "detail/device.hpp"
@@ -22,33 +24,43 @@
 namespace vulkandemo::vulkan
 {
 /**
- * Plans one device queue at priority 1 without features, extensions or custom allocation.
+ * Plans one queue per distinct requested family at priority 1.
  *
+ * At least one family is required. Repeated families are requested only once, preserving order.
+ * Requests the supplied extensions without optional features or custom allocation.
  * The physical device must belong to parent. Idle and device-child cleanup precede final release.
  * The environment exposes an api reference_wrapper supporting device creation and destruction.
  * Its API must remain alive through execution and final device release.
  *
  * @param parent Instance retained through device destruction.
  * @param physical_device Borrowed physical device belonging to parent.
- * @param queue_family_index Family containing at least one queue.
+ * @param queue_families Families containing at least one queue each.
+ * @param extension_names Owned extension names.
  * @tparam TEnvironment Capabilities supplied when building the action.
  * @return Reusable ReaderIO producing a device owner or Vulkan error.
  */
 template <detail::vk_create_device_environment TEnvironment>
 [[nodiscard]] constexpr auto reader_io_vk_create_device(
-    instance_ptr parent, VkPhysicalDevice physical_device, queue_family_index queue_family_index)
+    instance_ptr parent,
+    VkPhysicalDevice physical_device,
+    immer::array<queue_family_index> queue_families,
+    immer::array<text::String> extension_names = {})
 {
+    // GCC currently rejects preconditions on this deduced-return factory.
+    contract_assert(!queue_families.empty());
+
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // Factory producing device-acquisition IO from an execution environment.
-    auto io_create_device = std::bind_front(
-        detail::io_create_device<TEnvironment>,
+    // Action producing device-acquisition IO from an execution environment.
+    auto create_device = std::bind_front(
+        detail::create_device_reader_io_action<TEnvironment>,
         std::move(parent),
         physical_device,
-        queue_family_index);
+        std::move(queue_families),
+        std::move(extension_names));
 
     // ReaderIO producing a device owner or acquisition failure.
-    return reader_io::create<"vk_create_device"_ss, TEnvironment>(std::move(io_create_device));
+    return reader_io::create<"vk_create_device"_ss, TEnvironment>(std::move(create_device));
 }
 }  // namespace vulkandemo::vulkan
