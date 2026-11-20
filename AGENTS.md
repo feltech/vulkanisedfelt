@@ -289,6 +289,10 @@ generic header. Keep private implementation types under `detail/` and cohesive b
 with their interfaces. Existing standalone error and resource-aggregate headers need no empty
 operation counterpart.
 
+Place out-of-line definitions of `detail` namespace members in the matching `detail/*.cpp`, beside
+their private header. Keep tests of private helpers there; public API orchestration and integration
+tests remain in the public translation unit.
+
 When adding compile-fail tests (code that must NOT compile), place them under `tests/compile_fail/`
 and drive them with CMake. Use a subdirectory per source file, with test cases as files under that
 subdirectory. Use corresponding `.` delimiter in CMake test names.
