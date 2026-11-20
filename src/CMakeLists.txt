@@ -35,6 +35,7 @@ add_executable(
   vulkan/present_mode_selection.cpp
   vulkan/swapchain_extent_selection.cpp
   vulkan/swapchain_image_count_selection.cpp
+  vulkan/swapchain_configuration.cpp
   vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
@@ -121,6 +122,8 @@ target_sources(
           vulkan/swapchain_extent_selection.hpp
           vulkan/swapchain_image_count_selection.hpp
           vulkan/swapchain_image_count_types.hpp
+          vulkan/swapchain_configuration.hpp
+          vulkan/swapchain_configuration_types.hpp
           vulkan/detail/swapchain_support.hpp
           vulkan/queue_family_selection.hpp
           vulkan/queue_family_selection_types.hpp
