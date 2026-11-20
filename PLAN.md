@@ -515,10 +515,14 @@ requires `VK_KHR_swapchain` and any additional extension names, preserves origin
 indices in failures, and retains both instance and surface in its selected value. All independent
 queries finish before unsuccessful outcomes are inspected in snapshot order. Mocked tests cover
 unsupported queues, missing extensions, failures, repeated execution and retained owners; a windowed
-smoke test selects a device for a real SDL surface. Next configure logical-device creation for the
-selected queue families and enable the swapchain extension. Surface format, present-mode and
-capability queries remain part of the later swapchain slice. Keep the legacy implementation static
-as a reference until migration is complete.
+smoke test selects a device for a real SDL surface. Logical-device creation now requests one queue
+per distinct selected family and enables the requested device extensions. Presentation device
+bootstrap enables the swapchain extension and additional caller requirements, collects graphics and
+presentation queues, and returns an owning context retaining the device and surface. Mocked tests
+cover shared and separate queue families, required extension propagation, failure bypass, repeat
+runs and retained owners; a windowed smoke test creates a real device and retrieves both queues.
+Next query surface capabilities, formats and present modes for the swapchain slice. Keep the legacy
+implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
