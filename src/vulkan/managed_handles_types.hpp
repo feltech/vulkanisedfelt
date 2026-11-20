@@ -32,4 +32,10 @@ static_assert(
 
 /** Shared swapchain owner exposing its native Vulkan handle through get(). */
 using swapchain_ptr = std::shared_ptr<std::remove_pointer_t<VkSwapchainKHR>>;
+
+static_assert(
+    std::is_pointer_v<VkImageView>, "Image view owners require pointer-shaped Vulkan handles");
+
+/** Shared image view owner retaining the image's swapchain. */
+using image_view_ptr = std::shared_ptr<std::remove_pointer_t<VkImageView>>;
 }  // namespace vulkandemo::vulkan

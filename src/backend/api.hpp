@@ -27,6 +27,29 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a view of an image.
+     *
+     * @param device Logical device owning the image.
+     * @param info Image view description.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param view Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_image_view(
+        VkDevice device,
+        VkImageViewCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkImageView * view);
+    /**
+     * Destroys an image view after its GPU work finishes.
+     *
+     * @param device Logical device owning the view.
+     * @param view View to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_image_view(
+        VkDevice device, VkImageView view, VkAllocationCallbacks const * allocator);
+    /**
      * Retrieves the presentable images owned by a swapchain.
      *
      * @param device Logical device owning the swapchain.

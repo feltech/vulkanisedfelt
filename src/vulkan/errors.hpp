@@ -19,6 +19,8 @@ enum class FallibleVulkanOperation
 {
     /// Instance API version query.
     enumerate_instance_version,
+    /// Image view creation.
+    create_image_view,
     /// Swapchain image query.
     get_swapchain_images,
     /// Swapchain creation.

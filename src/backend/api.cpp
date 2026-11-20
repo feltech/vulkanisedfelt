@@ -12,6 +12,19 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_create_image_view(
+    VkDevice device,
+    VkImageViewCreateInfo const * info,
+    VkAllocationCallbacks const * allocator,
+    VkImageView * view)
+{
+    return ::vkCreateImageView(device, info, allocator, view);
+}
+void Api::vk_destroy_image_view(
+    VkDevice device, VkImageView view, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroyImageView(device, view, allocator);
+}
 VkResult Api::vk_get_swapchain_images_khr(
     VkDevice device, VkSwapchainKHR swapchain, std::uint32_t * count, VkImage * images)
 {

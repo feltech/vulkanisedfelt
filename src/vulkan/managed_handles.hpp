@@ -22,6 +22,35 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns an image view while retaining its swapchain and logical device.
+ *
+ * The borrowed API must outlive every owner. Finish GPU work and synchronize host access
+ * before final release. The image must belong to the retained swapchain and device.
+ *
+ * @param view Acquired image view using the default allocator.
+ * @param device Logical device owning the view.
+ * @param swapchain Swapchain owning the viewed image.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared view owner retaining its parents.
+ */
+template <class TApi>
+[[nodiscard]] auto make_image_view_ptr(
+    VkImageView view, device_ptr device, swapchain_ptr swapchain, TApi & api) -> image_view_ptr
+    pre(view != VK_NULL_HANDLE) pre(device != nullptr && swapchain != nullptr)
+{
+    return image_view_ptr{
+        view,
+        [device = std::move(device), swapchain = std::move(swapchain), &api](
+            VkImageView handle) mutable noexcept
+        {
+            api.vk_destroy_image_view(device.get(), handle, nullptr);
+            // Weak view observers must not prolong parents after native cleanup.
+            swapchain.reset();
+            device.reset();
+        }};
+}
+
+/**
  * Owns a swapchain while retaining its logical device and presentation surface.
  *
  * The borrowed API must outlive every owner. Finish GPU work and release swapchain children
