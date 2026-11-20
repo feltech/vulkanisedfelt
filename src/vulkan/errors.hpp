@@ -31,6 +31,8 @@ enum class FallibleVulkanOperation
     enumerate_device_extensions,
     /// Queue-family presentation-support query.
     get_physical_device_surface_support,
+    /// Surface capability query.
+    get_physical_device_surface_capabilities,
     /// Logical device creation.
     create_device
 };

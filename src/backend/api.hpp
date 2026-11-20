@@ -27,6 +27,16 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Queries presentation surface capabilities.
+     *
+     * @param device Physical device supporting the surface.
+     * @param surface Presentation surface from the same instance.
+     * @param capabilities Receives surface capabilities on success.
+     * @return Vulkan query status.
+     */
+    VkResult vk_get_physical_device_surface_capabilities_khr(
+        VkPhysicalDevice device, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR * capabilities);
+    /**
      * Queries whether a queue family can present to a surface.
      *
      * @param device Physical device from the surface's parent instance.
