@@ -12,6 +12,10 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+void Api::sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * height)
+{
+    ::SDL_Vulkan_GetDrawableSize(window, width, height);
+}
 VkResult Api::vk_get_physical_device_surface_present_modes_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, std::uint32_t * count, VkPresentModeKHR * modes)
 {
