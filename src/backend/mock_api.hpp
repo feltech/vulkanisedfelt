@@ -23,6 +23,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Surface format query expectations. */
+    MAKE_MOCK4(
+        vk_get_physical_device_surface_formats_khr,
+        VkResult(VkPhysicalDevice, VkSurfaceKHR, std::uint32_t *, VkSurfaceFormatKHR *));
     /** Surface capability query expectations. */
     MAKE_MOCK3(
         vk_get_physical_device_surface_capabilities_khr,
