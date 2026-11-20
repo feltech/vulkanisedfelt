@@ -17,6 +17,8 @@ namespace vulkandemo::vulkan
 /// Wrapped Vulkan operations that can report a failure.
 enum class FallibleVulkanOperation
 {
+    /// Image-format support query.
+    get_physical_device_image_format_properties,
     /// Instance creation.
     create_instance,
     /// Instance extension enumeration.

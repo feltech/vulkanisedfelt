@@ -8,6 +8,18 @@
 
 namespace vulkandemo::backend
 {
+VkResult Api::vk_get_physical_device_image_format_properties(
+    VkPhysicalDevice device,
+    VkFormat format,
+    VkImageType type,
+    VkImageTiling tiling,
+    VkImageUsageFlags usage,
+    VkImageCreateFlags flags,
+    VkImageFormatProperties * properties)
+{
+    return ::vkGetPhysicalDeviceImageFormatProperties(
+        device, format, type, tiling, usage, flags, properties);
+}
 void Api::vk_destroy_swapchain_khr(
     VkDevice device, VkSwapchainKHR swapchain, VkAllocationCallbacks const * allocator)
 {

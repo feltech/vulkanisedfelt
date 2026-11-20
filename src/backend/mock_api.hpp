@@ -21,6 +21,17 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Image-format support query expectations. */
+    MAKE_MOCK7(
+        vk_get_physical_device_image_format_properties,
+        VkResult(
+            VkPhysicalDevice,
+            VkFormat,
+            VkImageType,
+            VkImageTiling,
+            VkImageUsageFlags,
+            VkImageCreateFlags,
+            VkImageFormatProperties *));
     /** Swapchain destruction expectations. */
     MAKE_MOCK3(
         vk_destroy_swapchain_khr, void(VkDevice, VkSwapchainKHR, VkAllocationCallbacks const *));
