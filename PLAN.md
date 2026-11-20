@@ -258,9 +258,10 @@ Reserve stopped outcomes for an explicit cooperative skip/cancellation decision,
 every Vulkan failure into a stop.
 
 `traverse` and `sequence` collect child outcomes rather than short-circuiting each child's `Result`.
-Independent probes must finish before their ordered outcomes are inspected. Headless selection
-returns the first non-success in enumeration order, preserving either its stop or its indexed query
-error. Test propagation, recovery failure, success/stop bypass, ordering and retained owners.
+Independent assessments must finish before their outcomes are inspected. Any stopped outcome takes
+precedence over errors; otherwise selection returns the first query error in enumeration order with
+its original device index. Test propagation, recovery failure, success/stop bypass, ordering and
+retained owners.
 
 Runtime branches must return one compatible C++ monad type. An ordinary deduced-return `if` cannot
 return unrelated `io::just(error)` and `create_instance(plan)` instantiations. A small stored action
@@ -513,16 +514,23 @@ Pure queue selection prefers a shared graphics/presentation family, then support
 using the existing minimum-capabilities policy. Presentation-aware physical-device selection
 requires `VK_KHR_swapchain` and any additional extension names, preserves original enumeration
 indices in failures, and retains both instance and surface in its selected value. All independent
-queries finish before unsuccessful outcomes are inspected in snapshot order. Mocked tests cover
-unsupported queues, missing extensions, failures, repeated execution and retained owners; a windowed
-smoke test selects a device for a real SDL surface. Logical-device creation now requests one queue
-per distinct selected family and enables the requested device extensions. Presentation device
-bootstrap enables the swapchain extension and additional caller requirements, collects graphics and
-presentation queues, and returns an owning context retaining the device and surface. Mocked tests
-cover shared and separate queue families, required extension propagation, failure bypass, repeat
-runs and retained owners; a windowed smoke test creates a real device and retrieves both queues.
-Next query surface capabilities, formats and present modes for the swapchain slice. Keep the legacy
-implementation static as a reference until migration is complete.
+queries finish before any stop takes precedence over errors; otherwise the first query error in
+snapshot order is returned. Mocked tests cover unsupported queues, missing extensions, failures,
+repeated execution and retained owners; a windowed smoke test selects a device for a real SDL
+surface. Logical-device creation now requests one queue per distinct selected family and enables the
+requested device extensions. Presentation device bootstrap enables the swapchain extension and
+additional caller requirements, collects graphics and presentation queues, and returns an owning
+context retaining the device and surface. Mocked tests cover shared and separate queue families,
+required extension propagation, failure bypass, repeat runs and retained owners; a windowed smoke
+test creates a real device and retrieves both queues. Surface capability, format and present-mode
+queries retain their surface through deferred execution and preserve the original Vulkan failures.
+Enumeration uses bounded retries for incomplete snapshots. Swapchain-support discovery collects the
+independent queries before normalizing stops ahead of errors, preserving snapshot order between
+errors, then combines successful values into owned support facts. Mocked tests cover errors, empty
+and changing enumerations, repeat runs and parent lifetimes; a windowed smoke test queries a real
+supported surface. Next choose the surface format, present mode, extent and image count with pure
+policies before adding swapchain creation and ownership. Keep the legacy implementation static as a
+reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
