@@ -35,6 +35,8 @@ enum class FallibleVulkanOperation
     get_physical_device_surface_capabilities,
     /// Surface format query.
     get_physical_device_surface_formats,
+    /// Surface present-mode query.
+    get_physical_device_surface_present_modes,
     /// Logical device creation.
     create_device
 };

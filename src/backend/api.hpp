@@ -27,6 +27,20 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Retrieves supported presentation modes for a surface.
+     *
+     * @param device Physical device supporting the surface.
+     * @param surface Presentation surface from the same instance.
+     * @param count Capacity on input and mode count on output.
+     * @param modes Output storage, or null to query the count.
+     * @return Vulkan enumeration status.
+     */
+    VkResult vk_get_physical_device_surface_present_modes_khr(
+        VkPhysicalDevice device,
+        VkSurfaceKHR surface,
+        std::uint32_t * count,
+        VkPresentModeKHR * modes);
+    /**
      * Retrieves supported presentation surface formats.
      *
      * @param device Physical device supporting the surface.
