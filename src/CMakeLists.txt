@@ -46,6 +46,7 @@ target_sources(
           execution/managed_resources.hpp
           execution/managed_resources_types.hpp
           execution/detail/managed_resources.hpp
+          sdl/detail/test_runtime.hpp
           sdl/managed_handles_types.hpp
           sdl/resources.hpp
           sdl/detail/main_thread.hpp
