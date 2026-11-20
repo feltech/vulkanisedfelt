@@ -21,6 +21,10 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Surface format query expectations. */
+    MAKE_MOCK4(
+        vk_get_physical_device_surface_formats_khr,
+        VkResult(VkPhysicalDevice, VkSurfaceKHR, std::uint32_t *, VkSurfaceFormatKHR *));
     /** Surface capability query expectations. */
     MAKE_MOCK3(
         vk_get_physical_device_surface_capabilities_khr,

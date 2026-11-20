@@ -24,6 +24,7 @@ add_executable(
   vulkan/queue_family_properties.cpp
   vulkan/surface_support.cpp
   vulkan/surface_capabilities.cpp
+  vulkan/surface_formats.cpp
   vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
@@ -94,6 +95,8 @@ target_sources(
           vulkan/detail/surface_support.hpp
           vulkan/surface_capabilities.hpp
           vulkan/detail/surface_capabilities.hpp
+          vulkan/surface_formats.hpp
+          vulkan/detail/surface_formats.hpp
           vulkan/queue_family_selection.hpp
           vulkan/queue_family_selection_types.hpp
           vulkan/queue_types.hpp

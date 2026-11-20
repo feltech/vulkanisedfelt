@@ -8,6 +8,14 @@
 
 namespace vulkandemo::backend
 {
+VkResult Api::vk_get_physical_device_surface_formats_khr(
+    VkPhysicalDevice device,
+    VkSurfaceKHR surface,
+    std::uint32_t * count,
+    VkSurfaceFormatKHR * formats)
+{
+    return ::vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, count, formats);
+}
 VkResult Api::vk_get_physical_device_surface_capabilities_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR * capabilities)
 {
