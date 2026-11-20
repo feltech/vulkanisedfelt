@@ -21,6 +21,10 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Surface capability query expectations. */
+    MAKE_MOCK3(
+        vk_get_physical_device_surface_capabilities_khr,
+        VkResult(VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR *));
     /** Queue-family presentation-support expectations. */
     MAKE_MOCK4(
         vk_get_physical_device_surface_support_khr,
