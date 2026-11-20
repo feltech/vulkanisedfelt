@@ -34,6 +34,7 @@ add_executable(
   vulkan/surface_format_selection.cpp
   vulkan/present_mode_selection.cpp
   vulkan/swapchain_extent_selection.cpp
+  vulkan/swapchain_image_count_selection.cpp
   vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
@@ -118,6 +119,8 @@ target_sources(
           vulkan/surface_format_selection.hpp
           vulkan/present_mode_selection.hpp
           vulkan/swapchain_extent_selection.hpp
+          vulkan/swapchain_image_count_selection.hpp
+          vulkan/swapchain_image_count_types.hpp
           vulkan/detail/swapchain_support.hpp
           vulkan/queue_family_selection.hpp
           vulkan/queue_family_selection_types.hpp
