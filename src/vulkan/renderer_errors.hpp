@@ -38,9 +38,32 @@ struct UnsupportedVulkanVersion
     api_version available;
 };
 
+/** Why the initial swapchain cannot use the queried surface and image parameters. */
+enum class SwapchainConfigurationFailure
+{
+    /** The selected drawable area has a zero dimension. */
+    unavailable_extent,
+    /** No advertised format satisfies the renderer's format policy. */
+    no_acceptable_surface_format,
+    /** No advertised presentation mode satisfies the renderer's mode policy. */
+    no_preferred_present_mode,
+    /** The selected image description exceeds the physical device's support. */
+    unsupported_image_parameters
+};
+
+/** The renderer cannot create a swapchain from the available surface and image choices. */
+struct NoSuitableSwapchainConfiguration
+{
+    /** Unavailable requirement. */
+    SwapchainConfigurationFailure reason;
+};
+
 /// Common failures of renderer workflows.
-using renderer_error =
-    std::variant<VulkanOperationFailure, UnsupportedVulkanVersion, NoSuitablePhysicalDevice>;
+using renderer_error = std::variant<
+    VulkanOperationFailure,
+    UnsupportedVulkanVersion,
+    NoSuitablePhysicalDevice,
+    NoSuitableSwapchainConfiguration>;
 
 /**
  * Converts a Vulkan failure into a renderer error.
