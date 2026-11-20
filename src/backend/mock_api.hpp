@@ -23,6 +23,9 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Swapchain destruction expectations. */
+    MAKE_MOCK3(
+        vk_destroy_swapchain_khr, void(VkDevice, VkSwapchainKHR, VkAllocationCallbacks const *));
     /** Vulkan drawable-size query expectations. */
     MAKE_MOCK3(sdl_vulkan_get_drawable_size, void(SDL_Window *, int *, int *));
     /** Surface present-mode query expectations. */

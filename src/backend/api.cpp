@@ -12,6 +12,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+void Api::vk_destroy_swapchain_khr(
+    VkDevice device, VkSwapchainKHR swapchain, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroySwapchainKHR(device, swapchain, allocator);
+}
 void Api::sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * height)
 {
     ::SDL_Vulkan_GetDrawableSize(window, width, height);
