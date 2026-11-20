@@ -33,6 +33,8 @@ add_executable(
   vulkan/swapchain.cpp
   vulkan/swapchain_images.cpp
   vulkan/presentation_swapchain.cpp
+  vulkan/presentation_swapchain_images.cpp
+  vulkan/detail/presentation_swapchain_images.cpp
   vulkan/detail/presentation_swapchain.cpp
   vulkan/surface_format_selection.cpp
   vulkan/present_mode_selection.cpp
@@ -122,6 +124,9 @@ target_sources(
           vulkan/swapchain_images.hpp
           vulkan/swapchain_images_types.hpp
           vulkan/detail/swapchain_images.hpp
+          vulkan/presentation_swapchain_images.hpp
+          vulkan/presentation_swapchain_images_types.hpp
+          vulkan/detail/presentation_swapchain_images.hpp
           vulkan/presentation_swapchain.hpp
           vulkan/presentation_swapchain_types.hpp
           vulkan/detail/presentation_swapchain.hpp
