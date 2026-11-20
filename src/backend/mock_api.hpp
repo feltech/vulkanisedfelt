@@ -23,6 +23,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Swapchain image query expectations. */
+    MAKE_MOCK4(
+        vk_get_swapchain_images_khr,
+        VkResult(VkDevice, VkSwapchainKHR, std::uint32_t *, VkImage *));
     /** Swapchain creation expectations. */
     MAKE_MOCK4(
         vk_create_swapchain_khr,

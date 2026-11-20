@@ -12,6 +12,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_get_swapchain_images_khr(
+    VkDevice device, VkSwapchainKHR swapchain, std::uint32_t * count, VkImage * images)
+{
+    return ::vkGetSwapchainImagesKHR(device, swapchain, count, images);
+}
 VkResult Api::vk_create_swapchain_khr(
     VkDevice device,
     VkSwapchainCreateInfoKHR const * info,
