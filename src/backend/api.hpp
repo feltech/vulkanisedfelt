@@ -19,6 +19,14 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Retrieves the Vulkan drawable size in pixels.
+     *
+     * @param window Vulkan-capable window.
+     * @param width Receives horizontal drawable size.
+     * @param height Receives vertical drawable size.
+     */
+    void sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * height);
+    /**
      * Retrieves supported presentation modes for a surface.
      *
      * @param device Physical device supporting the surface.

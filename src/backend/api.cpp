@@ -8,6 +8,10 @@
 
 namespace vulkandemo::backend
 {
+void Api::sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * height)
+{
+    ::SDL_Vulkan_GetDrawableSize(window, width, height);
+}
 VkResult Api::vk_get_physical_device_surface_present_modes_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, std::uint32_t * count, VkPresentModeKHR * modes)
 {

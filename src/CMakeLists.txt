@@ -12,6 +12,7 @@ add_executable(
   sdl/video.cpp
   sdl/window.cpp
   sdl/instance_extensions.cpp
+  sdl/drawable_size.cpp
   sdl/vulkan_surface.cpp
   vulkan/instance.cpp
   vulkan/managed_handles.cpp
@@ -62,6 +63,9 @@ target_sources(
           sdl/window_types.hpp
           sdl/detail/window.hpp
           sdl/instance_extensions.hpp
+          sdl/drawable_size.hpp
+          sdl/drawable_size_types.hpp
+          sdl/detail/drawable_size.hpp
           sdl/detail/instance_extensions.hpp
           sdl/vulkan_surface.hpp
           sdl/detail/vulkan_surface.hpp

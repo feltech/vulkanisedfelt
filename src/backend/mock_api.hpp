@@ -21,6 +21,8 @@ namespace vulkandemo::backend
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Vulkan drawable-size query expectations. */
+    MAKE_MOCK3(sdl_vulkan_get_drawable_size, void(SDL_Window *, int *, int *));
     /** Surface present-mode query expectations. */
     MAKE_MOCK4(
         vk_get_physical_device_surface_present_modes_khr,
