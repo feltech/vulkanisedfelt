@@ -28,6 +28,7 @@ add_executable(
   vulkan/surface_present_modes.cpp
   vulkan/swapchain_support.cpp
   vulkan/detail/swapchain_support.cpp
+  vulkan/surface_format_selection.cpp
   vulkan/queue_family_selection.cpp
   vulkan/device_extensions.cpp
   vulkan/device.cpp
@@ -104,6 +105,7 @@ target_sources(
           vulkan/detail/surface_present_modes.hpp
           vulkan/swapchain_support.hpp
           vulkan/swapchain_support_types.hpp
+          vulkan/surface_format_selection.hpp
           vulkan/detail/swapchain_support.hpp
           vulkan/queue_family_selection.hpp
           vulkan/queue_family_selection_types.hpp
