@@ -254,8 +254,8 @@ on errors and stops. Recover deliberately with `or_else`, which runs only for er
 same Reader environment; successful and stopped outcomes bypass recovery. Keep recovery policy at
 the caller that can choose a retry, relaxed requirement or shutdown. Missing requirements remain
 explicit domain errors; an unsuitable candidate does not stop discovery of the remaining devices.
-Reserve stopped outcomes for an explicit cooperative skip/cancellation decision, and do not turn
-every Vulkan failure into a stop.
+Reserve stopped outcomes for an explicit cooperative cancellation decision, and do not turn every
+Vulkan failure into a stop.
 
 `traverse` and `sequence` collect child outcomes rather than short-circuiting each child's `Result`.
 Independent assessments must finish before their outcomes are inspected. Any stopped outcome takes
@@ -534,9 +534,22 @@ nonzero drawable pixel sizes, and clamp a strong image count to the surface limi
 preference for two images. Format and mode preferences remain configurable. Missing candidates or
 zero drawable areas produce empty optionals; the pure configuration composition leaves error and
 cancellation decisions to a later effectful layer. Boundary, custom-policy and unavailable-input
-tests cover the four choosers and their combined configuration. Next add a live drawable-pixel-size
-query and swapchain creation and ownership. Keep the legacy implementation static as a reference
-until migration is complete.
+tests cover the four choosers and their combined configuration. SDL drawable-size discovery now
+retains its window and snapshots live pixel dimensions on main, using distinct strong pixel counts.
+Swapchain ownership stores the native handle directly and retains its logical device and surface
+until native destruction; releasing a surface parent can dispatch its cleanup to main. Initial
+swapchain creation uses ordinary per-image presentation, color-attachment usage, the current surface
+transform, a supported alpha mode, one layer and concurrent sharing only for separate queue
+families. Image-format queries validate the selected 2D optimal image parameters against physical
+limits before acquisition. Presentation-swapchain bootstrap combines current support and live
+pixels, reports unavailable extents and unsupported format/mode/image choices through the renderer
+error domain, and preserves cancellation and operational Vulkan failures. It returns the owning
+swapchain with its configuration and presentation device. Mocked tests cover deferred execution,
+replay after prior release, failure bypass, image limits and retained parents; a windowed smoke test
+creates and releases the initial swapchain without acquiring images or submitting GPU work. Initial
+creation does not replace an existing swapchain; resize/recreation remains future work. Next
+retrieve swapchain images while retaining their owning swapchain, then build image views. Keep the
+legacy implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
