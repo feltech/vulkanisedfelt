@@ -394,6 +394,9 @@ user will do that.
 
 Keep changes to PLAN.md in their own commits, separate from source changes.
 
+Keep skill additions and updates in their own commits, separate from source, build configuration and
+project documentation changes.
+
 ## Documentation
 
 README should be left unmodified unless explicitly instructed.
