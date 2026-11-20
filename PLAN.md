@@ -528,9 +528,15 @@ Enumeration uses bounded retries for incomplete snapshots. Swapchain-support dis
 independent queries before normalizing stops ahead of errors, preserving snapshot order between
 errors, then combines successful values into owned support facts. Mocked tests cover errors, empty
 and changing enumerations, repeat runs and parent lifetimes; a windowed smoke test queries a real
-supported surface. Next choose the surface format, present mode, extent and image count with pure
-policies before adding swapchain creation and ownership. Keep the legacy implementation static as a
-reference until migration is complete.
+supported surface. Pure swapchain policies now choose the first advertised acceptable format and
+color-space pair, prefer mailbox then advertised FIFO presentation, preserve fixed extents or clamp
+nonzero drawable pixel sizes, and clamp a strong image count to the surface limits with a default
+preference for two images. Format and mode preferences remain configurable. Missing candidates or
+zero drawable areas produce empty optionals; the pure configuration composition leaves error and
+cancellation decisions to a later effectful layer. Boundary, custom-policy and unavailable-input
+tests cover the four choosers and their combined configuration. Next add a live drawable-pixel-size
+query and swapchain creation and ownership. Keep the legacy implementation static as a reference
+until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
