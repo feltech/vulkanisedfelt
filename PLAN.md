@@ -589,9 +589,18 @@ release destroys the native object before releasing its device, including when w
 remain. Submitted uses must complete and host access must be externally synchronized before final
 release; these owners add no waits or execution policy. Mocked tests cover deferred execution,
 native creation parameters, failures and parent cleanup; a headless smoke test creates and releases
-both objects without submitting GPU work. Next add command recording and the synchronization
-operations needed for the bounded frame. Keep the legacy implementation static as a reference until
-migration is complete.
+both objects without submitting GPU work. Primary command-buffer recording now begins with one-time
+submission usage and ends with either an executable buffer or the original Vulkan failure. The
+clear-pass composition allocates a fresh primary buffer on every execution, records one inline color
+clear pass and finishes recording without acquiring images or submitting work. Its result retains
+the render pass and framebuffer, freeing the command buffer before releasing those resources. Keep
+the complete result alive through all buffer uses and GPU completion; a buffer alias alone does not
+retain the recorded targets. Host access to the pool remains externally serialized, and recording
+does not introduce reset or reuse policy. Mocked tests cover deferred execution, native recording
+parameters and order, allocation/begin/end failures, retained resources and repeat executions with
+distinct buffers; a windowed smoke test records a real clear pass before image acquisition. Next add
+image acquisition and the submission, completion and presentation operations needed for the bounded
+frame. Keep the legacy implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
