@@ -22,6 +22,31 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns a command pool while retaining its logical device.
+ *
+ * Keep the borrowed API alive through cleanup. Complete submitted commands before final
+ * release and externally synchronize all host access to this pool and its command buffers.
+ *
+ * @param command_pool Acquired pool using the default allocator.
+ * @param device Logical device owning the pool.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared pool owner retaining its device.
+ */
+template <class TApi>
+[[nodiscard]] auto make_command_pool_ptr(VkCommandPool command_pool, device_ptr device, TApi & api)
+    -> command_pool_ptr pre(command_pool != VK_NULL_HANDLE) pre(device != nullptr)
+{
+    return command_pool_ptr{
+        command_pool,
+        [device = std::move(device), &api](VkCommandPool handle) mutable noexcept
+        {
+            api.vk_destroy_command_pool(device.get(), handle, nullptr);
+            // Weak pool observers must not prolong the device after native cleanup.
+            device.reset();
+        }};
+}
+
+/**
  * Owns a framebuffer while retaining its attachment, render pass and device.
  *
  * The borrowed API must outlive every owner. Finish submitted commands using the framebuffer

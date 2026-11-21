@@ -27,6 +27,29 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a command pool for one queue family.
+     *
+     * @param device Logical device owning the pool.
+     * @param info Queue family and pool flags.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param command_pool Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_command_pool(
+        VkDevice device,
+        VkCommandPoolCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkCommandPool * command_pool);
+    /**
+     * Destroys a command pool after its commands finish.
+     *
+     * @param device Logical device owning the pool.
+     * @param command_pool Pool to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_command_pool(
+        VkDevice device, VkCommandPool command_pool, VkAllocationCallbacks const * allocator);
+    /**
      * Creates a framebuffer.
      *
      * @param device Logical device owning the framebuffer.

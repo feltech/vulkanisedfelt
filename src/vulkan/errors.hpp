@@ -19,6 +19,8 @@ enum class FallibleVulkanOperation
 {
     /// Instance API version query.
     enumerate_instance_version,
+    /// Command pool creation.
+    create_command_pool,
     /// Framebuffer creation.
     create_framebuffer,
     /// Render pass creation.
