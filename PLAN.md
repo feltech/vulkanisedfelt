@@ -607,9 +607,17 @@ native Vulkan statuses so the frame layer can recover with `or_else`, without sy
 cancellation. These owners do not wait or automatically release an acquired image: keep them alive
 until signaling and image use complete. Mocked tests cover lazy execution, native parameters, status
 distinctions and ownership. A windowed smoke test acquires with a finite timeout and completes its
-fence signal with an unbounded fence wait before cleanup, without submitting or presenting. Next add
-submission, completion and presentation operations for the bounded frame. Keep the legacy
-implementation static as a reference until migration is complete.
+fence signal with an unbounded fence wait before cleanup, without submitting or presenting. Queue
+submission now accepts one clear-command recording, an optional binary wait at color-attachment
+output, an optional binary signal and a required unsignaled completion fence. Accepted submissions
+retain their recording, device and synchronization owners through a later completion wait. Timeout
+and device loss do not establish completion; retain original inputs across submission errors and
+acquisition owners through their independent signals. These operations add no waits, retries,
+presentation or device-loss cleanup policy. Mocked tests cover deferred execution, native
+parameters, optional semaphore operations, timeout retention, native failures and caller-retained
+inputs. A windowed smoke test completes fence-only acquisition, records the acquired target, submits
+the clear pass and waits for its completion fence before cleanup. Next add presentation and compose
+the bounded frame. Keep the legacy implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
