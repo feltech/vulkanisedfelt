@@ -238,13 +238,11 @@ constexpr auto reader_io_resolve_presentation_queues(
  *
  * @tparam TEnvironment Execution environment type.
  * @param surface Retained presentation surface.
- * @param names Additional required extension names.
  * @param handle Borrowed physical device.
- * @return ReaderIO producing presentation suitability facts.
+ * @return ReaderIO providing successful capability snapshots or a query outcome.
  */
 template <class TEnvironment>
-constexpr auto reader_io_assess_presentation_device(
-    surface_ptr surface, immer::array<text::String> names, VkPhysicalDevice handle)
+constexpr auto reader_io_query_presentation_device(surface_ptr surface, VkPhysicalDevice handle)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
@@ -263,8 +261,29 @@ constexpr auto reader_io_assess_presentation_device(
             std::move(queues));
 
     // ReaderIO providing successful snapshots, any stop, or the first query error.
-    auto query_values = reader_io::transform<"sequence_presentation_device_query_results"_ss>(
+    return reader_io::transform<"sequence_presentation_device_query_results"_ss>(
         std::move(capabilities), sequence_presentation_device_query_results);
+}
+
+/**
+ * Assesses presentation suitability from one complete query snapshot.
+ *
+ * @tparam TEnvironment Execution environment type.
+ * @param surface Retained presentation surface.
+ * @param names Additional required extension names.
+ * @param handle Borrowed physical device.
+ * @return ReaderIO producing presentation suitability facts.
+ */
+template <class TEnvironment>
+constexpr auto reader_io_assess_presentation_device(
+    surface_ptr surface, immer::array<text::String> names, VkPhysicalDevice handle)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // ReaderIO providing the common ranking, extension and queue snapshots.
+    auto query_values =
+        reader_io_query_presentation_device<TEnvironment>(std::move(surface), handle);
 
     // ReaderIO providing suitability facts only for successful capability snapshots.
     return reader_io::transform<"assess_presentation_device"_ss>(
