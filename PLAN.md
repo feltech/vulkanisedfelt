@@ -575,9 +575,17 @@ limits before acquisition, reports oversized extents with the requested and maxi
 creates framebuffers in image order. Failed batches release all successful acquisitions, with
 cancellation taking precedence over errors. Mocked tests cover lazy execution, creation parameters,
 physical-limit boundaries, creation bypass, native failures and parent cleanup; a windowed smoke
-test creates and releases real framebuffers without acquiring images or submitting GPU work. Next
-create command-pool and command-buffer resources for the bounded frame. Keep the legacy
-implementation static as a reference until migration is complete.
+test creates and releases real framebuffers without acquiring images or submitting GPU work.
+Command-pool creation now provides an owner for one requested queue family, retaining its logical
+device. Pools use no optional flags. Primary command-buffer allocation provides one initial-state
+buffer retaining its pool and device, and final release frees the buffer before releasing its
+parents, including when weak observers remain. Allocation failures preserve the native status
+without freeing buffers a second time. Pool operations and final releases require externally
+serialized host access; these owners do not add synchronization. Mocked tests cover deferred
+execution, native parameters, failures and parent cleanup; a headless smoke test allocates and frees
+a real primary buffer without recording or submitting commands. Next add synchronization resources
+and command recording for the bounded frame. Keep the legacy implementation static as a reference
+until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
