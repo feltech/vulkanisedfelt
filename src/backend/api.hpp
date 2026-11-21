@@ -50,6 +50,31 @@ struct Api
     void vk_destroy_command_pool(
         VkDevice device, VkCommandPool command_pool, VkAllocationCallbacks const * allocator);
     /**
+     * Allocates command buffers from a command pool.
+     *
+     * @param device Logical device owning the pool.
+     * @param info Pool, level and requested count.
+     * @param command_buffers Receives the allocated handles.
+     * @return Vulkan allocation status.
+     */
+    VkResult vk_allocate_command_buffers(
+        VkDevice device,
+        VkCommandBufferAllocateInfo const * info,
+        VkCommandBuffer * command_buffers);
+    /**
+     * Frees command buffers after their commands finish.
+     *
+     * @param device Logical device owning the pool.
+     * @param command_pool Pool owning the buffers.
+     * @param count Number of buffers to free.
+     * @param command_buffers Handles to free.
+     */
+    void vk_free_command_buffers(
+        VkDevice device,
+        VkCommandPool command_pool,
+        std::uint32_t count,
+        VkCommandBuffer const * command_buffers);
+    /**
      * Creates a framebuffer.
      *
      * @param device Logical device owning the framebuffer.

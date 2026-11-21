@@ -47,6 +47,36 @@ template <class TApi>
 }
 
 /**
+ * Owns a command buffer while retaining its pool and device.
+ *
+ * The pool must belong to the device. Keep the borrowed API alive through cleanup, finish
+ * submitted commands and externally synchronize all host access to the pool and its buffers.
+ *
+ * @param command_buffer Allocated command buffer.
+ * @param device Logical device owning the pool.
+ * @param command_pool Pool from which the buffer was allocated.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared buffer owner retaining its parents.
+ */
+template <class TApi>
+[[nodiscard]] auto make_command_buffer_ptr(
+    VkCommandBuffer command_buffer, device_ptr device, command_pool_ptr command_pool, TApi & api)
+    -> command_buffer_ptr pre(command_buffer != VK_NULL_HANDLE)
+        pre(device != nullptr && command_pool != nullptr)
+{
+    return command_buffer_ptr{
+        command_buffer,
+        [device = std::move(device), command_pool = std::move(command_pool), &api](
+            VkCommandBuffer handle) mutable noexcept
+        {
+            api.vk_free_command_buffers(device.get(), command_pool.get(), 1, &handle);
+            // Weak buffer observers must not prolong parents after native cleanup.
+            command_pool.reset();
+            device.reset();
+        }};
+}
+
+/**
  * Owns a framebuffer while retaining its attachment, render pass and device.
  *
  * The borrowed API must outlive every owner. Finish submitted commands using the framebuffer

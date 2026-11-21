@@ -34,6 +34,14 @@ struct MockApi
     /** Command pool destruction expectations. */
     MAKE_MOCK3(
         vk_destroy_command_pool, void(VkDevice, VkCommandPool, VkAllocationCallbacks const *));
+    /** Command buffer allocation expectations. */
+    MAKE_MOCK3(
+        vk_allocate_command_buffers,
+        VkResult(VkDevice, VkCommandBufferAllocateInfo const *, VkCommandBuffer *));
+    /** Command buffer release expectations. */
+    MAKE_MOCK4(
+        vk_free_command_buffers,
+        void(VkDevice, VkCommandPool, std::uint32_t, VkCommandBuffer const *));
     /** Framebuffer creation expectations. */
     MAKE_MOCK4(
         vk_create_framebuffer,

@@ -21,6 +21,8 @@ enum class FallibleVulkanOperation
     enumerate_instance_version,
     /// Command pool creation.
     create_command_pool,
+    /// Primary command buffer allocation.
+    allocate_command_buffer,
     /// Framebuffer creation.
     create_framebuffer,
     /// Render pass creation.

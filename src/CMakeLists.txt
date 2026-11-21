@@ -37,6 +37,7 @@ add_executable(
   vulkan/render_pass.cpp
   vulkan/framebuffer.cpp
   vulkan/command_pool.cpp
+  vulkan/command_buffer.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
@@ -144,6 +145,8 @@ target_sources(
           vulkan/detail/framebuffer.hpp
           vulkan/command_pool.hpp
           vulkan/detail/command_pool.hpp
+          vulkan/command_buffer.hpp
+          vulkan/detail/command_buffer.hpp
           vulkan/presentation_framebuffers.hpp
           vulkan/presentation_framebuffers_types.hpp
           vulkan/detail/presentation_framebuffers.hpp

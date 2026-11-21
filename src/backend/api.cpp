@@ -25,6 +25,19 @@ void Api::vk_destroy_command_pool(
 {
     ::vkDestroyCommandPool(device, command_pool, allocator);
 }
+VkResult Api::vk_allocate_command_buffers(
+    VkDevice device, VkCommandBufferAllocateInfo const * info, VkCommandBuffer * command_buffers)
+{
+    return ::vkAllocateCommandBuffers(device, info, command_buffers);
+}
+void Api::vk_free_command_buffers(
+    VkDevice device,
+    VkCommandPool command_pool,
+    std::uint32_t count,
+    VkCommandBuffer const * command_buffers)
+{
+    ::vkFreeCommandBuffers(device, command_pool, count, command_buffers);
+}
 VkResult Api::vk_create_framebuffer(
     VkDevice device,
     VkFramebufferCreateInfo const * info,

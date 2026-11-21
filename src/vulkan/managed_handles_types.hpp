@@ -27,6 +27,9 @@ static_assert(
 /** Shared command pool owner retaining its logical device. */
 using command_pool_ptr = std::shared_ptr<std::remove_pointer_t<VkCommandPool>>;
 
+/** Shared command buffer owner retaining its command pool and logical device. */
+using command_buffer_ptr = std::shared_ptr<VkCommandBuffer_T>;
+
 static_assert(
     std::is_pointer_v<VkFramebuffer>, "Framebuffer owners require pointer-shaped Vulkan handles");
 
