@@ -553,9 +553,16 @@ Swapchain image retrieval is implemented with bounded count/fill retries and ori
 reporting. Borrowed image handles travel with their swapchain owner; presentation-image bootstrap
 also retains configuration, queues and parents. Images are neither acquired for rendering nor
 destroyed individually. Mocked tests cover lazy ownership, written order and count, retries,
-failures and cleanup after retrieval failure; a windowed smoke test retrieves real images. Next
-build image views with ownership retaining the swapchain. Keep the legacy implementation static as a
-reference until migration is complete.
+failures and cleanup after retrieval failure; a windowed smoke test retrieves real images. Image
+view creation now provides 2D color views using the selected swapchain format, identity component
+mapping and one mip and layer. Every view independently retains its swapchain and device, releasing
+them after native view destruction even when weak observers remain. Presentation view composition
+creates views for an existing image snapshot and preserves image order. Failed batches release all
+acquired views, with cancellation taking precedence over errors and the first error selected in
+image order. Mocked tests cover lazy execution, creation parameters, ownership and partial-failure
+cleanup; a windowed smoke test creates and releases real views without acquiring images or
+submitting GPU work. Next build render-pass and framebuffer resources for the bounded frame. Keep
+the legacy implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
