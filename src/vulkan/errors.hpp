@@ -19,6 +19,8 @@ enum class FallibleVulkanOperation
 {
     /// Instance API version query.
     enumerate_instance_version,
+    /// One recorded command buffer submitted to a queue.
+    queue_submit,
     /// Swapchain image acquisition.
     acquire_next_image,
     /// Waiting for a fence to become signaled.

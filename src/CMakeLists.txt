@@ -43,6 +43,7 @@ add_executable(
   vulkan/semaphore.cpp
   vulkan/fence.cpp
   vulkan/image_acquisition.cpp
+  vulkan/queue_submission.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
@@ -161,6 +162,9 @@ target_sources(
           vulkan/fence_types.hpp
           vulkan/image_acquisition.hpp
           vulkan/image_acquisition_types.hpp
+          vulkan/queue_submission.hpp
+          vulkan/queue_submission_types.hpp
+          vulkan/detail/queue_submission.hpp
           vulkan/detail/image_acquisition.hpp
           vulkan/synchronization_types.hpp
           vulkan/detail/fence.hpp

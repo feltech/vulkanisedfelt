@@ -27,6 +27,17 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Submits command buffers and synchronization operations to a queue.
+     *
+     * @param queue Queue receiving the submissions.
+     * @param count Number of submit descriptions.
+     * @param submissions Command buffers and semaphore operations.
+     * @param fence Optional completion fence.
+     * @return Vulkan submission status.
+     */
+    VkResult vk_queue_submit(
+        VkQueue queue, std::uint32_t count, VkSubmitInfo const * submissions, VkFence fence);
+    /**
      * Acquires the next available swapchain image.
      *
      * @param device Logical device owning the handles.

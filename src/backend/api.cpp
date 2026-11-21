@@ -12,6 +12,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_queue_submit(
+    VkQueue queue, std::uint32_t count, VkSubmitInfo const * submissions, VkFence fence)
+{
+    return ::vkQueueSubmit(queue, count, submissions, fence);
+}
 VkResult Api::vk_acquire_next_image_khr(
     VkDevice device,
     VkSwapchainKHR swapchain,
