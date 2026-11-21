@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include "./errors.hpp"
 #include "./image_acquisition_types.hpp"
 #include "./managed_handles_types.hpp"
 
@@ -16,9 +17,9 @@ namespace vulkandemo::vulkan
 /**
  * A queued presentation request with its image and synchronization owners.
  *
- * Retention does not establish completion. Keep all owners until presentation-safe completion
- * is established. A rendering fence or queue/device idle wait is not a presentation completion
- * guarantee. Acquisition signals require their own completion before final release.
+ * Keep all owners until the presentation fence signals, and release the swapchain only after all
+ * its presentation fences signal. Signaling permits resource release rather than proving display
+ * completion. Rendering and acquisition signals require their own completion before final release.
  */
 struct QueuedPresentation
 {
@@ -28,7 +29,12 @@ struct QueuedPresentation
     AcquiredSwapchainImage acquired_image;
     /** Optional binary semaphore consumed by presentation. */
     semaphore_ptr wait_semaphore;
+    /** Presentation-resource release fence associated with this request. */
+    fence_ptr presentation_fence;
     /** Whether presentation succeeded with a suboptimal swapchain. */
     bool is_suboptimal;
 };
+
+/** Outcome of queuing one presentation request with a release fence. */
+using queued_presentation_result = vulkan_result<QueuedPresentation>;
 }  // namespace vulkandemo::vulkan

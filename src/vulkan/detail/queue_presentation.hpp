@@ -11,7 +11,6 @@
 #include <concepts>
 #include <cstdint>
 #include <functional>
-#include <type_traits>
 #include <utility>
 
 #include <vulkan/vulkan_core.h>
@@ -30,7 +29,7 @@ namespace vulkandemo::vulkan::detail
 /** Commands needed to queue an acquired image for presentation. */
 template <class TEnvironment>
 concept vk_queue_present_environment = backend::detail::api_environment<TEnvironment> &&
-    requires(TEnvironment environment, VkQueue queue, VkPresentInfoKHR const * info)
+    requires(TEnvironment const & environment, VkQueue queue, VkPresentInfoKHR const * info)
 {
     {environment.api.get().vk_queue_present_khr(queue, info)}->std::same_as<VkResult>;
 };
@@ -43,6 +42,7 @@ concept vk_queue_present_environment = backend::detail::api_environment<TEnviron
  * @param queue Presentation-capable queue for the target surface.
  * @param acquired_image Image and acquisition signal owners.
  * @param wait_semaphore Optional binary rendering-completion semaphore.
+ * @param presentation_fence Unsignaled fence for presentation-resource release.
  * @return Queued request keepalives or the original Vulkan failure.
  */
 template <class TApi>
@@ -51,17 +51,25 @@ auto queue_present_io_action(
     device_ptr device,
     VkQueue queue,
     AcquiredSwapchainImage acquired_image,
-    semaphore_ptr wait_semaphore)
+    semaphore_ptr wait_semaphore,
+    fence_ptr presentation_fence)
     -> vulkan_result<QueuedPresentation> pre(device != nullptr && queue != nullptr)
-        pre(acquired_image.swapchain != nullptr)
+        pre(acquired_image.swapchain != nullptr && presentation_fence != nullptr)
 {
     namespace result = fnfelt::result;
     using result_type = vulkan_result<QueuedPresentation>;
     VkSwapchainKHR swapchain = acquired_image.swapchain.get();
     std::uint32_t image_index = value_of(acquired_image.image_index);
     VkSemaphore wait_handle = wait_semaphore.get();
+    VkFence fence_handle = presentation_fence.get();
+    // The EXT spelling aliases KHR; all borrowed descriptions live through the native call.
+    VkSwapchainPresentFenceInfoEXT fence_info{};
+    fence_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
+    fence_info.swapchainCount = 1;
+    fence_info.pFences = &fence_handle;
     VkPresentInfoKHR info{};
     info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    info.pNext = &fence_info;
     info.waitSemaphoreCount = wait_semaphore ? 1 : 0;
     info.pWaitSemaphores = wait_semaphore ? &wait_handle : nullptr;
     info.swapchainCount = 1;
@@ -79,7 +87,45 @@ auto queue_present_io_action(
         std::move(device),
         std::move(acquired_image),
         std::move(wait_semaphore),
+        std::move(presentation_fence),
         status == VK_SUBOPTIMAL_KHR});
+}
+
+/**
+ * Provides a presentation request from a borrowed command implementation.
+ *
+ * @param api Borrowed command implementation.
+ * @param device Retained logical device.
+ * @param queue Presentation-capable queue for the target surface.
+ * @param acquired_image Retained image index and acquisition owners.
+ * @param wait_semaphore Optional retained binary wait semaphore.
+ * @param presentation_fence Unsignaled presentation-resource release fence.
+ * @return Deferred native presentation request.
+ */
+template <class TApi>
+constexpr auto io_queue_present(
+    std::reference_wrapper<TApi> api,
+    device_ptr device,
+    VkQueue queue,
+    AcquiredSwapchainImage acquired_image,
+    semaphore_ptr wait_semaphore,
+    fence_ptr presentation_fence)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace io = fnfelt::monad::io;
+
+    // Callable providing native presentation while retaining the image and its synchronization.
+    auto present = std::bind_front(
+        queue_present_io_action<TApi>,
+        api,
+        std::move(device),
+        queue,
+        std::move(acquired_image),
+        std::move(wait_semaphore),
+        std::move(presentation_fence));
+
+    // IO providing request keepalives, not a guarantee that presentation has completed.
+    return io::create<"vk_queue_present_khr"_ss>(std::move(present));
 }
 
 /**
@@ -89,31 +135,25 @@ auto queue_present_io_action(
  * @param queue Presentation-capable queue for the target surface.
  * @param acquired_image Retained image index and acquisition owners.
  * @param wait_semaphore Optional retained binary wait semaphore.
+ * @param presentation_fence Unsignaled presentation-resource release fence.
  * @param environment Borrowed command implementation.
  * @return Deferred native presentation request.
  */
 template <class TEnvironment>
-constexpr auto io_queue_present(
+constexpr auto queue_present_reader_io_action(
     device_ptr device,
     VkQueue queue,
     AcquiredSwapchainImage acquired_image,
     semaphore_ptr wait_semaphore,
-    TEnvironment environment)
+    fence_ptr presentation_fence,
+    TEnvironment const & environment)
 {
-    using fnfelt::literals::operator""_ss;
-    using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
-    namespace io = fnfelt::monad::io;
-
-    // Callable providing native presentation while retaining the image and its synchronization.
-    auto present = std::bind_front(
-        queue_present_io_action<api_type>,
+    return io_queue_present(
         environment.api,
         std::move(device),
         queue,
         std::move(acquired_image),
-        std::move(wait_semaphore));
-
-    // IO providing request keepalives, not a guarantee that presentation has completed.
-    return io::create<"vk_queue_present_khr"_ss>(std::move(present));
+        std::move(wait_semaphore),
+        std::move(presentation_fence));
 }
 }  // namespace vulkandemo::vulkan::detail
