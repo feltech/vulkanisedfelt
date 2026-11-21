@@ -568,8 +568,16 @@ submission waits remain the future frame layer's responsibility. Render-pass own
 device until native cleanup, including when weak observers remain. Mocked tests cover lazy
 execution, creation parameters, native failures and final-owner cleanup; a windowed smoke test
 creates and releases a render pass using the selected swapchain format without submitting GPU work.
-Next create framebuffer resources for the bounded frame. Keep the legacy implementation static as a
-reference until migration is complete.
+Framebuffer creation now provides one color attachment at the selected extent with one layer. Every
+framebuffer independently retains its view, render pass and device until native destruction,
+including when weak observers remain. Presentation composition queries framebuffer-specific physical
+limits before acquisition, reports oversized extents with the requested and maximum dimensions, and
+creates framebuffers in image order. Failed batches release all successful acquisitions, with
+cancellation taking precedence over errors. Mocked tests cover lazy execution, creation parameters,
+physical-limit boundaries, creation bypass, native failures and parent cleanup; a windowed smoke
+test creates and releases real framebuffers without acquiring images or submitting GPU work. Next
+create command-pool and command-buffer resources for the bounded frame. Keep the legacy
+implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
