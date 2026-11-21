@@ -598,9 +598,18 @@ the complete result alive through all buffer uses and GPU completion; a buffer a
 retain the recorded targets. Host access to the pool remains externally serialized, and recording
 does not introduce reset or reuse policy. Mocked tests cover deferred execution, native recording
 parameters and order, allocation/begin/end failures, retained resources and repeat executions with
-distinct buffers; a windowed smoke test records a real clear pass before image acquisition. Next add
-image acquisition and the submission, completion and presentation operations needed for the bounded
-frame. Keep the legacy implementation static as a reference until migration is complete.
+distinct buffers; a windowed smoke test records a real clear pass before image acquisition. Fence
+waiting now distinguishes signaled completion from ordinary timeout, retaining the fence and device
+through the native call. Image acquisition returns a strong image index with retained swapchain and
+signal owners on success, preserving suboptimal status. Success always contains an acquired image;
+not-ready, timeout, out-of-date and other non-acquisition outcomes use the error channel with their
+native Vulkan statuses so the frame layer can recover with `or_else`, without synthesizing
+cancellation. These owners do not wait or automatically release an acquired image: keep them alive
+until signaling and image use complete. Mocked tests cover lazy execution, native parameters, status
+distinctions and ownership. A windowed smoke test acquires with a finite timeout and completes its
+fence signal with an unbounded fence wait before cleanup, without submitting or presenting. Next add
+submission, completion and presentation operations for the bounded frame. Keep the legacy
+implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
