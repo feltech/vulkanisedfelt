@@ -12,6 +12,15 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_wait_for_fences(
+    VkDevice device,
+    std::uint32_t count,
+    VkFence const * fences,
+    VkBool32 wait_all,
+    std::uint64_t timeout)
+{
+    return ::vkWaitForFences(device, count, fences, wait_all, timeout);
+}
 void Api::vk_cmd_begin_render_pass(
     VkCommandBuffer command_buffer, VkRenderPassBeginInfo const * info, VkSubpassContents contents)
 {

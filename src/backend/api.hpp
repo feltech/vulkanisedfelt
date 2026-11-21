@@ -27,6 +27,22 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Waits for fences to become signaled.
+     *
+     * @param device Logical device owning the fences.
+     * @param count Number of fences.
+     * @param fences Fence handles to observe.
+     * @param wait_all Whether every fence must become signaled.
+     * @param timeout Maximum wait in nanoseconds.
+     * @return Vulkan wait status.
+     */
+    VkResult vk_wait_for_fences(
+        VkDevice device,
+        std::uint32_t count,
+        VkFence const * fences,
+        VkBool32 wait_all,
+        std::uint64_t timeout);
+    /**
      * Begins a render pass in a recording command buffer.
      *
      * @param command_buffer Recording primary buffer.

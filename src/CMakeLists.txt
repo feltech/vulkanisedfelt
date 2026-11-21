@@ -157,6 +157,8 @@ target_sources(
           vulkan/semaphore.hpp
           vulkan/detail/semaphore.hpp
           vulkan/fence.hpp
+          vulkan/fence_types.hpp
+          vulkan/synchronization_types.hpp
           vulkan/detail/fence.hpp
           vulkan/presentation_framebuffers.hpp
           vulkan/presentation_framebuffers_types.hpp

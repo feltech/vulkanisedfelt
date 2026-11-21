@@ -5,7 +5,9 @@
 #include "./fence.hpp"
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -19,12 +21,14 @@
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
 #include "./errors.hpp"
+#include "./fence_types.hpp"
 #include "./headless_device.hpp"
 #include "./headless_device_types.hpp"
 #include "./instance.hpp"
 #include "./managed_handles_types.hpp"
 #include "./renderer_errors.hpp"
 #include "./semaphore.hpp"
+#include "./synchronization_types.hpp"
 
 namespace vulkandemo::vulkan
 {
@@ -40,6 +44,109 @@ struct SynchronizationEnvironment
     std::reference_wrapper<backend::Api> api;
 };
 }  // namespace
+
+TEST_CASE("[impure] fence wait plans retain their inputs without waiting eagerly")
+{
+    backend::MockApi api;
+    FenceEnvironment environment{std::ref(api)};
+    char device_storage{}, fence_storage{};
+    device_ptr device{reinterpret_cast<VkDevice>(&device_storage), [](auto) {}};
+    fence_ptr fence{reinterpret_cast<VkFence>(&fence_storage), [](auto) {}};
+    std::weak_ptr device_observer{device};
+    std::weak_ptr fence_observer{fence};
+
+    {
+        // Constructing and binding a wait retains its inputs without calling Vulkan.
+        auto plan = reader_io_vk_wait_for_fence<FenceEnvironment>(
+            std::move(device), std::move(fence), timeout_nanoseconds{7});
+        [[maybe_unused]] auto deferred = plan.build(environment);
+
+        CHECK_FALSE(device_observer.expired());
+        CHECK_FALSE(fence_observer.expired());
+    }
+
+    CHECK(device_observer.expired());
+    CHECK(fence_observer.expired());
+}
+
+TEST_CASE("[impure] fence waits preserve timeout and native failure outcomes")
+{
+    backend::MockApi api;
+    FenceEnvironment environment{std::ref(api)};
+    char device_storage{}, fence_storage{};
+    device_ptr device{reinterpret_cast<VkDevice>(&device_storage), [](auto) {}};
+    fence_ptr fence{reinterpret_cast<VkFence>(&fence_storage), [](auto) {}};
+    VkResult status = VK_SUCCESS;
+    timeout_nanoseconds timeout{42};
+    SUBCASE("signaled") {}
+    SUBCASE("zero timeout is an ordinary unsuccessful poll")
+    {
+        status = VK_TIMEOUT;
+        timeout = timeout_nanoseconds{0};
+    }
+    SUBCASE("unbounded timeout preserves the native maximum")
+    {
+        timeout = timeout_nanoseconds{std::numeric_limits<std::uint64_t>::max()};
+    }
+    SUBCASE("device loss is a Vulkan failure")
+    {
+        status = VK_ERROR_DEVICE_LOST;
+    }
+    REQUIRE_CALL(
+        api, vk_wait_for_fences(device.get(), 1, trompeloeil::_, VK_TRUE, value_of(timeout)))
+        .WITH(*_3 == fence.get())
+        .LR_RETURN(status);
+
+    // One native fence is observed; timeout neither fails nor cancels the action.
+    vulkan_result<FenceWaitStatus> outcome =
+        reader_io_vk_wait_for_fence<FenceEnvironment>(device, fence, timeout)
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    if (status == VK_ERROR_DEVICE_LOST)
+    {
+        REQUIRE(fnfelt::result::is_error(outcome));
+        CHECK_EQ(
+            fnfelt::result::get_error(outcome).operation, FallibleVulkanOperation::wait_for_fence);
+        CHECK_EQ(fnfelt::result::get_error(outcome).result, status);
+    }
+    else
+    {
+        REQUIRE(fnfelt::result::is_success(outcome));
+        CHECK_EQ(
+            fnfelt::result::get_success(outcome),
+            status == VK_SUCCESS ? FenceWaitStatus::signaled : FenceWaitStatus::timed_out);
+    }
+}
+
+TEST_CASE("[impure] fence wait execution retains its owners until the native call returns")
+{
+    backend::MockApi api;
+    FenceEnvironment environment{std::ref(api)};
+    char device_storage{}, fence_storage{};
+    device_ptr device{reinterpret_cast<VkDevice>(&device_storage), [](auto) {}};
+    fence_ptr fence{reinterpret_cast<VkFence>(&fence_storage), [](auto) {}};
+    VkFence fence_handle = fence.get();
+    std::weak_ptr device_observer{device};
+    std::weak_ptr fence_observer{fence};
+    REQUIRE_CALL(api, vk_wait_for_fences(device.get(), 1, trompeloeil::_, VK_TRUE, 7))
+        .WITH(*_3 == fence_handle)
+        .LR_SIDE_EFFECT(CHECK_FALSE(device_observer.expired()))
+        .LR_SIDE_EFFECT(CHECK_FALSE(fence_observer.expired()))
+        .RETURN(VK_SUCCESS);
+
+    // The action is the only remaining owner while the native wait executes.
+    vulkan_result<FenceWaitStatus> outcome =
+        reader_io_vk_wait_for_fence<FenceEnvironment>(
+            std::move(device), std::move(fence), timeout_nanoseconds{7})
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(outcome));
+    CHECK_EQ(fnfelt::result::get_success(outcome), FenceWaitStatus::signaled);
+    CHECK(device_observer.expired());
+    CHECK(fence_observer.expired());
+}
 
 TEST_CASE("[impure] fence plans are lazy and retain their device")
 {

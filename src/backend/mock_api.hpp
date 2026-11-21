@@ -23,6 +23,10 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Fence wait expectations. */
+    MAKE_MOCK5(
+        vk_wait_for_fences,
+        VkResult(VkDevice, std::uint32_t, VkFence const *, VkBool32, std::uint64_t));
     /** Render pass recording-start expectations. */
     MAKE_MOCK3(
         vk_cmd_begin_render_pass,
