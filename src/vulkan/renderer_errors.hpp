@@ -13,9 +13,11 @@
 #include <vulkan/vulkan_core.h>
 
 #include <fnfelt/result.hpp>
+#include <immer/array.hpp>
 
 #include "./api_version_types.hpp"
 #include "./errors.hpp"
+#include "./extension_types.hpp"
 
 namespace vulkandemo::vulkan
 {
@@ -69,13 +71,32 @@ struct UnsupportedFramebufferExtent
     VkExtent2D maximum;
 };
 
+/** Unavailable instance prerequisites for maintenance1 presentation support. */
+enum class PresentationInstanceFailureReason
+{
+    /** Required platform or shared dependency names are unavailable. */
+    missing_required_extensions,
+    /** Neither maintenance1 surface-extension family is available. */
+    no_maintenance1_path
+};
+
+/** The available instance extensions cannot support maintenance1 presentation. */
+struct PresentationInstanceFailure
+{
+    /** Unavailable requirement. */
+    PresentationInstanceFailureReason reason;
+    /** Missing mandatory names; empty when neither alternative family is available. */
+    immer::array<extension_name> missing_extensions;
+};
+
 /// Common failures of renderer workflows.
 using renderer_error = std::variant<
     VulkanOperationFailure,
     UnsupportedVulkanVersion,
     NoSuitablePhysicalDevice,
     NoSuitableSwapchainConfiguration,
-    UnsupportedFramebufferExtent>;
+    UnsupportedFramebufferExtent,
+    PresentationInstanceFailure>;
 
 /**
  * Converts a Vulkan failure into a renderer error.
