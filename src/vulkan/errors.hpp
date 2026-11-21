@@ -17,6 +17,8 @@ namespace vulkandemo::vulkan
 /// Wrapped Vulkan operations that can report a failure.
 enum class FallibleVulkanOperation
 {
+    /// Instance API version query.
+    enumerate_instance_version,
     /// Instance creation.
     create_instance
 };

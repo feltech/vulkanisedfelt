@@ -18,6 +18,8 @@ namespace vulkandemo::backend
 /** Per-test Vulkan command expectations. */
 struct MockApi
 {
+    /** Global and instance command lookup expectations. */
+    MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
     /** Instance creation expectations. */
     MAKE_MOCK3(
         vk_create_instance,

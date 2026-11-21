@@ -6,6 +6,10 @@
 
 namespace vulkandemo::backend
 {
+PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char const * name)
+{
+    return ::vkGetInstanceProcAddr(instance, name);
+}
 VkResult Api::vk_create_instance(
     VkInstanceCreateInfo const * create_info,
     VkAllocationCallbacks const * allocator,

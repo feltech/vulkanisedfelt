@@ -16,6 +16,14 @@ namespace vulkandemo::backend
 struct Api
 {
     /**
+     * Resolves an instance or global Vulkan command.
+     *
+     * @param instance Instance owner, or null for global commands.
+     * @param name NUL-terminated command name.
+     * @return Command address, or null when unavailable.
+     */
+    PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
+    /**
      * Creates a Vulkan instance.
      *
      * @param create_info Instance description.
