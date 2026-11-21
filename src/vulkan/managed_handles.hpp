@@ -22,6 +22,31 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns a render pass while retaining its logical device.
+ *
+ * The borrowed API must outlive every owner. Finish submitted commands using the render
+ * pass and synchronize host access before final release.
+ *
+ * @param render_pass Acquired render pass using the default allocator.
+ * @param device Logical device owning the render pass.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared render pass owner retaining its device.
+ */
+template <class TApi>
+[[nodiscard]] auto make_render_pass_ptr(VkRenderPass render_pass, device_ptr device, TApi & api)
+    -> render_pass_ptr pre(render_pass != VK_NULL_HANDLE) pre(device != nullptr)
+{
+    return render_pass_ptr{
+        render_pass,
+        [device = std::move(device), &api](VkRenderPass handle) mutable noexcept
+        {
+            api.vk_destroy_render_pass(device.get(), handle, nullptr);
+            // Weak render pass observers must not prolong the device after native cleanup.
+            device.reset();
+        }};
+}
+
+/**
  * Owns an image view while retaining its swapchain and logical device.
  *
  * The borrowed API must outlive every owner. Finish GPU work and synchronize host access

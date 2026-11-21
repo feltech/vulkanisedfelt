@@ -12,6 +12,19 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_create_render_pass(
+    VkDevice device,
+    VkRenderPassCreateInfo const * info,
+    VkAllocationCallbacks const * allocator,
+    VkRenderPass * render_pass)
+{
+    return ::vkCreateRenderPass(device, info, allocator, render_pass);
+}
+void Api::vk_destroy_render_pass(
+    VkDevice device, VkRenderPass render_pass, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroyRenderPass(device, render_pass, allocator);
+}
 VkResult Api::vk_create_image_view(
     VkDevice device,
     VkImageViewCreateInfo const * info,

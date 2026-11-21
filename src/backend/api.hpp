@@ -27,6 +27,29 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a render pass.
+     *
+     * @param device Logical device owning the render pass.
+     * @param info Render pass description.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param render_pass Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_render_pass(
+        VkDevice device,
+        VkRenderPassCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkRenderPass * render_pass);
+    /**
+     * Destroys a render pass after its GPU work finishes.
+     *
+     * @param device Logical device owning the render pass.
+     * @param render_pass Render pass to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_render_pass(
+        VkDevice device, VkRenderPass render_pass, VkAllocationCallbacks const * allocator);
+    /**
      * Creates a view of an image.
      *
      * @param device Logical device owning the image.

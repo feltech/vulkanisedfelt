@@ -34,6 +34,7 @@ add_executable(
   vulkan/detail/swapchain_support.cpp
   vulkan/image_format_properties.cpp
   vulkan/image_view.cpp
+  vulkan/render_pass.cpp
   vulkan/swapchain.cpp
   vulkan/swapchain_images.cpp
   vulkan/presentation_swapchain.cpp
@@ -133,6 +134,8 @@ target_sources(
           vulkan/image_format_properties.hpp
           vulkan/image_view.hpp
           vulkan/detail/image_view.hpp
+          vulkan/render_pass.hpp
+          vulkan/detail/render_pass.hpp
           vulkan/swapchain.hpp
           vulkan/swapchain_images.hpp
           vulkan/swapchain_images_types.hpp
