@@ -27,6 +27,11 @@ static_assert(
 /** Shared binary semaphore owner retaining its logical device. */
 using semaphore_ptr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
 
+static_assert(std::is_pointer_v<VkFence>, "Fence owners require pointer-shaped Vulkan handles");
+
+/** Shared fence owner retaining its logical device. */
+using fence_ptr = std::shared_ptr<std::remove_pointer_t<VkFence>>;
+
 static_assert(
     std::is_pointer_v<VkCommandPool>, "Command pool owners require pointer-shaped Vulkan handles");
 

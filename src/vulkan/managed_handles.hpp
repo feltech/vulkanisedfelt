@@ -47,6 +47,31 @@ template <class TApi>
 }
 
 /**
+ * Owns a fence while retaining its logical device.
+ *
+ * Keep the borrowed API alive through cleanup. Complete queue submissions using the fence
+ * and externally synchronize host access before final release.
+ *
+ * @param fence Acquired fence using the default allocator.
+ * @param device Logical device owning the fence.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared fence owner retaining its device.
+ */
+template <class TApi>
+[[nodiscard]] auto make_fence_ptr(VkFence fence, device_ptr device, TApi & api) -> fence_ptr
+    pre(fence != VK_NULL_HANDLE) pre(device != nullptr)
+{
+    return fence_ptr{
+        fence,
+        [device = std::move(device), &api](VkFence handle) mutable noexcept
+        {
+            api.vk_destroy_fence(device.get(), handle, nullptr);
+            // Weak fence observers must not prolong the device after native cleanup.
+            device.reset();
+        }};
+}
+
+/**
  * Owns a command pool while retaining its logical device.
  *
  * Keep the borrowed API alive through cleanup. Complete submitted commands before final

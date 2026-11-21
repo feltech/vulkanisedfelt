@@ -50,6 +50,28 @@ struct Api
     void vk_destroy_semaphore(
         VkDevice device, VkSemaphore semaphore, VkAllocationCallbacks const * allocator);
     /**
+     * Creates a fence.
+     *
+     * @param device Logical device owning the fence.
+     * @param info Initial fence state and flags.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param fence Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_fence(
+        VkDevice device,
+        VkFenceCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkFence * fence);
+    /**
+     * Destroys a fence after its queue submissions complete.
+     *
+     * @param device Logical device owning the fence.
+     * @param fence Fence to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_fence(VkDevice device, VkFence fence, VkAllocationCallbacks const * allocator);
+    /**
      * Creates a command pool for one queue family.
      *
      * @param device Logical device owning the pool.

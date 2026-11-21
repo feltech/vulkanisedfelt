@@ -25,6 +25,18 @@ void Api::vk_destroy_semaphore(
 {
     ::vkDestroySemaphore(device, semaphore, allocator);
 }
+VkResult Api::vk_create_fence(
+    VkDevice device,
+    VkFenceCreateInfo const * info,
+    VkAllocationCallbacks const * allocator,
+    VkFence * fence)
+{
+    return ::vkCreateFence(device, info, allocator, fence);
+}
+void Api::vk_destroy_fence(VkDevice device, VkFence fence, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroyFence(device, fence, allocator);
+}
 VkResult Api::vk_create_command_pool(
     VkDevice device,
     VkCommandPoolCreateInfo const * info,

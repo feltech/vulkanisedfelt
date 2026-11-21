@@ -21,6 +21,8 @@ enum class FallibleVulkanOperation
     enumerate_instance_version,
     /// Binary semaphore creation.
     create_semaphore,
+    /// Fence creation.
+    create_fence,
     /// Command pool creation.
     create_command_pool,
     /// Primary command buffer allocation.

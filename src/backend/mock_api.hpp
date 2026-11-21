@@ -30,6 +30,12 @@ struct MockApi
             VkDevice, VkSemaphoreCreateInfo const *, VkAllocationCallbacks const *, VkSemaphore *));
     /** Semaphore destruction expectations. */
     MAKE_MOCK3(vk_destroy_semaphore, void(VkDevice, VkSemaphore, VkAllocationCallbacks const *));
+    /** Fence creation expectations. */
+    MAKE_MOCK4(
+        vk_create_fence,
+        VkResult(VkDevice, VkFenceCreateInfo const *, VkAllocationCallbacks const *, VkFence *));
+    /** Fence destruction expectations. */
+    MAKE_MOCK3(vk_destroy_fence, void(VkDevice, VkFence, VkAllocationCallbacks const *));
     /** Command pool creation expectations. */
     MAKE_MOCK4(
         vk_create_command_pool,
