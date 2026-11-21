@@ -674,9 +674,21 @@ propagates through the chain. Returned extension names are independent of the qu
 Mocked and pure tests cover initialized feature chains, KHR/EXT combinations and mismatches, missing
 dependencies, false features, query short-circuiting, laziness and materialized-IO ownership. A
 headless smoke test discovers support without enabling a device feature or submitting GPU work.
-Existing device selection and creation remain unchanged. Next, integrate the discovered path into
-presentation-device suitability, enable the selected device extension and feature, then add
-presentation fences and a bounded real frame.
+Existing generic device selection and creation remain unchanged.
+
+The canonical presentation selector now combines graphics and surface suitability with the
+instance's actual enabled extension names and each device's maintenance1 feature. Its assessments
+reuse the existing properties, extension and queue snapshots, so extension enumeration occurs only
+once per device. An unsupported path is ordinary assessment data that makes the candidate
+ineligible. Every assessment finishes before cancellation takes precedence over native errors;
+otherwise the first error in enumeration order wins, including errors on unsuitable devices. The
+shared presentation selector preserves ranking and original device and queue-family indices.
+Successful selections retain their instance and surface and a mandatory strong swapchain
+maintenance1 extension name. Mocked and pure tests cover unsupported higher-ranked devices, KHR
+preference and EXT fallback, instance/device mismatches, no eligible device, error and stop
+precedence, reusable materialized IO and both parent lifetimes. A windowed smoke test creates an
+instance and surface and checks required selection when the capability is available, without
+logical-device creation or GPU work.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
