@@ -29,16 +29,20 @@
 #include "../../text/string.hpp"
 #include "../device_extensions.hpp"
 #include "../errors.hpp"
+#include "../extension_types.hpp"
 #include "../managed_handles_types.hpp"
 #include "../physical_device_properties.hpp"
 #include "../physical_device_selection_types.hpp"
 #include "../physical_devices.hpp"
 #include "../physical_devices_types.hpp"
+#include "../presentation_instance_types.hpp"
 #include "../queue_family_properties.hpp"
 #include "../queue_family_selection_types.hpp"
 #include "../queue_types.hpp"
 #include "../renderer_errors.hpp"
 #include "../surface_support.hpp"
+#include "./swapchain_maintenance1_features.hpp"
+#include "./swapchain_maintenance1_support.hpp"
 
 namespace vulkandemo::vulkan::detail
 {
@@ -54,7 +58,8 @@ concept select_headless_physical_device_environment =
 template <class TEnvironment>
 concept select_presentation_physical_device_environment =
     select_headless_physical_device_environment<TEnvironment> &&
-    vk_get_physical_device_surface_support_environment<TEnvironment>;
+    vk_get_physical_device_surface_support_environment<TEnvironment> &&
+    query_swapchain_maintenance1_feature_environment<TEnvironment>;
 
 /// Owned suitability facts for one enumerated device.
 struct PhysicalDeviceAssessment
@@ -78,6 +83,8 @@ struct PresentationDeviceAssessment
     std::optional<PresentationQueueFamilies> queue_families;
     /** Whether swapchain and additional required extensions are available. */
     bool has_required_extensions;
+    /** Compatible maintenance1 path whose device feature is supported, if any. */
+    std::optional<extension_name> maintenance1_extension = std::nullopt;
 };
 /** Outcome of assessing one presentation device. */
 using presentation_device_assessment_result = vulkan_result<PresentationDeviceAssessment>;
@@ -266,44 +273,104 @@ constexpr auto reader_io_query_presentation_device(surface_ptr surface, VkPhysic
 }
 
 /**
- * Assesses presentation suitability from one complete query snapshot.
+ * Joins presentation suitability with a completed maintenance1 observation.
+ *
+ * @param presentation Graphics, presentation and extension facts.
+ * @param maintenance1_extension Supported maintenance1 path, if any.
+ * @return Combined suitability facts without borrowed snapshot storage.
+ */
+auto with_presentation_maintenance1_support(
+    PresentationDeviceAssessment presentation, std::optional<extension_name> maintenance1_extension)
+    -> PresentationDeviceAssessment;
+
+/**
+ * Resolves maintenance1 support from already queried presentation snapshots.
  *
  * @tparam TEnvironment Execution environment type.
- * @param surface Retained presentation surface.
- * @param names Additional required extension names.
- * @param handle Borrowed physical device.
- * @return ReaderIO producing presentation suitability facts.
+ * @param instance Retained instance and its enabled names.
+ * @param names Additional required device extension names.
+ * @param handle Borrowed physical device belonging to the instance.
+ * @param properties Ranking properties.
+ * @param extensions Complete advertised device extension snapshot.
+ * @param queues Suitable queue families, if any.
+ * @return ReaderIO providing combined facts without another extension enumeration.
  */
 template <class TEnvironment>
-constexpr auto reader_io_assess_presentation_device(
-    surface_ptr surface, immer::array<text::String> names, VkPhysicalDevice handle)
+constexpr auto reader_io_assess_presentation_snapshots(
+    PresentationInstance instance,
+    immer::array<text::String> names,
+    VkPhysicalDevice handle,
+    VkPhysicalDeviceProperties properties,
+    immer::array<VkExtensionProperties> extensions,
+    std::optional<PresentationQueueFamilies> queues)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // ReaderIO providing the common ranking, extension and queue snapshots.
-    auto query_values =
-        reader_io_query_presentation_device<TEnvironment>(std::move(surface), handle);
+    // Suitability facts reuse the same extension snapshot as the maintenance1 observation.
+    PresentationDeviceAssessment presentation =
+        assess_presentation_device_suitability(names, properties, extensions, std::move(queues));
 
-    // ReaderIO providing suitability facts only for successful capability snapshots.
+    // ReaderIO retaining the instance through the native feature call, when a path exists.
+    auto maintenance1_support =
+        reader_io_discover_swapchain_maintenance1_feature_support<TEnvironment>(
+            std::move(instance), handle, std::move(extensions));
+
+    // ReaderIO providing successful facts even when maintenance1 is unavailable.
     return reader_io::transform<"assess_presentation_device"_ss>(
-        std::move(query_values),
-        std::bind_front(assess_presentation_device_suitability, std::move(names)));
+        std::move(maintenance1_support),
+        std::bind_front(with_presentation_maintenance1_support, std::move(presentation)));
 }
 
 /**
- * Collects presentation assessments and selects a suitable device.
+ * Assesses presentation and maintenance1 capabilities with one extension query.
  *
  * @tparam TEnvironment Execution environment type.
- * @param instance Retained instance.
- * @param surface Retained presentation surface.
- * @param names Additional required extension names.
- * @param handles Enumerated physical devices.
- * @return ReaderIO producing an owning presentation device selection.
+ * @param instance Retained instance and its enabled extension names.
+ * @param surface Surface from the same parent instance.
+ * @param names Additional required device extensions.
+ * @param handle Borrowed physical device belonging to the instance.
+ * @return ReaderIO providing combined facts or the original query outcome.
+ */
+template <class TEnvironment>
+constexpr auto reader_io_assess_presentation_device(
+    PresentationInstance instance,
+    surface_ptr surface,
+    immer::array<text::String> names,
+    VkPhysicalDevice handle)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // ReaderIO providing the common snapshots only once for this physical device.
+    auto query_values =
+        reader_io_query_presentation_device<TEnvironment>(std::move(surface), handle);
+
+    // Continuation providing an owned feature observation from those successful snapshots.
+    auto assess_snapshots = std::bind_front(
+        reader_io_assess_presentation_snapshots<TEnvironment>,
+        std::move(instance),
+        std::move(names),
+        handle);
+
+    // ReaderIO preserving failed or stopped native queries before inspecting suitability.
+    return reader_io::and_then<"resolve_presentation_device"_ss>(
+        std::move(query_values), std::move(assess_snapshots));
+}
+
+/**
+ * Assesses enumerated devices and requires a complete maintenance1 presentation path.
+ *
+ * @tparam TEnvironment Execution environment type.
+ * @param instance Retained instance and its enabled extensions.
+ * @param surface Surface belonging to the retained instance.
+ * @param names Additional required device extensions.
+ * @param handles Devices in original enumeration order.
+ * @return ReaderIO providing a required-capability selection or discovery outcome.
  */
 template <class TEnvironment>
 constexpr auto reader_io_select_from_presentation_devices(
-    instance_ptr instance,
+    PresentationInstance instance,
     surface_ptr surface,
     immer::array<text::String> names,
     immer::array<VkPhysicalDevice> handles)
@@ -311,19 +378,19 @@ constexpr auto reader_io_select_from_presentation_devices(
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // Continuation providing a surface-aware assessment for each enumerated device.
+    // Continuation providing one complete assessment with both parent lifetimes retained.
     auto assess_device = std::bind_front(
-        reader_io_assess_presentation_device<TEnvironment>, surface, std::move(names));
+        reader_io_assess_presentation_device<TEnvironment>, instance, surface, std::move(names));
 
-    // Transformer providing an owning selection from assessments in enumeration order.
+    // Transformer providing the original device and its established extension path.
     auto select_device = std::bind_front(
         select_presentation_device_from_assessments,
-        std::move(instance),
+        std::move(instance.instance),
         std::move(surface),
         handles);
 
-    // ReaderIO providing every device assessment after all probes have finished.
-    auto assessments = reader_io::traverse<"probe_presentation_devices"_ss, TEnvironment>(
+    // ReaderIO providing every assessment before errors or suitability affect selection.
+    auto assessments = reader_io::traverse<"assess_presentation_devices"_ss, TEnvironment>(
         std::move(handles), std::move(assess_device));
 
     // ReaderIO providing plain facts only after every assessment succeeded.
@@ -331,7 +398,7 @@ constexpr auto reader_io_select_from_presentation_devices(
         std::move(assessments),
         sequence_presentation_device_assessments<PresentationDeviceAssessment>);
 
-    // ReaderIO providing a suitable device or preserving unsuccessful discovery.
+    // ReaderIO providing a suitable device with a required maintenance1 extension name.
     return reader_io::transform<"select_presentation_physical_device"_ss>(
         std::move(successful_assessments), std::move(select_device));
 }

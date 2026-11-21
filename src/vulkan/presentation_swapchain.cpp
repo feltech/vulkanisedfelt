@@ -25,13 +25,13 @@
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
 #include "../sdl/detail/test_runtime.hpp"
-#include "../sdl/instance_extensions.hpp"
 #include "../sdl/video.hpp"
 #include "../sdl/vulkan_surface.hpp"
 #include "../sdl/window.hpp"
 #include "./extension_types.hpp"
-#include "./instance.hpp"
 #include "./presentation_device.hpp"
+#include "./presentation_instance.hpp"
+#include "./presentation_instance_types.hpp"
 #include "./renderer_errors.hpp"
 
 namespace vulkandemo::vulkan
@@ -342,20 +342,28 @@ TEST_CASE(
     sdl::sdl_result<SDL_Window *> window =
         runtime.run(sdl::state_io_sdl_create_window<state_type>(options));
     REQUIRE(fnfelt::result::is_success(window));
-    sdl::sdl_result<immer::array<extension_name>> extensions = runtime.run(
-        sdl::reader_io_sdl_vulkan_get_instance_extensions<environment_type>(
-            fnfelt::result::get_success(window)));
-    REQUIRE(fnfelt::result::is_success(extensions));
-    renderer_result<instance_ptr> instance = runtime.run(
-        reader_io_vk_create_instance<environment_type>(fnfelt::result::get_success(extensions)));
+    renderer_result<PresentationInstance> instance = runtime.run(
+        reader_io_create_presentation_instance<environment_type>(runtime.resources().window_owner));
+    if (fnfelt::result::is_error(instance))
+    {
+        CHECK(
+            std::holds_alternative<PresentationInstanceFailure>(
+                fnfelt::result::get_error(instance)));
+        return;
+    }
     REQUIRE(fnfelt::result::is_success(instance));
     sdl::sdl_result<surface_ptr> surface = runtime.run(
         sdl::reader_io_sdl_vulkan_create_surface<environment_type>(
-            runtime.resources().window_owner, fnfelt::result::get_success(instance)));
+            runtime.resources().window_owner, fnfelt::result::get_success(instance).instance));
     REQUIRE(fnfelt::result::is_success(surface));
     presentation_device_result device = runtime.run(
         reader_io_create_presentation_device<environment_type>(
             fnfelt::result::get_success(instance), fnfelt::result::get_success(surface)));
+    if (fnfelt::result::is_error(device))
+    {
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(device)));
+        return;
+    }
     REQUIRE(fnfelt::result::is_success(device));
 
     // No images are acquired and no GPU work is submitted; final release can destroy immediately.

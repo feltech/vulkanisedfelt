@@ -18,6 +18,7 @@
 #include "./managed_handles_types.hpp"
 #include "./physical_device_selection.hpp"
 #include "./presentation_device_types.hpp"
+#include "./presentation_instance_types.hpp"
 #include "detail/presentation_device.hpp"
 
 namespace vulkandemo::vulkan
@@ -33,14 +34,14 @@ namespace vulkandemo::vulkan
  * before releasing the final device owner.
  *
  * @tparam TEnvironment Execution environment type.
- * @param instance Nonempty parent instance owner.
+ * @param instance Parent instance and its actual enabled extension names.
  * @param surface Nonempty surface owner from that instance.
  * @param required_extension_names Additional required device extension names.
  * @return Reusable ReaderIO providing an owned device and both queues or renderer error.
  */
 template <detail::create_presentation_device_environment TEnvironment>
 [[nodiscard]] constexpr auto reader_io_create_presentation_device(
-    instance_ptr instance,
+    PresentationInstance instance,
     surface_ptr surface,
     immer::array<text::String> required_extension_names = {})
 {

@@ -28,16 +28,16 @@
 #include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
 #include "../sdl/detail/test_runtime.hpp"
-#include "../sdl/instance_extensions.hpp"
+#include "../sdl/errors.hpp"
 #include "../sdl/video.hpp"
 #include "../sdl/vulkan_surface.hpp"
 #include "../sdl/window.hpp"
 #include "../sdl/window_types.hpp"
 #include "../text/string.hpp"
-#include "./errors.hpp"
 #include "./extension_types.hpp"
-#include "./instance.hpp"
 #include "./managed_handles.hpp"
+#include "./presentation_instance.hpp"
+#include "./presentation_instance_types.hpp"
 #include "./queue_types.hpp"
 #include "./renderer_errors.hpp"
 
@@ -79,7 +79,7 @@ struct PresentationFixture
     char surface_storage{};
     bool is_instance_destroyed = false;
     bool is_surface_destroyed = false;
-    bool is_device_destroyed = false;
+    int destroyed_devices = 0;
     trompeloeil::sequence graphics_acquisitions;
     trompeloeil::sequence present_acquisitions;
     immer::array_transient<std::shared_ptr<trompeloeil::expectation>> expectations;
@@ -90,12 +90,9 @@ struct PresentationFixture
     {
         keep(NAMED_ALLOW_CALL(api, vk_destroy_device(trompeloeil::_, trompeloeil::_))
                  .SIDE_EFFECT(DOCTEST_FAIL_CHECK("unexpected device destruction")));
-        keep(NAMED_ALLOW_CALL(api, vk_destroy_instance(trompeloeil::_, trompeloeil::_))
-                 .SIDE_EFFECT(DOCTEST_FAIL_CHECK("unexpected instance destruction")));
         keep(NAMED_REQUIRE_CALL(api, vk_destroy_instance(&instance_handle, nullptr))
                  .LR_SIDE_EFFECT(is_instance_destroyed = true));
         instance = make_instance_ptr(&instance_handle, api);
-        // Surface dispatch has separate tests; this owner isolates context retention here.
         surface = surface_ptr{
             reinterpret_cast<VkSurfaceKHR>(&surface_storage),
             [this, parent = instance](auto) mutable
@@ -110,34 +107,50 @@ struct PresentationFixture
         expectations.push_back(std::shared_ptr<trompeloeil::expectation>{std::move(expectation)});
     }
 
-    template <std::size_t runs = 1>
-    void enumerate(bool has_device = true, VkResult status = VK_SUCCESS)
+    auto instance_context() const -> PresentationInstance
     {
-        keep(NAMED_REQUIRE_CALL(
-                 api, vk_enumerate_physical_devices(&instance_handle, trompeloeil::_, nullptr))
-                 .SIDE_EFFECT(*_2 = has_device ? 1U : 0U)
-                 .RETURN(status)
-                 .TIMES(runs));
-        if (has_device && status == VK_SUCCESS)
-        {
-            keep(
-                NAMED_REQUIRE_CALL(
-                    api,
-                    vk_enumerate_physical_devices(&instance_handle, trompeloeil::_, trompeloeil::_))
-                    .WITH(_3 != nullptr && *_2 == 1U)
-                    .LR_SIDE_EFFECT(*_3 = &physical_device)
-                    .RETURN(VK_SUCCESS)
-                    .TIMES(runs));
-        }
+        return {
+            instance,
+            immer::array{
+                extension_name{VK_KHR_SURFACE_EXTENSION_NAME},
+                extension_name{VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME},
+                extension_name{"VK_KHR_surface_maintenance1"},
+                extension_name{"VK_EXT_surface_maintenance1"}}};
     }
 
     template <std::size_t runs = 1>
-    void assess(
+    void selection(
+        std::string_view maintenance1_name,
         bool has_shared_family = true,
+        bool has_feature = true,
+        VkResult enumeration_status = VK_SUCCESS,
+        bool has_candidates = true,
         bool has_extra_extension = true,
         VkResult extension_status = VK_SUCCESS)
     {
-        // Family zero is unused; the selected roles must retain their actual snapshot indices.
+        keep(NAMED_REQUIRE_CALL(
+                 api, vk_enumerate_physical_devices(&instance_handle, trompeloeil::_, nullptr))
+                 .LR_SIDE_EFFECT(CHECK_FALSE(is_instance_destroyed))
+                 .LR_SIDE_EFFECT(CHECK_FALSE(is_surface_destroyed))
+                 .SIDE_EFFECT(*_2 = has_candidates ? 1U : 0U)
+                 .RETURN(enumeration_status)
+                 .TIMES(runs));
+        if (enumeration_status != VK_SUCCESS || !has_candidates)
+        {
+            return;
+        }
+        keep(NAMED_REQUIRE_CALL(
+                 api,
+                 vk_enumerate_physical_devices(&instance_handle, trompeloeil::_, trompeloeil::_))
+                 .WITH(_3 != nullptr && *_2 == 1U)
+                 .LR_SIDE_EFFECT(*_3 = &physical_device)
+                 .RETURN(VK_SUCCESS)
+                 .TIMES(runs));
+        keep(NAMED_REQUIRE_CALL(
+                 api, vk_get_physical_device_properties(&physical_device, trompeloeil::_))
+                 .SIDE_EFFECT(_2->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+                 .SIDE_EFFECT(_2->apiVersion = VK_API_VERSION_1_1)
+                 .TIMES(runs));
         VkQueueFamilyProperties graphics_properties{};
         graphics_properties.queueCount = 1;
         graphics_properties.queueFlags = VK_QUEUE_GRAPHICS_BIT;
@@ -150,16 +163,6 @@ struct PresentationFixture
             families = families.push_back(present_properties);
         }
         std::uint32_t const family_count = static_cast<std::uint32_t>(families.size());
-        immer::array<VkExtensionProperties> available{extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)};
-        if (has_extra_extension)
-        {
-            available = available.push_back(extension("VK_extra"));
-        }
-        keep(NAMED_REQUIRE_CALL(
-                 api, vk_get_physical_device_properties(&physical_device, trompeloeil::_))
-                 .SIDE_EFFECT(_2->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-                 .SIDE_EFFECT(_2->apiVersion = VK_API_VERSION_1_1)
-                 .TIMES(runs));
         keep(NAMED_REQUIRE_CALL(
                  api,
                  vk_get_physical_device_queue_family_properties(
@@ -173,6 +176,12 @@ struct PresentationFixture
                  .WITH(_3 != nullptr && *_2 == family_count)
                  .SIDE_EFFECT(std::ranges::copy(families, _3))
                  .TIMES(runs));
+        immer::array available{
+            extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension(maintenance1_name)};
+        if (has_extra_extension)
+        {
+            available = available.push_back(extension("VK_extra"));
+        }
         keep(NAMED_REQUIRE_CALL(
                  api,
                  vk_enumerate_device_extension_properties(
@@ -202,17 +211,26 @@ struct PresentationFixture
                      .RETURN(VK_SUCCESS)
                      .TIMES(runs));
         }
+        if (extension_status != VK_SUCCESS)
+        {
+            return;
+        }
+        keep(NAMED_REQUIRE_CALL(
+                 api, vk_get_physical_device_features2(&physical_device, trompeloeil::_))
+                 .SIDE_EFFECT(
+                     static_cast<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(_2->pNext)
+                         ->swapchainMaintenance1 = has_feature ? VK_TRUE : VK_FALSE)
+                 .TIMES(runs));
     }
 
-    void create(VkDevice device, bool has_shared_family, VkResult status = VK_SUCCESS)
+    void create(VkDevice device, std::string_view, VkResult status = VK_SUCCESS)
     {
         keep(NAMED_REQUIRE_CALL(
                  api, vk_create_device(&physical_device, trompeloeil::_, nullptr, trompeloeil::_))
-                 .WITH(_2 != nullptr && _4 != nullptr)
-                 .WITH(_2->queueCreateInfoCount == (has_shared_family ? 1U : 2U))
-                 .WITH(_2->pQueueCreateInfos[0].queueFamilyIndex == 1)
-                 .WITH(has_shared_family || _2->pQueueCreateInfos[1].queueFamilyIndex == 2)
-                 .WITH(_2->enabledExtensionCount == 2)
+                 .LR_SIDE_EFFECT(CHECK_FALSE(is_instance_destroyed))
+                 .LR_SIDE_EFFECT(CHECK_FALSE(is_surface_destroyed))
+                 .WITH(_2 != nullptr && _2->pNext == nullptr && _4 != nullptr)
+                 .WITH(_2->enabledExtensionCount == 2U)
                  .WITH(
                      std::string_view{_2->ppEnabledExtensionNames[0]} ==
                      VK_KHR_SWAPCHAIN_EXTENSION_NAME)
@@ -223,14 +241,13 @@ struct PresentationFixture
         if (status == VK_SUCCESS)
         {
             keep(NAMED_REQUIRE_CALL(api, vk_destroy_device(device, nullptr))
-                     .LR_SIDE_EFFECT(is_device_destroyed = true));
+                     .LR_SIDE_EFFECT(++destroyed_devices));
         }
     }
 
     void queues(
         VkDevice device, VkQueue graphics_queue, VkQueue present_queue, bool has_shared_family)
     {
-        // Both queue lookups follow creation and may complete in either order.
         keep(NAMED_REQUIRE_CALL(api, vk_get_device_queue(device, 1, 0, trompeloeil::_))
                  .SIDE_EFFECT(*_4 = graphics_queue)
                  .IN_SEQUENCE(graphics_acquisitions));
@@ -249,7 +266,8 @@ TEST_CASE("[impure] presentation device plans are lazy and retain both parents")
 
     {
         auto plan = reader_io_create_presentation_device<decltype(environment)>(
-            std::move(fixture.instance), std::move(fixture.surface));
+            fixture.instance_context(), std::move(fixture.surface));
+        fixture.instance.reset();
         [[maybe_unused]] auto deferred = plan.build(environment);
 
         // No discovery or acquisition expectation exists until the program executes.
@@ -261,36 +279,40 @@ TEST_CASE("[impure] presentation device plans are lazy and retain both parents")
     CHECK(fixture.is_surface_destroyed);
 }
 
-TEST_CASE("[impure] presentation device setup preserves shared and separate queue roles")
+TEST_CASE("[impure] presentation setup creates independent presentation devices")
 {
     bool has_shared_family = true;
-    SUBCASE("one family supplies both roles") {}
-    SUBCASE("separate families supply each role")
+    std::string_view maintenance1_name = "VK_KHR_swapchain_maintenance1";
+    SUBCASE("KHR with shared queue roles") {}
+    SUBCASE("EXT with separate queue roles")
     {
         has_shared_family = false;
+        maintenance1_name = "VK_EXT_swapchain_maintenance1";
     }
     PresentationFixture fixture;
     PresentationEnvironment environment{std::ref(fixture.api)};
-    VkDevice_T device;
+    VkDevice_T first_device;
+    VkDevice_T second_device;
     VkQueue_T graphics_queue;
-    VkQueue_T other_present_queue;
-    VkQueue const present_queue = has_shared_family ? &graphics_queue : &other_present_queue;
-    fixture.enumerate();
-    fixture.assess(has_shared_family);
-    fixture.create(&device, has_shared_family);
-    fixture.queues(&device, &graphics_queue, present_queue, has_shared_family);
+    VkQueue_T separate_present_queue;
+    VkQueue present_queue = has_shared_family ? &graphics_queue : &separate_present_queue;
+    fixture.selection<2>(maintenance1_name, has_shared_family);
+    fixture.create(&first_device, maintenance1_name);
+    fixture.queues(&first_device, &graphics_queue, present_queue, has_shared_family);
+    fixture.create(&second_device, maintenance1_name);
+    fixture.queues(&second_device, &graphics_queue, present_queue, has_shared_family);
+    auto plan = reader_io_create_presentation_device<decltype(environment)>(
+        fixture.instance_context(), fixture.surface, {text::String{"VK_extra"}});
 
-    presentation_device_result outcome =
-        reader_io_create_presentation_device<decltype(environment)>(
-            fixture.instance,
-            fixture.surface,
-            {text::String{"VK_extra"}, text::String{VK_KHR_SWAPCHAIN_EXTENSION_NAME}})
-            .build(environment)
-            .sync_wait(lf::lazy_pool{2});
+    presentation_device_result first = plan.build(environment).sync_wait(lf::lazy_pool{2});
+    presentation_device_result second =
+        std::move(plan).build(environment).sync_wait(lf::lazy_pool{2});
 
-    REQUIRE(fnfelt::result::is_success(outcome));
-    PresentationDevice const & context = fnfelt::result::get_success(outcome);
-    CHECK_EQ(context.device.get(), &device);
+    REQUIRE(fnfelt::result::is_success(first));
+    REQUIRE(fnfelt::result::is_success(second));
+    PresentationDevice const & context = fnfelt::result::get_success(first);
+    CHECK_EQ(context.device.get(), &first_device);
+    CHECK_EQ(fnfelt::result::get_success(second).device.get(), &second_device);
     CHECK_EQ(context.surface, fixture.surface);
     CHECK_EQ(context.physical_device, &fixture.physical_device);
     CHECK_EQ(context.queue_families.graphics_family_index, queue_family_index{1});
@@ -301,141 +323,118 @@ TEST_CASE("[impure] presentation device setup preserves shared and separate queu
     CHECK_EQ(context.present_queue, present_queue);
 }
 
-TEST_CASE("[impure] presentation device errors bypass subsequent acquisition effects")
+TEST_CASE("[impure] presentation device failures bypass later acquisition")
 {
-    PresentationFixture fixture;
-    PresentationEnvironment environment{std::ref(fixture.api)};
-    VkDevice_T device;
+    bool has_feature = true;
+    bool has_candidates = true;
+    bool has_extra_extension = true;
     VkResult enumeration_status = VK_SUCCESS;
     VkResult extension_status = VK_SUCCESS;
-    bool has_extra_extension = true;
-    bool has_candidates = true;
-    bool should_create_device = false;
-    SUBCASE("enumeration fails")
+    VkResult creation_status = VK_SUCCESS;
+    SUBCASE("physical-device enumeration fails")
     {
         enumeration_status = VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+    SUBCASE("no candidate has the required feature")
+    {
+        has_feature = false;
     }
     SUBCASE("no physical devices exist")
     {
         has_candidates = false;
     }
-    SUBCASE("extension query fails")
-    {
-        extension_status = VK_ERROR_OUT_OF_DEVICE_MEMORY;
-    }
     SUBCASE("a required additional extension is absent")
     {
         has_extra_extension = false;
     }
-    SUBCASE("logical device creation fails")
+    SUBCASE("extension query fails")
     {
-        should_create_device = true;
+        extension_status = VK_ERROR_OUT_OF_DEVICE_MEMORY;
     }
-    fixture.enumerate(has_candidates, enumeration_status);
-    if (has_candidates && enumeration_status == VK_SUCCESS)
+    SUBCASE("logical-device creation fails")
     {
-        fixture.assess(true, has_extra_extension, extension_status);
+        creation_status = VK_ERROR_FEATURE_NOT_PRESENT;
     }
-    if (should_create_device)
+    PresentationFixture fixture;
+    PresentationEnvironment environment{std::ref(fixture.api)};
+    VkDevice_T device;
+    fixture.selection(
+        "VK_EXT_swapchain_maintenance1",
+        true,
+        has_feature,
+        enumeration_status,
+        has_candidates,
+        has_extra_extension,
+        extension_status);
+    if (creation_status != VK_SUCCESS)
     {
-        fixture.create(&device, true, VK_ERROR_INITIALIZATION_FAILED);
+        fixture.create(&device, "VK_EXT_swapchain_maintenance1", creation_status);
     }
 
     presentation_device_result outcome =
         reader_io_create_presentation_device<decltype(environment)>(
-            fixture.instance, fixture.surface, {text::String{"VK_extra"}})
+            fixture.instance_context(), fixture.surface, {text::String{"VK_extra"}})
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
-    // There are no queue expectations, and only the final subcase permits device creation.
+    // Only the final subcase permits creation; none permits a subsequent queue lookup.
     REQUIRE(fnfelt::result::is_error(outcome));
     renderer_error const & failure = fnfelt::result::get_error(outcome);
-    if (!has_candidates || !has_extra_extension)
+    if (!has_feature || !has_candidates || !has_extra_extension)
     {
         CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(failure));
     }
     else
     {
         REQUIRE(std::holds_alternative<VulkanOperationFailure>(failure));
-        VulkanOperationFailure const & operation_failure =
-            std::get<VulkanOperationFailure>(failure);
         CHECK_EQ(
-            operation_failure.cause.result,
-            should_create_device                   ? VK_ERROR_INITIALIZATION_FAILED
-                : enumeration_status != VK_SUCCESS ? enumeration_status
-                                                   : extension_status);
+            std::get<VulkanOperationFailure>(failure).cause.result,
+            enumeration_status != VK_SUCCESS     ? enumeration_status
+                : extension_status != VK_SUCCESS ? extension_status
+                                                 : creation_status);
     }
-    CHECK_FALSE(fixture.is_device_destroyed);
+    CHECK_EQ(fixture.destroyed_devices, 0);
 }
 
-TEST_CASE("[impure] presentation context retains owners after plans and weak observers expire")
+TEST_CASE("[impure] materialized presentation setup retains device and parents")
 {
     PresentationFixture fixture;
     PresentationEnvironment environment{std::ref(fixture.api)};
     VkDevice_T device;
     VkQueue_T queue;
-    fixture.enumerate();
-    fixture.assess();
-    fixture.create(&device, true);
+    fixture.selection("VK_EXT_swapchain_maintenance1");
+    fixture.create(&device, "VK_EXT_swapchain_maintenance1");
     fixture.queues(&device, &queue, &queue, true);
-    presentation_device_result outcome;
+    std::weak_ptr<VkInstance_T> instance_observer = fixture.instance;
+    std::weak_ptr<surface_ptr::element_type> surface_observer = fixture.surface;
+    PresentationDevice owner;
+    std::weak_ptr<VkDevice_T> device_observer;
 
     {
-        auto plan = reader_io_create_presentation_device<decltype(environment)>(
-            std::move(fixture.instance), std::move(fixture.surface), {text::String{"VK_extra"}});
-
-        outcome = plan.build(environment).sync_wait(lf::lazy_pool{2});
+        auto operation =
+            reader_io_create_presentation_device<decltype(environment)>(
+                fixture.instance_context(), fixture.surface, {text::String{"VK_extra"}})
+                .build(environment)
+                .io();
+        fixture.instance.reset();
+        fixture.surface.reset();
+        presentation_device_result outcome = operation.build().sync_wait(lf::lazy_pool{2});
+        REQUIRE(fnfelt::result::is_success(outcome));
+        owner = fnfelt::result::get_success(outcome);
+        device_observer = owner.device;
     }
-
-    REQUIRE(fnfelt::result::is_success(outcome));
-    PresentationDevice retained = fnfelt::result::get_success(outcome);
-    std::weak_ptr<VkDevice_T> device_observer = retained.device;
-    std::weak_ptr<surface_ptr::element_type> surface_observer = retained.surface;
-    outcome = fnfelt::result::stopped<presentation_device_result>();
-
-    // Only the returned context now keeps the device, surface and transitive instance alive.
-    CHECK_FALSE(fixture.is_device_destroyed);
-    CHECK_FALSE(fixture.is_surface_destroyed);
-    CHECK_FALSE(fixture.is_instance_destroyed);
-
-    retained = {};
-
-    CHECK(fixture.is_device_destroyed);
-    CHECK(fixture.is_surface_destroyed);
-    CHECK(fixture.is_instance_destroyed);
+    // All plans and IOs are gone: only the returned context now retains the native parents.
+    CHECK_FALSE(instance_observer.expired());
+    CHECK_FALSE(surface_observer.expired());
+    CHECK_EQ(fixture.destroyed_devices, 0);
+    owner = {};
     CHECK(device_observer.expired());
     CHECK(surface_observer.expired());
+    CHECK(instance_observer.expired());
+    CHECK_EQ(fixture.destroyed_devices, 1);
 }
 
-TEST_CASE("[impure] repeated presentation setup creates independent device owners")
-{
-    PresentationFixture fixture;
-    PresentationEnvironment environment{std::ref(fixture.api)};
-    VkDevice_T first_device;
-    VkDevice_T second_device;
-    VkQueue_T first_queue;
-    VkQueue_T second_queue;
-    fixture.enumerate<2>();
-    fixture.assess<2>();
-    fixture.create(&first_device, true);
-    fixture.queues(&first_device, &first_queue, &first_queue, true);
-    fixture.create(&second_device, true);
-    fixture.queues(&second_device, &second_queue, &second_queue, true);
-    auto plan = reader_io_create_presentation_device<decltype(environment)>(
-        fixture.instance, fixture.surface, {text::String{"VK_extra"}});
-
-    presentation_device_result first = plan.build(environment).sync_wait(lf::lazy_pool{2});
-    presentation_device_result second = plan.build(environment).sync_wait(lf::lazy_pool{2});
-
-    REQUIRE(fnfelt::result::is_success(first));
-    REQUIRE(fnfelt::result::is_success(second));
-    CHECK_EQ(fnfelt::result::get_success(first).device.get(), &first_device);
-    CHECK_EQ(fnfelt::result::get_success(second).device.get(), &second_device);
-    CHECK_EQ(fnfelt::result::get_success(first).graphics_queue, &first_queue);
-    CHECK_EQ(fnfelt::result::get_success(second).present_queue, &second_queue);
-}
-
-TEST_CASE("[integration][windowed] an SDL surface supports an owned presentation device")
+TEST_CASE("[integration][windowed] a presentation device retains its selected owners")
 {
     backend::Api api;
     using environment_type = sdl::detail::TestState<backend::Api>;
@@ -450,33 +449,37 @@ TEST_CASE("[integration][windowed] an SDL surface supports an owned presentation
     sdl::sdl_result<SDL_Window *> window =
         runtime.run(sdl::state_io_sdl_create_window<state_type>(options));
     REQUIRE(fnfelt::result::is_success(window));
-    sdl::sdl_result<immer::array<extension_name>> extensions = runtime.run(
-        sdl::reader_io_sdl_vulkan_get_instance_extensions<environment_type>(
-            fnfelt::result::get_success(window)));
-    REQUIRE(fnfelt::result::is_success(extensions));
-    renderer_result<instance_ptr> instance = runtime.run(
-        reader_io_vk_create_instance<environment_type>(fnfelt::result::get_success(extensions)));
+    renderer_result<PresentationInstance> instance = runtime.run(
+        reader_io_create_presentation_instance<environment_type>(runtime.resources().window_owner));
+    if (fnfelt::result::is_error(instance))
+    {
+        CHECK(
+            std::holds_alternative<PresentationInstanceFailure>(
+                fnfelt::result::get_error(instance)));
+        return;
+    }
     REQUIRE(fnfelt::result::is_success(instance));
+    PresentationInstance context = fnfelt::result::get_success(instance);
     sdl::sdl_result<surface_ptr> surface = runtime.run(
         sdl::reader_io_sdl_vulkan_create_surface<environment_type>(
-            runtime.resources().window_owner, fnfelt::result::get_success(instance)));
+            runtime.resources().window_owner, context.instance));
     REQUIRE(fnfelt::result::is_success(surface));
 
     presentation_device_result outcome = runtime.run(
         reader_io_create_presentation_device<environment_type>(
-            fnfelt::result::get_success(instance), fnfelt::result::get_success(surface)));
+            context, fnfelt::result::get_success(surface)));
 
-    REQUIRE(fnfelt::result::is_success(outcome));
-    PresentationDevice const & context = fnfelt::result::get_success(outcome);
-    CHECK_NE(context.device.get(), VK_NULL_HANDLE);
-    CHECK_NE(context.graphics_queue, VK_NULL_HANDLE);
-    CHECK_NE(context.present_queue, VK_NULL_HANDLE);
-    CHECK_EQ(context.surface, fnfelt::result::get_success(surface));
-    if (context.queue_families.graphics_family_index == context.queue_families.present_family_index)
+    if (fnfelt::result::is_error(outcome))
     {
-        CHECK_EQ(context.graphics_queue, context.present_queue);
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(outcome)));
+        return;
     }
-    // No queue work or device children were created; owners can be released at scope exit.
+    REQUIRE(fnfelt::result::is_success(outcome));
+    PresentationDevice const & created = fnfelt::result::get_success(outcome);
+    CHECK_NE(created.device.get(), VK_NULL_HANDLE);
+    CHECK_NE(created.graphics_queue, VK_NULL_HANDLE);
+    CHECK_NE(created.present_queue, VK_NULL_HANDLE);
+    CHECK_EQ(created.surface, fnfelt::result::get_success(surface));
 }
 }  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE

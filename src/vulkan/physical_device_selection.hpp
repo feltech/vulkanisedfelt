@@ -23,6 +23,7 @@
 #include "./physical_device_selection_types.hpp"
 #include "./physical_devices.hpp"
 #include "./physical_devices_types.hpp"
+#include "./presentation_instance_types.hpp"
 #include "./renderer_errors.hpp"
 #include "detail/physical_device_selection.hpp"
 
@@ -93,46 +94,45 @@ template <detail::select_headless_physical_device_environment TEnvironment>
 }
 
 /**
- * Discovers a Vulkan 1.1 graphics and presentation device supporting the swapchain extension.
+ * Selects a Vulkan 1.1 presentation device with an enabled-instance maintenance1 path.
  *
- * The surface and instance must share the same parent Vulkan instance. All independent assessments
- * finish before any stop takes precedence over errors; otherwise the first error in enumeration
- * order wins. The borrowed API and main-thread cleanup context must outlive retained owners and
- * outstanding queries.
- * Surface formats, present modes and swapchain creation are separate operations.
+ * The surface and instance must share a parent. The selected extension is supported but remains
+ * disabled until logical-device creation explicitly enables the extension and feature. Every
+ * assessment completes before cancellation takes precedence over errors; otherwise the first
+ * query error in enumeration order wins. APIs and cleanup contexts must outlive retained owners.
  *
  * @tparam TEnvironment Execution environment type.
- * @param instance Nonempty parent instance owner.
- * @param surface Nonempty surface owner from that instance.
- * @param required_extension_names Additional required complete extension names.
- * @return Reusable ReaderIO producing an owning selection or discovery error.
+ * @param instance Parent owner and the extensions actually enabled on it.
+ * @param surface Nonempty surface belonging to that instance.
+ * @param required_extension_names Additional required complete device extension names.
+ * @return Reusable ReaderIO providing an owning required-capability selection or discovery error.
  */
 template <detail::select_presentation_physical_device_environment TEnvironment>
 [[nodiscard]] constexpr auto reader_io_select_presentation_physical_device(
-    instance_ptr instance,
+    PresentationInstance instance,
     surface_ptr surface,
     immer::array<text::String> required_extension_names = {})
 {
     // GCC currently rejects preconditions on this deduced-return factory.
-    contract_assert(instance.get() != VK_NULL_HANDLE && surface.get() != VK_NULL_HANDLE);
+    contract_assert(instance.instance != nullptr && surface != nullptr);
 
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // ReaderIO providing handles belonging to the retained instance.
+    // ReaderIO providing the retained instance's handles or a renderer enumeration failure.
     auto enumeration = reader_io::transform_error<"presentation_device_enumeration_error"_ss>(
-        reader_io_vk_enumerate_physical_devices<TEnvironment>(instance.get()),
+        reader_io_vk_enumerate_physical_devices<TEnvironment>(instance.instance.get()),
         renderer_error_from_vulkan_failure);
 
-    // Continuation providing swapchain-aware assessments for the enumerated devices.
-    auto select_presentation_device = std::bind_front(
+    // Continuation providing assessments using the instance's canonical enabled extension names.
+    auto select_device = std::bind_front(
         detail::reader_io_select_from_presentation_devices<TEnvironment>,
         std::move(instance),
         std::move(surface),
         std::move(required_extension_names));
 
-    // ReaderIO providing the selected device and both parent lifetimes.
+    // ReaderIO providing the selected device, parents and required maintenance1 path.
     return reader_io::and_then<"discover_presentation_physical_device"_ss>(
-        std::move(enumeration), std::move(select_presentation_device));
+        std::move(enumeration), std::move(select_device));
 }
 }  // namespace vulkandemo::vulkan

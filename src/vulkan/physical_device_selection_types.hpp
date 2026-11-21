@@ -16,6 +16,7 @@
 #include <strong_type/regular.hpp>
 #include <strong_type/type.hpp>
 
+#include "./extension_types.hpp"
 #include "./managed_handles_types.hpp"
 #include "./physical_devices_types.hpp"
 #include "./queue_family_selection_types.hpp"
@@ -63,6 +64,8 @@ struct SelectedPresentationPhysicalDevice
     VkPhysicalDevice physical_device;
     /** Graphics and presentation queue families. */
     PresentationQueueFamilies queue_families;
+    /** Compatible device extension whose maintenance1 feature must be enabled at creation. */
+    extension_name maintenance1_extension;
 };
 
 /** Outcome of presentation-aware physical-device selection. */

@@ -26,10 +26,15 @@
 #include "../queue_types.hpp"
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <functional>
 #include <memory>
 #include <variant>
 
 #include <doctest/doctest.h>
+#include <doctest/trompeloeil.hpp>
+#include <libfork/schedule/lazy_pool.hpp>
+
+#include "../../backend/mock_api.hpp"
 
 struct VkInstance_T
 {
@@ -115,6 +120,14 @@ auto assess_presentation_device_suitability(
     return {properties, std::move(queues), has_extensions};
 }
 
+auto with_presentation_maintenance1_support(
+    PresentationDeviceAssessment presentation, std::optional<extension_name> maintenance1_extension)
+    -> PresentationDeviceAssessment
+{
+    presentation.maintenance1_extension = std::move(maintenance1_extension);
+    return presentation;
+}
+
 auto select_presentation_device_index(
     immer::array<PresentationDeviceAssessment> const & assessments)
     -> std::optional<physical_device_index>
@@ -130,7 +143,8 @@ auto select_presentation_device_index(
     {
         PresentationDeviceAssessment const & assessment = assessments[value_of(score.device_index)];
         if (supports_api_version(api_version{assessment.properties.apiVersion}) &&
-            assessment.queue_families && assessment.has_required_extensions)
+            assessment.queue_families && assessment.has_required_extensions &&
+            assessment.maintenance1_extension.has_value())
         {
             candidates.push_back(score);
         }
@@ -157,7 +171,11 @@ auto select_presentation_device_from_assessments(
     std::uint32_t index = value_of(*selected_device_index);
     PresentationDeviceAssessment const & assessment = assessments[index];
     return result::success<result_type>(SelectedPresentationPhysicalDevice{
-        instance, surface, handles[index], *assessment.queue_families});
+        instance,
+        surface,
+        handles[index],
+        *assessment.queue_families,
+        *assessment.maintenance1_extension});
 }
 
 auto sequence_physical_device_query_results(
@@ -554,12 +572,18 @@ TEST_CASE("[pure] presentation ranking preserves original eligible indices and f
     VkPhysicalDeviceProperties old_version = discrete;
     old_version.apiVersion = VK_API_VERSION_1_0;
     PresentationQueueFamilies queues{queue_family_index{3}, queue_family_index{7}};
-    detail::PresentationDeviceAssessment first_eligible{discrete, queues, true};
+    detail::PresentationDeviceAssessment first_eligible{
+        discrete, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}};
     std::optional expected_index{physical_device_index{2}};
     SUBCASE("old high-scoring prefix and a tied eligible suffix") {}
     SUBCASE("missing queue families exclude the first minimum")
     {
         first_eligible.queue_families = std::nullopt;
+        expected_index = physical_device_index{3};
+    }
+    SUBCASE("missing maintenance1 support excludes the first minimum")
+    {
+        first_eligible.maintenance1_extension = std::nullopt;
         expected_index = physical_device_index{3};
     }
     SUBCASE("missing required extensions exclude the first minimum")
@@ -568,10 +592,10 @@ TEST_CASE("[pure] presentation ranking preserves original eligible indices and f
         expected_index = physical_device_index{3};
     }
     immer::array<detail::PresentationDeviceAssessment> assessments{
-        {old_version, queues, true},
-        {integrated, queues, true},
+        {old_version, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}},
+        {integrated, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}},
         first_eligible,
-        {discrete, queues, true}};
+        {discrete, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}}};
     SUBCASE("empty snapshot")
     {
         assessments = {};
@@ -580,7 +604,9 @@ TEST_CASE("[pure] presentation ranking preserves original eligible indices and f
     SUBCASE("no eligible assessments")
     {
         assessments = {
-            {old_version, queues, true}, {discrete, std::nullopt, true}, {discrete, queues, false}};
+            {old_version, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}},
+            {discrete, std::nullopt, true},
+            {discrete, queues, false}};
         expected_index = std::nullopt;
     }
 
@@ -641,6 +667,130 @@ TEST_CASE("[pure] presentation assessment uses successful capability snapshots")
     REQUIRE(assessment.queue_families.has_value());
     CHECK_EQ(assessment.queue_families->graphics_family_index, queues.graphics_family_index);
     CHECK_EQ(assessment.queue_families->present_family_index, queues.present_family_index);
+}
+
+TEST_CASE("[pure] presentation selection retrieves the path at the ranked original index")
+{
+    namespace result = fnfelt::result;
+    VkInstance_T native_instance;
+    VkPhysicalDevice_T first, second, third;
+    char surface_storage{};
+    instance_ptr instance{&native_instance, [](auto) {}};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&surface_storage), [](auto) {}};
+    VkPhysicalDeviceProperties discrete{};
+    discrete.apiVersion = VK_API_VERSION_1_1;
+    discrete.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    VkPhysicalDeviceProperties integrated = discrete;
+    integrated.deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    PresentationQueueFamilies queues{queue_family_index{3}, queue_family_index{7}};
+    immer::array<detail::PresentationDeviceAssessment> assessments{
+        {discrete, queues, true, std::nullopt},
+        {integrated, queues, true, extension_name{"VK_EXT_swapchain_maintenance1"}},
+        {discrete, queues, true, extension_name{"VK_KHR_swapchain_maintenance1"}}};
+    bool has_eligible_device = true;
+    SUBCASE("ranked extension keeps its original index after an unsupported prefix") {}
+    SUBCASE("no maintenance1 path is eligible")
+    {
+        assessments = {{discrete, queues, true, std::nullopt}};
+        has_eligible_device = false;
+    }
+    immer::array<VkPhysicalDevice> handles = has_eligible_device
+        ? immer::array<VkPhysicalDevice>{&first, &second, &third}
+        : immer::array<VkPhysicalDevice>{&first};
+
+    presentation_physical_device_selection_result outcome =
+        detail::select_presentation_device_from_assessments(
+            instance, surface, handles, assessments);
+
+    if (has_eligible_device)
+    {
+        REQUIRE(result::is_success(outcome));
+        SelectedPresentationPhysicalDevice const & selected = result::get_success(outcome);
+        CHECK_EQ(selected.physical_device, &third);
+        CHECK_EQ(selected.queue_families.graphics_family_index, queues.graphics_family_index);
+        CHECK_EQ(value_of(selected.maintenance1_extension).view(), "VK_KHR_swapchain_maintenance1");
+    }
+    else
+    {
+        REQUIRE(result::is_error(outcome));
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(result::get_error(outcome)));
+    }
+}
+
+TEST_CASE("[impure] presentation assessment reuses the presentation extension snapshot")
+{
+    backend::MockApi api;
+    struct Environment
+    {
+        std::reference_wrapper<backend::MockApi> api;
+    } environment{std::ref(api)};
+    VkInstance_T instance_handle;
+    VkPhysicalDevice_T device;
+    char surface_storage{};
+    instance_ptr instance{&instance_handle, [](auto *) {}};
+    PresentationInstance context{
+        instance,
+        {extension_name{VK_KHR_SURFACE_EXTENSION_NAME},
+         extension_name{VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME},
+         extension_name{"VK_EXT_surface_maintenance1"}}};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&surface_storage), [](auto) {}};
+    bool has_feature = true;
+    SUBCASE("supported feature") {}
+    SUBCASE("unsupported feature remains successful suitability data")
+    {
+        has_feature = false;
+    }
+    immer::array extensions{
+        extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")};
+    VkQueueFamilyProperties family = queue(VK_QUEUE_GRAPHICS_BIT);
+    REQUIRE_CALL(api, vk_get_physical_device_properties(&device, trompeloeil::_))
+        .SIDE_EFFECT(_2->apiVersion = VK_API_VERSION_1_1)
+        .SIDE_EFFECT(_2->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU);
+    REQUIRE_CALL(
+        api, vk_get_physical_device_queue_family_properties(&device, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_2 = 1);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_queue_family_properties(&device, trompeloeil::_, trompeloeil::_))
+        .WITH(_3 != nullptr)
+        .LR_SIDE_EFFECT(*_3 = family);
+    REQUIRE_CALL(
+        api, vk_enumerate_device_extension_properties(&device, nullptr, trompeloeil::_, nullptr))
+        .LR_SIDE_EFFECT(*_3 = static_cast<std::uint32_t>(extensions.size()))
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_enumerate_device_extension_properties(&device, nullptr, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .LR_SIDE_EFFECT(std::ranges::copy(extensions, _4))
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api, vk_get_physical_device_surface_support_khr(&device, 0, surface.get(), trompeloeil::_))
+        .SIDE_EFFECT(*_4 = VK_TRUE)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(api, vk_get_physical_device_features2(&device, trompeloeil::_))
+        .LR_SIDE_EFFECT(
+            static_cast<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(_2->pNext)
+                ->swapchainMaintenance1 = has_feature ? VK_TRUE : VK_FALSE);
+
+    // Exactly one count/fill enumeration supplies both generic and maintenance1 suitability.
+    detail::presentation_device_assessment_result outcome =
+        detail::reader_io_assess_presentation_device<decltype(environment)>(
+            context, surface, {}, &device)
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(outcome));
+    detail::PresentationDeviceAssessment const & assessment = fnfelt::result::get_success(outcome);
+    CHECK(assessment.has_required_extensions);
+    REQUIRE(assessment.queue_families.has_value());
+    CHECK_EQ(assessment.queue_families->graphics_family_index, queue_family_index{0});
+    CHECK_EQ(assessment.maintenance1_extension.has_value(), has_feature);
+    if (has_feature)
+    {
+        CHECK_EQ(
+            value_of(*assessment.maintenance1_extension).view(), "VK_EXT_swapchain_maintenance1");
+    }
 }
 
 }  // namespace vulkandemo::vulkan

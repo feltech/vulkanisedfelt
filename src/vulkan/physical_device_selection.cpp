@@ -48,6 +48,7 @@
 #include "./extension_types.hpp"
 #include "./instance.hpp"
 #include "./managed_handles.hpp"
+#include "./presentation_instance.hpp"
 #include "./queue_family_properties.hpp"
 #include "./renderer_errors.hpp"
 
@@ -320,6 +321,14 @@ struct SelectionFixture
                      .RETURN(status));
         }
     }
+
+    void maintenance1_support(VkPhysicalDevice device, bool has_feature)
+    {
+        keep(NAMED_REQUIRE_CALL(api, vk_get_physical_device_features2(device, trompeloeil::_))
+                 .SIDE_EFFECT(
+                     static_cast<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(_2->pNext)
+                         ->swapchainMaintenance1 = has_feature ? VK_TRUE : VK_FALSE));
+    }
 };
 
 auto queue(VkQueueFlags flags) -> VkQueueFamilyProperties
@@ -340,6 +349,15 @@ auto extension(char const * name) -> VkExtensionProperties
 auto name_bytes(char const * name) -> text::String
 {
     return text::String{name};
+}
+
+auto enabled_maintenance1_extensions() -> immer::array<extension_name>
+{
+    return {
+        extension_name{VK_KHR_SURFACE_EXTENSION_NAME},
+        extension_name{VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME},
+        extension_name{"VK_KHR_surface_maintenance1"},
+        extension_name{"VK_EXT_surface_maintenance1"}};
 }
 }  // namespace
 
@@ -755,7 +773,8 @@ TEST_CASE("[impure] presentation selection plans retain parents without querying
 
     {
         auto plan = reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, std::move(surface));
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()},
+            std::move(surface));
         [[maybe_unused]] auto deferred = plan.build(environment);
 
         CHECK_FALSE(observer.expired());
@@ -780,7 +799,8 @@ TEST_CASE("[impure] presentation selection distinguishes enumeration failure fro
 
     presentation_physical_device_selection_result outcome =
         reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, std::move(surface))
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()},
+            std::move(surface))
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
@@ -810,8 +830,11 @@ TEST_CASE(
         &first,
         VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
         {queue(VK_QUEUE_GRAPHICS_BIT)},
-        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_extra")});
+        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+         extension("VK_EXT_swapchain_maintenance1"),
+         extension("VK_extra")});
     fixture.presentation_support(&first, surface.get(), {true});
+    fixture.maintenance1_support(&first, true);
     // A discrete GPU without the swapchain extension is unsuitable despite shared queues.
     fixture.probe(
         &second,
@@ -823,12 +846,17 @@ TEST_CASE(
         &third,
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
         {queue(VK_QUEUE_TRANSFER_BIT), queue(VK_QUEUE_GRAPHICS_BIT), queue(0)},
-        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_extra")});
+        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+         extension("VK_EXT_swapchain_maintenance1"),
+         extension("VK_extra")});
     fixture.presentation_support(&third, surface.get(), {false, false, true});
+    fixture.maintenance1_support(&third, true);
 
     presentation_physical_device_selection_result outcome =
         reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, surface, {text::String{"VK_extra"}})
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()},
+            surface,
+            {text::String{"VK_extra"}})
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
@@ -864,7 +892,8 @@ TEST_CASE("[impure] presentation selection requires Vulkan 1.1 before ranking su
         expected = VK_NULL_HANDLE;
     }
     fixture.devices({&first, &second, &third});
-    immer::array available{extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)};
+    immer::array available{
+        extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")};
     fixture.probe(
         &first,
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
@@ -873,6 +902,7 @@ TEST_CASE("[impure] presentation selection requires Vulkan 1.1 before ranking su
         VK_SUCCESS,
         api_version{VK_MAKE_API_VERSION(0, 1, 0, 1023)});
     fixture.presentation_support(&first, surface.get(), {true});
+    fixture.maintenance1_support(&first, true);
     fixture.probe(
         &second,
         VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
@@ -881,6 +911,7 @@ TEST_CASE("[impure] presentation selection requires Vulkan 1.1 before ranking su
         VK_SUCCESS,
         second_version);
     fixture.presentation_support(&second, surface.get(), {true});
+    fixture.maintenance1_support(&second, true);
     fixture.probe(
         &third,
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
@@ -889,10 +920,11 @@ TEST_CASE("[impure] presentation selection requires Vulkan 1.1 before ranking su
         VK_SUCCESS,
         third_version);
     fixture.presentation_support(&third, surface.get(), {false, false, true});
+    fixture.maintenance1_support(&third, true);
 
     presentation_physical_device_selection_result outcome =
         reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, surface)
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()}, surface)
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
@@ -919,7 +951,8 @@ TEST_CASE("[impure] presentation selection requires exact extensions and both qu
     surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&storage), [](auto) {}};
     VkPhysicalDevice_T device;
     immer::array<VkQueueFamilyProperties> families{queue(VK_QUEUE_GRAPHICS_BIT)};
-    immer::array<VkExtensionProperties> available{extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)};
+    immer::array<VkExtensionProperties> available{
+        extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")};
     immer::array<bool> support{true};
     immer::array<text::String> required;
     SUBCASE("missing graphics")
@@ -950,10 +983,21 @@ TEST_CASE("[impure] presentation selection requires exact extensions and both qu
     fixture.devices({&device});
     fixture.probe(&device, VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, families, available);
     fixture.presentation_support(&device, surface.get(), support);
+    if (std::ranges::any_of(
+            available,
+            [](auto const & extension)
+            {
+                return std::string_view{extension.extensionName} == "VK_EXT_swapchain_maintenance1";
+            }))
+    {
+        fixture.maintenance1_support(&device, true);
+    }
 
     presentation_physical_device_selection_result outcome =
         reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, surface, required)
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()},
+            surface,
+            required)
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
@@ -989,7 +1033,7 @@ TEST_CASE(
 
     presentation_physical_device_selection_result outcome =
         reader_io_select_presentation_physical_device<decltype(environment)>(
-            fixture.instance, surface)
+            PresentationInstance{fixture.instance, enabled_maintenance1_extensions()}, surface)
             .build(environment)
             .sync_wait(lf::lazy_pool{2});
 
@@ -1020,10 +1064,12 @@ TEST_CASE("[impure] presentation selection reuses plans and retains both parent 
         &device,
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
         {queue(VK_QUEUE_GRAPHICS_BIT)},
-        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)});
+        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")});
     fixture.presentation_support(&device, surface.get(), {true});
+    fixture.maintenance1_support(&device, true);
     auto plan = reader_io_select_presentation_physical_device<decltype(environment)>(
-        fixture.instance, std::move(surface));
+        PresentationInstance{fixture.instance, enabled_maintenance1_extensions()},
+        std::move(surface));
 
     presentation_physical_device_selection_result first =
         plan.build(environment).sync_wait(lf::lazy_pool{2});
@@ -1033,8 +1079,9 @@ TEST_CASE("[impure] presentation selection reuses plans and retains both parent 
         &device,
         VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
         {queue(VK_QUEUE_GRAPHICS_BIT)},
-        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME)});
+        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")});
     fixture.presentation_support(&device, observer.lock().get(), {true});
+    fixture.maintenance1_support(&device, true);
     presentation_physical_device_selection_result second =
         std::move(plan).build(environment).sync_wait(lf::lazy_pool{2});
     fixture.instance.reset();
@@ -1055,7 +1102,228 @@ TEST_CASE("[impure] presentation selection reuses plans and retains both parent 
     CHECK(instance_observer.expired());
 }
 
-TEST_CASE("[integration][windowed] presentation selection discovers queues for an SDL surface")
+TEST_CASE("[impure] presentation selection filters unsupported devices before ranking")
+{
+    SelectionFixture fixture;
+    SelectionEnvironment environment{std::ref(fixture.api)};
+    char storage{};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&storage), [](auto) {}};
+    PresentationInstance context{fixture.instance, enabled_maintenance1_extensions()};
+    VkPhysicalDevice_T first, second;
+    bool has_matching_first_path = true;
+    bool has_second_feature = true;
+    immer::array second_extensions{
+        extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")};
+    std::string_view expected_name = "VK_EXT_swapchain_maintenance1";
+    SUBCASE("a false feature on the preferred GPU falls back to an integrated GPU") {}
+    SUBCASE("KHR is preferred when both complete paths exist")
+    {
+        second_extensions = {
+            extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+            extension("VK_EXT_swapchain_maintenance1"),
+            extension("VK_KHR_swapchain_maintenance1")};
+        expected_name = "VK_KHR_swapchain_maintenance1";
+    }
+    SUBCASE("an unmatched device family skips its feature query")
+    {
+        context.enabled_extensions = {
+            extension_name{VK_KHR_SURFACE_EXTENSION_NAME},
+            extension_name{VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME},
+            extension_name{"VK_KHR_surface_maintenance1"}};
+        second_extensions = {
+            extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_KHR_swapchain_maintenance1")};
+        expected_name = "VK_KHR_swapchain_maintenance1";
+        has_matching_first_path = false;
+    }
+    SUBCASE("no supported candidate reports no suitable device")
+    {
+        has_second_feature = false;
+    }
+    fixture.devices({&first, &second});
+    fixture.probe(
+        &first,
+        VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+        {queue(VK_QUEUE_GRAPHICS_BIT)},
+        {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME), extension("VK_EXT_swapchain_maintenance1")});
+    fixture.presentation_support(&first, surface.get(), {true});
+    if (has_matching_first_path)
+    {
+        fixture.maintenance1_support(&first, false);
+    }
+    fixture.probe(
+        &second,
+        VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+        {queue(VK_QUEUE_TRANSFER_BIT), queue(VK_QUEUE_GRAPHICS_BIT), queue(0)},
+        second_extensions);
+    fixture.presentation_support(&second, surface.get(), {false, false, true});
+    fixture.maintenance1_support(&second, has_second_feature);
+
+    // Each device's single extension enumeration feeds both presentation and maintenance policy.
+    presentation_physical_device_selection_result outcome =
+        reader_io_select_presentation_physical_device<decltype(environment)>(context, surface)
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    if (!has_second_feature)
+    {
+        REQUIRE(fnfelt::result::is_error(outcome));
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(outcome)));
+        return;
+    }
+    REQUIRE(fnfelt::result::is_success(outcome));
+    SelectedPresentationPhysicalDevice const & selected = fnfelt::result::get_success(outcome);
+    CHECK_EQ(selected.physical_device, &second);
+    CHECK_EQ(selected.queue_families.graphics_family_index, queue_family_index{1});
+    CHECK_EQ(selected.queue_families.present_family_index, queue_family_index{2});
+    CHECK_EQ(value_of(selected.maintenance1_extension).view(), expected_name);
+    CHECK_EQ(selected.instance, context.instance);
+    CHECK_EQ(selected.surface, surface);
+}
+
+TEST_CASE("[impure] presentation selection preserves failures before filtering unsupported devices")
+{
+    SelectionFixture fixture;
+    SelectionEnvironment environment{std::ref(fixture.api)};
+    char storage{};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&storage), [](auto) {}};
+    PresentationInstance context{fixture.instance, enabled_maintenance1_extensions()};
+    VkPhysicalDevice_T first, second;
+    bool has_enumeration_error = false;
+    bool has_no_devices = false;
+    SUBCASE("extension error on an otherwise unsupported candidate") {}
+    SUBCASE("physical-device enumeration failure")
+    {
+        has_enumeration_error = true;
+    }
+    SUBCASE("empty device enumeration")
+    {
+        has_no_devices = true;
+    }
+    if (has_enumeration_error || has_no_devices)
+    {
+        fixture.devices({}, has_enumeration_error ? VK_ERROR_INITIALIZATION_FAILED : VK_SUCCESS);
+    }
+    else
+    {
+        fixture.devices({&first, &second});
+        fixture.probe(
+            &first,
+            VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+            {queue(0)},
+            {},
+            VK_ERROR_OUT_OF_HOST_MEMORY);
+        fixture.presentation_support(&first, surface.get(), {false});
+        fixture.probe(
+            &second,
+            VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU,
+            {queue(VK_QUEUE_GRAPHICS_BIT)},
+            {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+             extension("VK_EXT_swapchain_maintenance1")});
+        fixture.presentation_support(&second, surface.get(), {true});
+        fixture.maintenance1_support(&second, true);
+    }
+
+    presentation_physical_device_selection_result outcome =
+        reader_io_select_presentation_physical_device<decltype(environment)>(context, surface)
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_error(outcome));
+    if (has_no_devices)
+    {
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(outcome)));
+    }
+    else
+    {
+        auto const & failure = std::get<VulkanOperationFailure>(fnfelt::result::get_error(outcome));
+        CHECK_EQ(
+            failure.cause.operation,
+            has_enumeration_error ? FallibleVulkanOperation::enumerate_physical_devices
+                                  : FallibleVulkanOperation::enumerate_device_extensions);
+        CHECK_EQ(
+            failure.cause.result,
+            has_enumeration_error ? VK_ERROR_INITIALIZATION_FAILED : VK_ERROR_OUT_OF_HOST_MEMORY);
+    }
+}
+
+TEST_CASE(
+    "[impure] presentation selection retains executed parents and required extension ownership")
+{
+    SelectionFixture fixture;
+    SelectionEnvironment environment{std::ref(fixture.api)};
+    char storage{};
+    surface_ptr surface{reinterpret_cast<VkSurfaceKHR>(&storage), [](auto) {}};
+    std::weak_ptr surface_observer{surface};
+    std::weak_ptr instance_observer{fixture.instance};
+    PresentationInstance context{fixture.instance, enabled_maintenance1_extensions()};
+    VkPhysicalDevice_T device;
+    auto expect_queries = [&]
+    {
+        fixture.keep(NAMED_REQUIRE_CALL(
+                         fixture.api,
+                         vk_enumerate_physical_devices(&fixture.handle, trompeloeil::_, nullptr))
+                         .LR_SIDE_EFFECT(CHECK_FALSE(instance_observer.expired()))
+                         .LR_SIDE_EFFECT(CHECK_FALSE(surface_observer.expired()))
+                         .SIDE_EFFECT(*_2 = 1)
+                         .RETURN(VK_SUCCESS));
+        fixture.keep(
+            NAMED_REQUIRE_CALL(
+                fixture.api,
+                vk_enumerate_physical_devices(&fixture.handle, trompeloeil::_, trompeloeil::_))
+                .WITH(_3 != nullptr)
+                .LR_SIDE_EFFECT(CHECK_FALSE(instance_observer.expired()))
+                .LR_SIDE_EFFECT(CHECK_FALSE(surface_observer.expired()))
+                .LR_SIDE_EFFECT(*_3 = &device)
+                .RETURN(VK_SUCCESS));
+        fixture.probe(
+            &device,
+            VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU,
+            {queue(VK_QUEUE_GRAPHICS_BIT)},
+            {extension(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+             extension("VK_EXT_swapchain_maintenance1")});
+        fixture.presentation_support(&device, reinterpret_cast<VkSurfaceKHR>(&storage), {true});
+        fixture.keep(
+            NAMED_REQUIRE_CALL(
+                fixture.api, vk_get_physical_device_features2(&device, trompeloeil::_))
+                .LR_SIDE_EFFECT(CHECK_FALSE(instance_observer.expired()))
+                .LR_SIDE_EFFECT(CHECK_FALSE(surface_observer.expired()))
+                .SIDE_EFFECT(
+                    static_cast<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(_2->pNext)
+                        ->swapchainMaintenance1 = VK_TRUE));
+    };
+    expect_queries();
+
+    // The temporary factory is discarded before execution; only its materialized IO owns parents.
+    auto operation = reader_io_select_presentation_physical_device<decltype(environment)>(
+                         std::move(context), std::move(surface))
+                         .build(environment)
+                         .io();
+    fixture.instance.reset();
+    CHECK_FALSE(instance_observer.expired());
+    CHECK_FALSE(surface_observer.expired());
+    presentation_physical_device_selection_result first =
+        operation.build().sync_wait(lf::lazy_pool{2});
+    REQUIRE(fnfelt::result::is_success(first));
+    expect_queries();
+    presentation_physical_device_selection_result outcome =
+        std::move(operation).build().sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(outcome));
+    SelectedPresentationPhysicalDevice selected = fnfelt::result::get_success(std::move(outcome));
+    CHECK_EQ(value_of(selected.maintenance1_extension).view(), "VK_EXT_swapchain_maintenance1");
+    CHECK_FALSE(instance_observer.expired());
+    CHECK_FALSE(surface_observer.expired());
+    SelectedPresentationPhysicalDevice & first_selection = fnfelt::result::get_success(first);
+    first_selection.surface.reset();
+    first_selection.instance.reset();
+    selected.surface.reset();
+    selected.instance.reset();
+    CHECK(instance_observer.expired());
+    CHECK(surface_observer.expired());
+    CHECK_EQ(value_of(selected.maintenance1_extension).view(), "VK_EXT_swapchain_maintenance1");
+}
+
+TEST_CASE("[integration][windowed] presentation selection retains its enabled path")
 {
     backend::Api api;
     using environment_type = sdl::detail::TestState<backend::Api>;
@@ -1070,36 +1338,47 @@ TEST_CASE("[integration][windowed] presentation selection discovers queues for a
     sdl::sdl_result<SDL_Window *> window =
         runtime.run(sdl::state_io_sdl_create_window<state_type>(options));
     REQUIRE(fnfelt::result::is_success(window));
-    sdl::sdl_result<immer::array<extension_name>> extensions = runtime.run(
-        sdl::reader_io_sdl_vulkan_get_instance_extensions<environment_type>(
-            fnfelt::result::get_success(window)));
-    REQUIRE(fnfelt::result::is_success(extensions));
-    renderer_result<instance_ptr> instance = runtime.run(
-        reader_io_vk_create_instance<environment_type>(fnfelt::result::get_success(extensions)));
+    renderer_result<PresentationInstance> instance = runtime.run(
+        reader_io_create_presentation_instance<environment_type>(runtime.resources().window_owner));
+    if (fnfelt::result::is_error(instance))
+    {
+        // An unavailable instance path is a supported discovery outcome on this platform.
+        CHECK(
+            std::holds_alternative<PresentationInstanceFailure>(
+                fnfelt::result::get_error(instance)));
+        return;
+    }
     REQUIRE(fnfelt::result::is_success(instance));
+    PresentationInstance context = fnfelt::result::get_success(std::move(instance));
     sdl::sdl_result<surface_ptr> surface = runtime.run(
         sdl::reader_io_sdl_vulkan_create_surface<environment_type>(
-            runtime.resources().window_owner, fnfelt::result::get_success(instance)));
+            runtime.resources().window_owner, context.instance));
     REQUIRE(fnfelt::result::is_success(surface));
 
-    // The query chain selects physical-device capabilities without creating a logical device.
+    // This establishes suitability only; no logical-device feature is enabled or work submitted.
     presentation_physical_device_selection_result outcome = runtime.run(
         reader_io_select_presentation_physical_device<environment_type>(
-            fnfelt::result::get_success(instance), fnfelt::result::get_success(surface)));
+            context, fnfelt::result::get_success(surface)));
 
+    if (fnfelt::result::is_error(outcome))
+    {
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(outcome)));
+        return;
+    }
     REQUIRE(fnfelt::result::is_success(outcome));
-    SelectedPresentationPhysicalDevice const & selected_device =
-        fnfelt::result::get_success(outcome);
-    CHECK_NE(selected_device.physical_device, VK_NULL_HANDLE);
-    CHECK_EQ(selected_device.instance, fnfelt::result::get_success(instance));
-    CHECK_EQ(selected_device.surface, fnfelt::result::get_success(surface));
+    SelectedPresentationPhysicalDevice const & selected = fnfelt::result::get_success(outcome);
+    CHECK_NE(selected.physical_device, VK_NULL_HANDLE);
+    CHECK_EQ(selected.instance, context.instance);
+    CHECK_EQ(selected.surface, fnfelt::result::get_success(surface));
     vulkan_result<bool> support = runtime.run(
         reader_io_vk_get_physical_device_surface_support_khr<environment_type>(
-            selected_device.physical_device,
-            selected_device.queue_families.present_family_index,
-            selected_device.surface));
+            selected.physical_device,
+            selected.queue_families.present_family_index,
+            selected.surface));
     REQUIRE(fnfelt::result::is_success(support));
     CHECK(fnfelt::result::get_success(support));
+    std::string_view name = value_of(selected.maintenance1_extension).view();
+    CHECK((name == "VK_KHR_swapchain_maintenance1" || name == "VK_EXT_swapchain_maintenance1"));
 }
 
 TEST_CASE("[integration][headless] headless selection discovers a usable device")
@@ -1158,6 +1437,7 @@ static_assert(!vulkan::detail::select_presentation_physical_device_environment<
 
 struct PresentationQueryApi : DeviceQueryApi
 {
+    void vk_get_physical_device_features2(VkPhysicalDevice, VkPhysicalDeviceFeatures2 *);
     VkResult vk_get_physical_device_surface_support_khr(
         VkPhysicalDevice, std::uint32_t, VkSurfaceKHR, VkBool32 *);
 };
