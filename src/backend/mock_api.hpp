@@ -23,6 +23,8 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Queue presentation expectations. */
+    MAKE_MOCK2(vk_queue_present_khr, VkResult(VkQueue, VkPresentInfoKHR const *));
     /** Queue submission expectations. */
     MAKE_MOCK4(vk_queue_submit, VkResult(VkQueue, std::uint32_t, VkSubmitInfo const *, VkFence));
     /** Image acquisition expectations. */

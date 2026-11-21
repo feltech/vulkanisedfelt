@@ -27,6 +27,14 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Queues acquired swapchain images for presentation.
+     *
+     * @param queue Presentation-capable queue for the target surface.
+     * @param info Images and binary semaphore waits.
+     * @return Vulkan presentation status.
+     */
+    VkResult vk_queue_present_khr(VkQueue queue, VkPresentInfoKHR const * info);
+    /**
      * Submits command buffers and synchronization operations to a queue.
      *
      * @param queue Queue receiving the submissions.
