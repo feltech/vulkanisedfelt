@@ -690,6 +690,16 @@ precedence, reusable materialized IO and both parent lifetimes. A windowed smoke
 instance and surface and checks required selection when the capability is available, without
 logical-device creation or GPU work.
 
+Focused logical-device acquisition now enables `VK_KHR_swapchain` and the selected KHR or EXT
+swapchain maintenance1 extension, chaining its enabled feature directly into device creation. It
+reuses the existing queue-family and extension preparation; generic and headless acquisition remain
+featureless. The canonical presentation-device ReaderIO selects a capable physical device, acquires
+its logical device and retrieves both queue roles with maintenance1 enabled. Its ordinary
+presentation context retains all instance, surface and device parents. Mocked tests cover lazy and
+reusable execution, both extension families, shared and separate queue families, creation failures
+and final-owner cleanup. A windowed smoke test acquires the enabled device when supported and checks
+the ordinary unsupported-capability result otherwise, without submitting GPU work.
+
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
 Joining the worker precedes releasing SDL resources on main and finalizing its context. Application
