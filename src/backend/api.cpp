@@ -12,6 +12,16 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_acquire_next_image_khr(
+    VkDevice device,
+    VkSwapchainKHR swapchain,
+    std::uint64_t timeout,
+    VkSemaphore semaphore,
+    VkFence fence,
+    std::uint32_t * image_index)
+{
+    return ::vkAcquireNextImageKHR(device, swapchain, timeout, semaphore, fence, image_index);
+}
 VkResult Api::vk_wait_for_fences(
     VkDevice device,
     std::uint32_t count,

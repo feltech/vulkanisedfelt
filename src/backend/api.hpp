@@ -27,6 +27,24 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Acquires the next available swapchain image.
+     *
+     * @param device Logical device owning the handles.
+     * @param swapchain Non-retired swapchain to acquire from.
+     * @param timeout Maximum wait in nanoseconds.
+     * @param semaphore Optional binary semaphore to signal.
+     * @param fence Optional fence to signal.
+     * @param image_index Receives the acquired image index.
+     * @return Vulkan acquisition status.
+     */
+    VkResult vk_acquire_next_image_khr(
+        VkDevice device,
+        VkSwapchainKHR swapchain,
+        std::uint64_t timeout,
+        VkSemaphore semaphore,
+        VkFence fence,
+        std::uint32_t * image_index);
+    /**
      * Waits for fences to become signaled.
      *
      * @param device Logical device owning the fences.

@@ -42,6 +42,7 @@ add_executable(
   vulkan/detail/clear_commands.cpp
   vulkan/semaphore.cpp
   vulkan/fence.cpp
+  vulkan/image_acquisition.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
@@ -158,6 +159,9 @@ target_sources(
           vulkan/detail/semaphore.hpp
           vulkan/fence.hpp
           vulkan/fence_types.hpp
+          vulkan/image_acquisition.hpp
+          vulkan/image_acquisition_types.hpp
+          vulkan/detail/image_acquisition.hpp
           vulkan/synchronization_types.hpp
           vulkan/detail/fence.hpp
           vulkan/presentation_framebuffers.hpp
