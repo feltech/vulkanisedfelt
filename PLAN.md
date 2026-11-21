@@ -644,6 +644,26 @@ frame smoke test remain deferred until a presentation-completion mechanism is av
 maintenance1 presentation fences; no extension is enabled by this primitive. Keep the legacy
 implementation static as a reference until migration is complete.
 
+Presentation-instance preparation now combines SDL's required names with globally available Vulkan
+instance extensions. Its pure policy validates every mandatory platform name plus `VK_KHR_surface`
+and `VK_KHR_get_surface_capabilities2`, deduplicates names in platform-first order, and includes all
+available KHR and EXT surface-maintenance1 paths. Missing mandatory names and the absence of both
+alternative families are ordinary renderer errors. SDL discovery, policy and instance creation share
+strongly typed extension names in Immer arrays, with native strings wrapped at discovery and
+unwrapped only for inspection or native creation. Discovery retains the window in the executed
+main-thread IO while SDL supplies its names, joins the independent global Vulkan query, and
+prioritizes cancellation before platform and Vulkan errors. SDL failures retain their operation and
+owned message in the common renderer error domain. Successful creation returns the instance and its
+canonical enabled extension names; these names provide metadata for later device-family matching,
+rather than extending native creation-input lifetimes. There are no separately stored family flags,
+and no device extension or maintenance1 feature is enabled yet. Pure and mocked tests cover path
+combinations, missing dependencies, deduplication, materialized-IO window lifetime, error
+propagation, creation short-circuiting and retained instance ownership. A windowed smoke test
+discovers prerequisites and creates an instance when they are available, otherwise checking the
+expected unsupported-capability outcome. Next, query per-device maintenance1 support through Vulkan
+1.1's core feature-query mechanism, enable the compatible device extension and feature, then add
+presentation fences and a bounded real frame.
+
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
 Joining the worker precedes releasing SDL resources on main and finalizing its context. Application
