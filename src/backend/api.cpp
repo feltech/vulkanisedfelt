@@ -276,6 +276,11 @@ void Api::vk_get_physical_device_properties(
 {
     ::vkGetPhysicalDeviceProperties(device, properties);
 }
+void Api::vk_get_physical_device_features2(
+    VkPhysicalDevice device, VkPhysicalDeviceFeatures2 * features)
+{
+    ::vkGetPhysicalDeviceFeatures2(device, features);
+}
 VkResult Api::vk_enumerate_physical_devices(
     VkInstance instance, std::uint32_t * count, VkPhysicalDevice * devices)
 {

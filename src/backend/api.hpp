@@ -521,6 +521,14 @@ struct Api
     void vk_get_physical_device_properties(
         VkPhysicalDevice device, VkPhysicalDeviceProperties * properties);
     /**
+     * Retrieves physical device features and chained extension features.
+     *
+     * @param device Borrowed physical device.
+     * @param features Initialized feature output chain.
+     */
+    void vk_get_physical_device_features2(
+        VkPhysicalDevice device, VkPhysicalDeviceFeatures2 * features);
+    /**
      * Enumerates physical devices belonging to an instance.
      *
      * @param instance Instance to query.
