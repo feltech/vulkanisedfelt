@@ -26,12 +26,12 @@ namespace vulkandemo::vulkan
 /**
  * Selects a presentation physical device and creates its logical device and queues.
  *
- * Requests queue zero at priority 1 in each selected family, the swapchain extension and all
- * additional required extensions, without optional features. Shared families provide the same
- * queue for both roles. Each execution creates an independent logical device. The returned
- * context retains its instance and surface. The borrowed API and serviced main-thread cleanup
- * context must outlive plans, operations and owners. Finish GPU work and release device children
- * before releasing the final device owner.
+ * Requests queue zero at priority 1 in each selected family, the swapchain extension, the
+ * selected maintenance1 extension and feature, and all additional required extensions. Shared
+ * families provide the same queue for both roles. Each execution creates an independent logical
+ * device. The returned context retains its instance and surface. The borrowed API and serviced
+ * main-thread cleanup context must outlive plans, operations and owners. Finish GPU work and
+ * release device children before releasing the final device owner.
  *
  * @tparam TEnvironment Execution environment type.
  * @param instance Parent instance and its actual enabled extension names.

@@ -52,15 +52,17 @@ concept vk_create_device_environment = backend::detail::api_environment<TEnviron
  * @param physical_device Borrowed physical device belonging to parent.
  * @param queue_families Requested queue families.
  * @param extension_names Owned extension names.
+ * @param maintenance1_features Optional maintenance1 feature request for this call.
  * @return A device owner or acquisition failure.
  */
 template <class TApi>
-auto create_device(
+auto create_device_with_features(
     std::reference_wrapper<TApi> api,
     instance_ptr const & parent,
     VkPhysicalDevice physical_device,
     immer::array<queue_family_index> const & queue_families,
-    immer::array<text::String> const & extension_names)
+    immer::array<text::String> const & extension_names,
+    VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT const * maintenance1_features)
     -> vulkan_result<device_ptr> pre(!queue_families.empty())
 {
     namespace result = fnfelt::result;
@@ -95,6 +97,7 @@ auto create_device(
 
     VkDeviceCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    create_info.pNext = maintenance1_features;
     create_info.queueCreateInfoCount = static_cast<std::uint32_t>(queue_infos.size());
     create_info.pQueueCreateInfos = queue_infos.data();
     create_info.enabledExtensionCount = static_cast<std::uint32_t>(name_pointers.size());
@@ -108,6 +111,29 @@ auto create_device(
             VulkanFailure{FallibleVulkanOperation::create_device, status});
     }
     return result::success<result_type>(make_device_ptr(device, parent, api.get()));
+}
+
+/**
+ * Acquires a logical device without optional features.
+ *
+ * @tparam TApi Command implementation type.
+ * @param api Borrowed command implementation.
+ * @param parent Retained parent instance.
+ * @param physical_device Borrowed physical device belonging to parent.
+ * @param queue_families Requested queue families.
+ * @param extension_names Owned extension names.
+ * @return A device owner or acquisition failure.
+ */
+template <class TApi>
+auto create_device(
+    std::reference_wrapper<TApi> api,
+    instance_ptr const & parent,
+    VkPhysicalDevice physical_device,
+    immer::array<queue_family_index> const & queue_families,
+    immer::array<text::String> const & extension_names) -> vulkan_result<device_ptr>
+{
+    return create_device_with_features(
+        api, parent, physical_device, queue_families, extension_names, nullptr);
 }
 
 /**

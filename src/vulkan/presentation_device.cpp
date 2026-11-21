@@ -223,21 +223,26 @@ struct PresentationFixture
                  .TIMES(runs));
     }
 
-    void create(VkDevice device, std::string_view, VkResult status = VK_SUCCESS)
+    void create(VkDevice device, std::string_view maintenance1_name, VkResult status = VK_SUCCESS)
     {
-        keep(NAMED_REQUIRE_CALL(
-                 api, vk_create_device(&physical_device, trompeloeil::_, nullptr, trompeloeil::_))
-                 .LR_SIDE_EFFECT(CHECK_FALSE(is_instance_destroyed))
-                 .LR_SIDE_EFFECT(CHECK_FALSE(is_surface_destroyed))
-                 .WITH(_2 != nullptr && _2->pNext == nullptr && _4 != nullptr)
-                 .WITH(_2->enabledExtensionCount == 2U)
-                 .WITH(
-                     std::string_view{_2->ppEnabledExtensionNames[0]} ==
-                     VK_KHR_SWAPCHAIN_EXTENSION_NAME)
-                 .WITH(std::string_view{_2->ppEnabledExtensionNames[1]} == "VK_extra")
-                 .SIDE_EFFECT(*_4 = device)
-                 .RETURN(status)
-                 .IN_SEQUENCE(graphics_acquisitions, present_acquisitions));
+        keep(
+            NAMED_REQUIRE_CALL(
+                api, vk_create_device(&physical_device, trompeloeil::_, nullptr, trompeloeil::_))
+                .LR_SIDE_EFFECT(CHECK_FALSE(is_instance_destroyed))
+                .LR_SIDE_EFFECT(CHECK_FALSE(is_surface_destroyed))
+                .WITH(_2 != nullptr && _2->pNext != nullptr && _4 != nullptr)
+                .WITH(_2->enabledExtensionCount == 3U)
+                .WITH(
+                    std::string_view{_2->ppEnabledExtensionNames[0]} ==
+                    VK_KHR_SWAPCHAIN_EXTENSION_NAME)
+                .WITH(std::string_view{_2->ppEnabledExtensionNames[1]} == "VK_extra")
+                .WITH(std::string_view{_2->ppEnabledExtensionNames[2]} == maintenance1_name)
+                .WITH(
+                    static_cast<VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT const *>(_2->pNext)
+                        ->swapchainMaintenance1 == VK_TRUE)
+                .SIDE_EFFECT(*_4 = device)
+                .RETURN(status)
+                .IN_SEQUENCE(graphics_acquisitions, present_acquisitions));
         if (status == VK_SUCCESS)
         {
             keep(NAMED_REQUIRE_CALL(api, vk_destroy_device(device, nullptr))
@@ -279,7 +284,7 @@ TEST_CASE("[impure] presentation device plans are lazy and retain both parents")
     CHECK(fixture.is_surface_destroyed);
 }
 
-TEST_CASE("[impure] presentation setup creates independent presentation devices")
+TEST_CASE("[impure] presentation setup creates independent maintenance1-enabled devices")
 {
     bool has_shared_family = true;
     std::string_view maintenance1_name = "VK_KHR_swapchain_maintenance1";
@@ -434,7 +439,7 @@ TEST_CASE("[impure] materialized presentation setup retains device and parents")
     CHECK_EQ(fixture.destroyed_devices, 1);
 }
 
-TEST_CASE("[integration][windowed] a presentation device retains its selected owners")
+TEST_CASE("[integration][windowed] a maintenance1 presentation device enables its selected feature")
 {
     backend::Api api;
     using environment_type = sdl::detail::TestState<backend::Api>;

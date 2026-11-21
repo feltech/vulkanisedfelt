@@ -8,17 +8,19 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <functional>
-#include <optional>
+#include <type_traits>
 #include <utility>
 
 #include <vulkan/vulkan_core.h>
 
+#include <fnfelt/monad/io.hpp>
 #include <fnfelt/monad/reader_io.hpp>
 #include <immer/array.hpp>
+#include <immer/array_transient.hpp>
 
 #include "../../text/string.hpp"
-#include "../device.hpp"
 #include "../device_queue.hpp"
 #include "../errors.hpp"
 #include "../managed_handles_types.hpp"
@@ -28,6 +30,7 @@
 #include "../queue_family_selection_types.hpp"
 #include "../queue_types.hpp"
 #include "../renderer_errors.hpp"
+#include "./device.hpp"
 
 namespace vulkandemo::vulkan::detail
 {
@@ -45,6 +48,76 @@ concept create_presentation_device_environment =
  */
 auto presentation_device_extension_names(immer::array<text::String> required_extension_names)
     -> immer::array<text::String>;
+
+/**
+ * Acquires a presentation device with its selected extension and feature enabled.
+ *
+ * @tparam TApi Command implementation type.
+ * @param api Borrowed command implementation.
+ * @param selected Suitable physical device and retained parents.
+ * @param required_extension_names Additional required device extensions.
+ * @return A device owner or native creation failure.
+ */
+template <class TApi>
+auto create_presentation_device(
+    std::reference_wrapper<TApi> api,
+    SelectedPresentationPhysicalDevice const & selected,
+    immer::array<text::String> const & required_extension_names) -> vulkan_result<device_ptr>
+{
+    // Distinct swapchain, caller and selected maintenance names provide the native requests.
+    auto extension_names =
+        presentation_device_extension_names(required_extension_names).transient();
+    text::String const & maintenance1_name = value_of(selected.maintenance1_extension);
+    if (std::ranges::find(extension_names, maintenance1_name) == extension_names.end())
+    {
+        extension_names.push_back(maintenance1_name);
+    }
+
+    // The EXT spelling aliases the KHR feature, and its chain lives through the native call.
+    VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance1_features{};
+    maintenance1_features.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
+    maintenance1_features.swapchainMaintenance1 = VK_TRUE;
+    return create_device_with_features(
+        api,
+        selected.instance,
+        selected.physical_device,
+        immer::array{
+            selected.queue_families.graphics_family_index,
+            selected.queue_families.present_family_index},
+        std::move(extension_names).persistent(),
+        &maintenance1_features);
+}
+
+/**
+ * Supplies the API to deferred presentation-device acquisition.
+ *
+ * @tparam TEnvironment Execution environment type.
+ * @param selected Suitable physical device and retained parents.
+ * @param required_extension_names Additional required device extensions.
+ * @param environment Execution capabilities.
+ * @return IO providing an acquired device or native failure.
+ */
+template <class TEnvironment>
+constexpr auto create_presentation_device_reader_io_action(
+    SelectedPresentationPhysicalDevice selected,
+    immer::array<text::String> required_extension_names,
+    TEnvironment const & environment)
+{
+    using fnfelt::literals::operator""_ss;
+    using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
+    namespace io = fnfelt::monad::io;
+
+    // Callable providing device acquisition with the selected feature and retained parents.
+    auto create_device = std::bind_front(
+        create_presentation_device<api_type>,
+        environment.api,
+        std::move(selected),
+        std::move(required_extension_names));
+
+    // IO providing native device acquisition with a call-local maintenance1 feature chain.
+    return io::create<"create_presentation_device"_ss>(std::move(create_device));
+}
 
 /**
  * Retains the device and surface alongside their borrowed queue handles.
@@ -115,7 +188,7 @@ constexpr auto reader_io_get_presentation_device_queues(
 }
 
 /**
- * Creates a swapchain-enabled logical device and retrieves both requested queues.
+ * Creates a maintenance1-enabled presentation device and retrieves both requested queues.
  *
  * @tparam TEnvironment Execution environment type.
  * @param extension_names Complete device extension names.
@@ -129,25 +202,25 @@ constexpr auto reader_io_create_selected_presentation_device(
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // ReaderIO providing one queue per selected family with all required extensions enabled.
-    auto create_device = reader_io_vk_create_device<TEnvironment>(
-        std::move(selected.instance),
+    // Continuation providing both queue roles while retaining the selected surface and metadata.
+    auto retrieve_queues = std::bind_front(
+        reader_io_get_presentation_device_queues<TEnvironment>,
+        selected.surface,
         selected.physical_device,
-        immer::array{
-            selected.queue_families.graphics_family_index,
-            selected.queue_families.present_family_index},
+        selected.queue_families);
+
+    // Action providing device acquisition with one queue per selected family and maintenance1
+    // enabled.
+    auto acquire_selected_device = std::bind_front(
+        create_presentation_device_reader_io_action<TEnvironment>,
+        std::move(selected),
         std::move(extension_names));
+    auto create_device = reader_io::create<"create_selected_presentation_device"_ss, TEnvironment>(
+        std::move(acquire_selected_device));
 
     // ReaderIO providing the device owner or a renderer-domain creation failure.
     auto acquire_device = reader_io::transform_error<"presentation_device_creation_error"_ss>(
         std::move(create_device), renderer_error_from_vulkan_failure);
-
-    // Continuation providing both queues with the acquired device and selected surface.
-    auto retrieve_queues = std::bind_front(
-        reader_io_get_presentation_device_queues<TEnvironment>,
-        std::move(selected.surface),
-        selected.physical_device,
-        selected.queue_families);
 
     // ReaderIO providing a complete context, bypassing queue retrieval after creation failure.
     return reader_io::and_then<"get_created_presentation_device_queues"_ss>(
