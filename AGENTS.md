@@ -50,10 +50,25 @@ The full build and test cycle is (not all steps required depending what was edit
 ```bash
 conan install . --build=missing -s "&:build_type=Debug" \
   -pr:a build_env/nixos.linux.conan.profile
-cmake --preset conan-debug -Dvulkanisedfelt_ENABLE_DEV=ON
-cmake --build --parallel --preset conan-debug
-ctest --test-dir build/Debug --output-on-failure --parallel --timeout 300
+cmake --preset conan-debug -Dvulkanisedfelt_ENABLE_DEV=ON \
+  -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_CXX_FLAGS_DEBUG='-g -Og'
+cmake --build --parallel 6 --preset conan-debug
+ctest --test-dir build/Debug -R '^vulkandemo$' --output-on-failure --parallel --timeout 300
 ```
+
+Reuse the existing build directory and compiler cache. Complete each slice before running one
+combined validation build and its test suite, rather than rebuilding for each function commit. If
+validation finds an issue, correct it and repeat the affected checks, folding the correction into
+its function commit with `--amend` or a `fixup!` commit for later autosquash.
+
+Use six build jobs. LTO is disabled and Debug uses `-Og`, overriding the Nix compiler wrapper's
+default `-O2`. Pass the explicit CMake settings above when reusing a build directory to replace
+previously cached flags. Only regenerate Conan files when the recipe, profile or dependencies
+change.
+
+Never enable or run fnfelt's own development checks or tests in this consumer project. Do not run
+the separate `vulkanisedfelt.fnfelt` consumer compatibility smoke as a routine extra check for
+application slices; it is distinct from fnfelt's upstream tests.
 
 ## Linting, formatting, and testing
 
@@ -63,8 +78,8 @@ warning. DEV mode also enables the embedded doctests.
 
 fnfelt is pinned in `vendor/fnfelt` as a Git submodule. After cloning, run
 `git submodule update --init --recursive`. Its CMake project resolves pinned stdexec through CPM;
-the root Conan recipe supplies Immer and libfork. fnfelt's own development checks stay disabled
-unless explicitly enabled separately.
+the root Conan recipe supplies Immer and libfork. fnfelt's own development checks and tests stay
+disabled.
 
 `clang-tidy` is currently **disabled** (see the TODO in `cmake/linters.cmake`) because it does not
 support C++26 reflection, so none of its checks gate the build. In particular, the naming rules
