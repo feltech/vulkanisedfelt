@@ -38,6 +38,7 @@ add_executable(
   vulkan/framebuffer.cpp
   vulkan/command_pool.cpp
   vulkan/command_buffer.cpp
+  vulkan/semaphore.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
@@ -147,6 +148,8 @@ target_sources(
           vulkan/detail/command_pool.hpp
           vulkan/command_buffer.hpp
           vulkan/detail/command_buffer.hpp
+          vulkan/semaphore.hpp
+          vulkan/detail/semaphore.hpp
           vulkan/presentation_framebuffers.hpp
           vulkan/presentation_framebuffers_types.hpp
           vulkan/detail/presentation_framebuffers.hpp

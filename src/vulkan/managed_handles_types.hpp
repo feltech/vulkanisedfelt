@@ -22,6 +22,12 @@ using instance_ptr = std::shared_ptr<VkInstance_T>;
 using device_ptr = std::shared_ptr<VkDevice_T>;
 
 static_assert(
+    std::is_pointer_v<VkSemaphore>, "Semaphore owners require pointer-shaped Vulkan handles");
+
+/** Shared binary semaphore owner retaining its logical device. */
+using semaphore_ptr = std::shared_ptr<std::remove_pointer_t<VkSemaphore>>;
+
+static_assert(
     std::is_pointer_v<VkCommandPool>, "Command pool owners require pointer-shaped Vulkan handles");
 
 /** Shared command pool owner retaining its logical device. */

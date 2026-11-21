@@ -22,6 +22,31 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns a binary semaphore while retaining its logical device.
+ *
+ * Keep the borrowed API alive through cleanup. Complete all submitted batches using the
+ * semaphore and externally synchronize host access before final release.
+ *
+ * @param semaphore Acquired semaphore using the default allocator.
+ * @param device Logical device owning the semaphore.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared semaphore owner retaining its device.
+ */
+template <class TApi>
+[[nodiscard]] auto make_semaphore_ptr(VkSemaphore semaphore, device_ptr device, TApi & api)
+    -> semaphore_ptr pre(semaphore != VK_NULL_HANDLE) pre(device != nullptr)
+{
+    return semaphore_ptr{
+        semaphore,
+        [device = std::move(device), &api](VkSemaphore handle) mutable noexcept
+        {
+            api.vk_destroy_semaphore(device.get(), handle, nullptr);
+            // Weak semaphore observers must not prolong the device after native cleanup.
+            device.reset();
+        }};
+}
+
+/**
  * Owns a command pool while retaining its logical device.
  *
  * Keep the borrowed API alive through cleanup. Complete submitted commands before final

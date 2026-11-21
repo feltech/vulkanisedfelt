@@ -12,6 +12,19 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_create_semaphore(
+    VkDevice device,
+    VkSemaphoreCreateInfo const * info,
+    VkAllocationCallbacks const * allocator,
+    VkSemaphore * semaphore)
+{
+    return ::vkCreateSemaphore(device, info, allocator, semaphore);
+}
+void Api::vk_destroy_semaphore(
+    VkDevice device, VkSemaphore semaphore, VkAllocationCallbacks const * allocator)
+{
+    ::vkDestroySemaphore(device, semaphore, allocator);
+}
 VkResult Api::vk_create_command_pool(
     VkDevice device,
     VkCommandPoolCreateInfo const * info,

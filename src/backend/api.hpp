@@ -27,6 +27,29 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a semaphore.
+     *
+     * @param device Logical device owning the semaphore.
+     * @param info Semaphore type and flags.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param semaphore Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_semaphore(
+        VkDevice device,
+        VkSemaphoreCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkSemaphore * semaphore);
+    /**
+     * Destroys a semaphore after its submitted uses complete.
+     *
+     * @param device Logical device owning the semaphore.
+     * @param semaphore Semaphore to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_semaphore(
+        VkDevice device, VkSemaphore semaphore, VkAllocationCallbacks const * allocator);
+    /**
      * Creates a command pool for one queue family.
      *
      * @param device Logical device owning the pool.

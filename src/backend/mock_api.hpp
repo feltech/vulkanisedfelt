@@ -23,6 +23,13 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Semaphore creation expectations. */
+    MAKE_MOCK4(
+        vk_create_semaphore,
+        VkResult(
+            VkDevice, VkSemaphoreCreateInfo const *, VkAllocationCallbacks const *, VkSemaphore *));
+    /** Semaphore destruction expectations. */
+    MAKE_MOCK3(vk_destroy_semaphore, void(VkDevice, VkSemaphore, VkAllocationCallbacks const *));
     /** Command pool creation expectations. */
     MAKE_MOCK4(
         vk_create_command_pool,
