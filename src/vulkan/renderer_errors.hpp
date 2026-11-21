@@ -15,6 +15,7 @@
 #include <fnfelt/result.hpp>
 #include <immer/array.hpp>
 
+#include "../sdl/errors.hpp"
 #include "./api_version_types.hpp"
 #include "./errors.hpp"
 #include "./extension_types.hpp"
@@ -96,7 +97,8 @@ using renderer_error = std::variant<
     NoSuitablePhysicalDevice,
     NoSuitableSwapchainConfiguration,
     UnsupportedFramebufferExtent,
-    PresentationInstanceFailure>;
+    PresentationInstanceFailure,
+    sdl::SdlFailure>;
 
 /**
  * Converts a Vulkan failure into a renderer error.

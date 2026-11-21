@@ -21,6 +21,8 @@ add_executable(
   vulkan/managed_handles.cpp
   vulkan/instance_extensions.cpp
   vulkan/presentation_instance_extensions.cpp
+  vulkan/presentation_instance_configuration.cpp
+  vulkan/detail/presentation_instance_configuration.cpp
   vulkan/instance_layers.cpp
   vulkan/physical_devices.cpp
   vulkan/physical_device_properties.cpp
@@ -123,6 +125,8 @@ target_sources(
           vulkan/instance_extensions.hpp
           vulkan/extension_types.hpp
           vulkan/presentation_instance_extensions.hpp
+          vulkan/presentation_instance_configuration.hpp
+          vulkan/detail/presentation_instance_configuration.hpp
           vulkan/detail/instance_extensions.hpp
           vulkan/instance_layers.hpp
           vulkan/detail/instance_layers.hpp
