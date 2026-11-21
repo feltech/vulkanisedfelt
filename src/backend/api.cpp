@@ -12,6 +12,15 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+void Api::vk_cmd_begin_render_pass(
+    VkCommandBuffer command_buffer, VkRenderPassBeginInfo const * info, VkSubpassContents contents)
+{
+    ::vkCmdBeginRenderPass(command_buffer, info, contents);
+}
+void Api::vk_cmd_end_render_pass(VkCommandBuffer command_buffer)
+{
+    ::vkCmdEndRenderPass(command_buffer);
+}
 VkResult Api::vk_end_command_buffer(VkCommandBuffer command_buffer)
 {
     return ::vkEndCommandBuffer(command_buffer);

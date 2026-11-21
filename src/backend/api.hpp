@@ -27,6 +27,23 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Begins a render pass in a recording command buffer.
+     *
+     * @param command_buffer Recording primary buffer.
+     * @param info Render target, area and clear values.
+     * @param contents Command source for the first subpass.
+     */
+    void vk_cmd_begin_render_pass(
+        VkCommandBuffer command_buffer,
+        VkRenderPassBeginInfo const * info,
+        VkSubpassContents contents);
+    /**
+     * Ends the active render pass.
+     *
+     * @param command_buffer Primary buffer recording its final subpass.
+     */
+    void vk_cmd_end_render_pass(VkCommandBuffer command_buffer);
+    /**
      * Finishes recording a command buffer.
      *
      * @param command_buffer Recording buffer outside a render pass.

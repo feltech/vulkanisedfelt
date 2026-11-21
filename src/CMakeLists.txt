@@ -38,6 +38,8 @@ add_executable(
   vulkan/framebuffer.cpp
   vulkan/command_pool.cpp
   vulkan/command_buffer.cpp
+  vulkan/clear_commands.cpp
+  vulkan/detail/clear_commands.cpp
   vulkan/semaphore.cpp
   vulkan/fence.cpp
   vulkan/presentation_framebuffers.cpp
@@ -149,6 +151,9 @@ target_sources(
           vulkan/detail/command_pool.hpp
           vulkan/command_buffer.hpp
           vulkan/detail/command_buffer.hpp
+          vulkan/clear_commands.hpp
+          vulkan/clear_commands_types.hpp
+          vulkan/detail/clear_commands.hpp
           vulkan/semaphore.hpp
           vulkan/detail/semaphore.hpp
           vulkan/fence.hpp
