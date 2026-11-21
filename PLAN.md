@@ -583,9 +583,15 @@ parents, including when weak observers remain. Allocation failures preserve the 
 without freeing buffers a second time. Pool operations and final releases require externally
 serialized host access; these owners do not add synchronization. Mocked tests cover deferred
 execution, native parameters, failures and parent cleanup; a headless smoke test allocates and frees
-a real primary buffer without recording or submitting commands. Next add synchronization resources
-and command recording for the bounded frame. Keep the legacy implementation static as a reference
-until migration is complete.
+a real primary buffer without recording or submitting commands. Binary semaphore and unsignaled
+fence creation now provide device-retaining owners without optional flags or extension chains. Final
+release destroys the native object before releasing its device, including when weak observers
+remain. Submitted uses must complete and host access must be externally synchronized before final
+release; these owners add no waits or execution policy. Mocked tests cover deferred execution,
+native creation parameters, failures and parent cleanup; a headless smoke test creates and releases
+both objects without submitting GPU work. Next add command recording and the synchronization
+operations needed for the bounded frame. Keep the legacy implementation static as a reference until
+migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
