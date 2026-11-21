@@ -19,6 +19,11 @@ reflection-backed validation should identify the failing application stage inste
 wall of nested template and lambda types. Small named functors and functions remain important even
 with library diagnostics.
 
+The migrated renderer requires Vulkan 1.1 at both instance and physical-device level, comparing API
+variants and major/minor versions independently of patch revisions. Builds require Vulkan 1.4 or
+newer development headers for the current header utilities; this does not raise the runtime minimum.
+Optional features and extensions still need independent discovery and enablement.
+
 Start from this branch's imperative implementation. The abandoned `monads` branch in this repository
 is an architectural reference and source of useful policy, not a framework to restore or merge
 wholesale. Develop fnfelt further when concrete migration work demonstrates a generic need. Do not
@@ -496,6 +501,17 @@ to a portable synchronization guarantee.
 
 ## Next session and working practices
 
+Instance-version discovery resolves `vkEnumerateInstanceVersion` dynamically, treating a missing
+entry point as Vulkan 1.0 and preserving native query failures. Instance creation validates the
+shared Vulkan 1.1 baseline before calling the native creation command, then explicitly targets 1.1
+through `VkApplicationInfo`. Unsupported implementations report both required and available versions
+in the renderer error domain. Headless and presentation selection independently reject physical
+devices below 1.1 while preserving original handle/queue indices and existing scoring and stop/error
+precedence. Mocked tests cover missing queries, errors, boundary versions and mixed device
+snapshots; headless and windowed integration coverage uses the validated instance factory. This
+baseline makes core feature-query machinery available without enabling maintenance1, dynamic
+rendering, synchronization2 or any optional device feature.
+
 SDL video initialization, window ownership, required instance-extension discovery, configurable
 Vulkan instance creation and SDL Vulkan surface ownership are implemented. Video/window acquisition
 uses StateIO to retain cleanup guards in an immutable box around the whole execution state; ReaderIO
@@ -638,10 +654,10 @@ selecting exact APIs. Load the reflection skill before reflection code and the I
 changing Immer behavior. Use subagents for targeted exploration, implementation and review rather
 than loading every wrapper into one context.
 
-Settle bounded open questions with evidence or the user: minimum supported Vulkan/platform version,
-validation policy, first supported device/queue topology, exact state/environment shape, concrete
-resource ownership and polling/wakeup bounds. The initial main-loop topology is already selected;
-its application integration and shutdown details still need proof. Settle cleanup for each resource
+Settle bounded open questions with evidence or the user: supported platform coverage, validation
+policy, first supported device/queue topology, exact state/environment shape, concrete resource
+ownership and polling/wakeup bounds. The initial main-loop topology is already selected; its
+application integration and shutdown details still need proof. Settle cleanup for each resource
 slice rather than postponing it until the final loop or introducing a generic session in advance.
 
 Keep atomic Conventional Commits focused on responsibilities and minimize overlapping files across
