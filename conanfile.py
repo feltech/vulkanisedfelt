@@ -45,7 +45,9 @@ class vulkandemoRecipe(ConanFile):
         tc = CMakeToolchain(self)
         tc.variables["CMAKE_C_VISIBILITY_PRESET"] = "default"
         tc.variables["CMAKE_CXX_VISIBILITY_PRESET"] = "hidden"
-        tc.variables["CMAKE_INTERPROCEDURAL_OPTIMIZATION"] = "ON"
+        tc.variables["CMAKE_INTERPROCEDURAL_OPTIMIZATION"] = "OFF"
+        # Override optimisation injected by the Nix compiler wrapper in Debug.
+        tc.variables["CMAKE_CXX_FLAGS_DEBUG"] = "-g -Og"
         tc.generate()
 
     def build(self):

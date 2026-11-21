@@ -8,5 +8,6 @@ compiler.version=16
 os=Linux
 
 [conf]
+tools.build:jobs=6
 tools.cmake.cmaketoolchain:generator=Ninja
 tools.compilation:verbosity=verbose
