@@ -660,8 +660,22 @@ and no device extension or maintenance1 feature is enabled yet. Pure and mocked 
 combinations, missing dependencies, deduplication, materialized-IO window lifetime, error
 propagation, creation short-circuiting and retained instance ownership. A windowed smoke test
 discovers prerequisites and creates an instance when they are available, otherwise checking the
-expected unsupported-capability outcome. Next, query per-device maintenance1 support through Vulkan
-1.1's core feature-query mechanism, enable the compatible device extension and feature, then add
+expected unsupported-capability outcome.
+
+Per-device maintenance1 discovery now uses Vulkan 1.1's core `vkGetPhysicalDeviceFeatures2` with a
+local feature chain and returns an owned support flag. KHR and EXT use the same feature bit, so the
+query uses the EXT structure spelling available in the initial Vulkan 1.4 headers. Pure candidate
+selection matches the instance's canonical enabled names with advertised device dependencies,
+preferring a complete KHR path and otherwise falling back to EXT. ReaderIO discovery enumerates
+device extensions first, skips the feature query when no compatible candidate exists, and retains
+the instance in the executed IO through native device access. A false feature or missing path is
+successful absence of eligibility; native enumeration failures remain Vulkan errors and cancellation
+propagates through the chain. Returned extension names are independent of the queried instance.
+Mocked and pure tests cover initialized feature chains, KHR/EXT combinations and mismatches, missing
+dependencies, false features, query short-circuiting, laziness and materialized-IO ownership. A
+headless smoke test discovers support without enabling a device feature or submitting GPU work.
+Existing device selection and creation remain unchanged. Next, integrate the discovered path into
+presentation-device suitability, enable the selected device extension and feature, then add
 presentation fences and a bounded real frame.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
