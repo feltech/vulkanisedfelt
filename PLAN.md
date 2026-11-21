@@ -561,8 +561,15 @@ creates views for an existing image snapshot and preserves image order. Failed b
 acquired views, with cancellation taking precedence over errors and the first error selected in
 image order. Mocked tests cover lazy execution, creation parameters, ownership and partial-failure
 cleanup; a windowed smoke test creates and releases real views without acquiring images or
-submitting GPU work. Next build render-pass and framebuffer resources for the bounded frame. Keep
-the legacy implementation static as a reference until migration is complete.
+submitting GPU work. Clear-and-present render-pass creation now provides one single-sample color
+attachment, clearing on load and storing into presentation layout through one graphics subpass. The
+incoming dependency scopes the initial transition to color-attachment output; image acquisition and
+submission waits remain the future frame layer's responsibility. Render-pass owners retain their
+device until native cleanup, including when weak observers remain. Mocked tests cover lazy
+execution, creation parameters, native failures and final-owner cleanup; a windowed smoke test
+creates and releases a render pass using the selected swapchain format without submitting GPU work.
+Next create framebuffer resources for the bounded frame. Keep the legacy implementation static as a
+reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
