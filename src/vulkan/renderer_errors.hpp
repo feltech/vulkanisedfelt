@@ -10,6 +10,8 @@
 
 #include <variant>
 
+#include <vulkan/vulkan_core.h>
+
 #include <fnfelt/result.hpp>
 
 #include "./api_version_types.hpp"
@@ -58,12 +60,22 @@ struct NoSuitableSwapchainConfiguration
     SwapchainConfigurationFailure reason;
 };
 
+/** A selected image extent exceeds the device's framebuffer dimensions. */
+struct UnsupportedFramebufferExtent
+{
+    /** Selected swapchain image extent. */
+    VkExtent2D requested;
+    /** Maximum framebuffer dimensions of the physical device. */
+    VkExtent2D maximum;
+};
+
 /// Common failures of renderer workflows.
 using renderer_error = std::variant<
     VulkanOperationFailure,
     UnsupportedVulkanVersion,
     NoSuitablePhysicalDevice,
-    NoSuitableSwapchainConfiguration>;
+    NoSuitableSwapchainConfiguration,
+    UnsupportedFramebufferExtent>;
 
 /**
  * Converts a Vulkan failure into a renderer error.

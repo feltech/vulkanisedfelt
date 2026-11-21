@@ -36,6 +36,8 @@ add_executable(
   vulkan/image_view.cpp
   vulkan/render_pass.cpp
   vulkan/framebuffer.cpp
+  vulkan/presentation_framebuffers.cpp
+  vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
   vulkan/swapchain_images.cpp
   vulkan/presentation_swapchain.cpp
@@ -139,6 +141,9 @@ target_sources(
           vulkan/detail/render_pass.hpp
           vulkan/framebuffer.hpp
           vulkan/detail/framebuffer.hpp
+          vulkan/presentation_framebuffers.hpp
+          vulkan/presentation_framebuffers_types.hpp
+          vulkan/detail/presentation_framebuffers.hpp
           vulkan/swapchain.hpp
           vulkan/swapchain_images.hpp
           vulkan/swapchain_images_types.hpp
