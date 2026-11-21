@@ -19,6 +19,32 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Plans one-time recording of an initial-state primary command buffer.
+ *
+ * Execute only while the nonempty buffer is in its initial state. Pools created without
+ * individual-reset support require a fresh allocation or a pool reset before recording again.
+ * Externally synchronize host access to the buffer and its pool throughout recording and cleanup.
+ * This operation starts recording; it neither finishes nor submits commands.
+ *
+ * @param command_buffer Retained initial-state primary buffer.
+ * @return ReaderIO providing the recording buffer or the original Vulkan failure.
+ */
+template <detail::vk_begin_command_buffer_environment TEnvironment>
+[[nodiscard]] constexpr auto reader_io_vk_begin_command_buffer(command_buffer_ptr command_buffer)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // Action providing recording start with the primary buffer retained.
+    auto begin_command_buffer = std::bind_front(
+        detail::begin_command_buffer_reader_io_action<TEnvironment>, std::move(command_buffer));
+
+    // ReaderIO providing a buffer in the recording state or a native failure.
+    return reader_io::create<"vk_begin_command_buffer"_ss, TEnvironment>(
+        std::move(begin_command_buffer));
+}
+
+/**
  * Plans allocation of one primary command buffer in its initial state.
  *
  * The nonempty pool must belong to the device. Keep the borrowed API alive through cleanup

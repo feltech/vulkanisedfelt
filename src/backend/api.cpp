@@ -12,6 +12,11 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_begin_command_buffer(
+    VkCommandBuffer command_buffer, VkCommandBufferBeginInfo const * info)
+{
+    return ::vkBeginCommandBuffer(command_buffer, info);
+}
 VkResult Api::vk_create_semaphore(
     VkDevice device,
     VkSemaphoreCreateInfo const * info,

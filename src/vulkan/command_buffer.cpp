@@ -38,6 +38,85 @@ struct CommandBufferEnvironment
 };
 }  // namespace
 
+TEST_CASE("[impure] beginning command buffer recording is lazy")
+{
+    backend::MockApi api;
+    CommandBufferEnvironment environment{std::ref(api)};
+    char buffer_storage{};
+    command_buffer_ptr command_buffer{
+        reinterpret_cast<VkCommandBuffer>(&buffer_storage), [](auto) {}};
+    std::weak_ptr buffer_observer{command_buffer};
+
+    {
+        // Planning and binding retain the buffer without changing its native state.
+        auto plan =
+            reader_io_vk_begin_command_buffer<decltype(environment)>(std::move(command_buffer));
+        [[maybe_unused]] auto deferred = plan.build(environment);
+
+        CHECK_FALSE(buffer_observer.expired());
+    }
+
+    CHECK(buffer_observer.expired());
+}
+
+TEST_CASE("[impure] primary command buffers begin one-time recording and retain ownership")
+{
+    backend::MockApi api;
+    CommandBufferEnvironment environment{std::ref(api)};
+    char buffer_storage{};
+    VkCommandBuffer buffer_handle = reinterpret_cast<VkCommandBuffer>(&buffer_storage);
+    bool is_buffer_released = false;
+    command_buffer_ptr command_buffer{buffer_handle, [&](auto) { is_buffer_released = true; }};
+    VkCommandBufferBeginInfo captured{};
+    REQUIRE_CALL(api, vk_begin_command_buffer(buffer_handle, trompeloeil::_))
+        .LR_SIDE_EFFECT(captured = *_2)
+        .RETURN(VK_SUCCESS);
+
+    // Successful begin forwards ownership while the native buffer enters recording state.
+    vulkan_result<command_buffer_ptr> outcome =
+        reader_io_vk_begin_command_buffer<decltype(environment)>(std::move(command_buffer))
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_success(outcome));
+    CHECK_EQ(captured.sType, VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
+    CHECK(captured.pNext == nullptr);
+    CHECK_EQ(captured.flags, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    CHECK(captured.pInheritanceInfo == nullptr);
+    command_buffer_ptr recording_buffer = fnfelt::result::get_success(std::move(outcome));
+    CHECK_EQ(recording_buffer.get(), buffer_handle);
+    CHECK_FALSE(is_buffer_released);
+
+    recording_buffer.reset();
+
+    CHECK(is_buffer_released);
+}
+
+TEST_CASE("[impure] beginning command buffer failures preserve the native error")
+{
+    backend::MockApi api;
+    CommandBufferEnvironment environment{std::ref(api)};
+    char buffer_storage{};
+    command_buffer_ptr command_buffer{
+        reinterpret_cast<VkCommandBuffer>(&buffer_storage), [](auto) {}};
+    std::weak_ptr buffer_observer{command_buffer};
+    REQUIRE_CALL(api, vk_begin_command_buffer(command_buffer.get(), trompeloeil::_))
+        .RETURN(VK_ERROR_OUT_OF_HOST_MEMORY);
+
+    // Failed begin publishes no recording owner and releases the retained input.
+    vulkan_result<command_buffer_ptr> outcome =
+        reader_io_vk_begin_command_buffer<decltype(environment)>(std::move(command_buffer))
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    REQUIRE(fnfelt::result::is_error(outcome));
+    CHECK_EQ(
+        fnfelt::result::get_error(outcome).operation,
+        FallibleVulkanOperation::begin_command_buffer);
+    CHECK_EQ(fnfelt::result::get_error(outcome).result, VK_ERROR_OUT_OF_HOST_MEMORY);
+    CHECK(buffer_observer.expired());
+}
+
 TEST_CASE("[impure] command buffer plans are lazy and retain their pool and device")
 {
     backend::MockApi api;

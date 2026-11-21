@@ -27,6 +27,15 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Begins recording a command buffer.
+     *
+     * @param command_buffer Buffer in the required native state.
+     * @param info Recording flags and inheritance information.
+     * @return Vulkan recording status.
+     */
+    VkResult vk_begin_command_buffer(
+        VkCommandBuffer command_buffer, VkCommandBufferBeginInfo const * info);
+    /**
      * Creates a semaphore.
      *
      * @param device Logical device owning the semaphore.

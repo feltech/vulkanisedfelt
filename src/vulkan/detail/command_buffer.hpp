@@ -26,6 +26,79 @@
 
 namespace vulkandemo::vulkan::detail
 {
+/** Commands needed to begin recording a command buffer. */
+template <class TEnvironment>
+concept vk_begin_command_buffer_environment = backend::detail::api_environment<TEnvironment> &&
+    requires(TEnvironment const & environment,
+             VkCommandBuffer buffer,
+             VkCommandBufferBeginInfo const * info)
+{
+    {environment.api.get().vk_begin_command_buffer(buffer, info)}->std::same_as<VkResult>;
+};
+
+/**
+ * Begins one-time command recording with a native Vulkan outcome.
+ *
+ * @param api Borrowed command implementation.
+ * @param command_buffer Borrowed initial-state primary buffer.
+ * @return Native recording-start status.
+ */
+template <class TApi>
+auto begin_command_buffer(std::reference_wrapper<TApi> api, VkCommandBuffer command_buffer)
+    -> VkResult pre(command_buffer != VK_NULL_HANDLE)
+{
+    VkCommandBufferBeginInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    return api.get().vk_begin_command_buffer(command_buffer, &info);
+}
+
+/**
+ * Executes recording start as an IO action.
+ *
+ * @param api Borrowed command implementation.
+ * @param command_buffer Initial-state primary buffer.
+ * @return Recording buffer or the original Vulkan failure.
+ */
+template <class TApi>
+auto begin_command_buffer_io_action(
+    std::reference_wrapper<TApi> api, command_buffer_ptr command_buffer)
+    -> vulkan_result<command_buffer_ptr> pre(command_buffer != nullptr)
+{
+    namespace result = fnfelt::result;
+    using result_type = vulkan_result<command_buffer_ptr>;
+    VkResult status = begin_command_buffer(api, command_buffer.get());
+    if (status != VK_SUCCESS)
+    {
+        return result::error<result_type>(
+            VulkanFailure{FallibleVulkanOperation::begin_command_buffer, status});
+    }
+    return result::success<result_type>(std::move(command_buffer));
+}
+
+/**
+ * Provides recording start from borrowed execution capabilities.
+ *
+ * @param command_buffer Initial-state primary buffer.
+ * @param environment Borrowed command capabilities.
+ * @return Deferred recording start.
+ */
+template <class TEnvironment>
+constexpr auto begin_command_buffer_reader_io_action(
+    command_buffer_ptr command_buffer, TEnvironment const & environment)
+{
+    using fnfelt::literals::operator""_ss;
+    using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
+    namespace io = fnfelt::monad::io;
+
+    // Callable providing recording start with the buffer and its parents retained.
+    auto begin_recording = std::bind_front(
+        begin_command_buffer_io_action<api_type>, environment.api, std::move(command_buffer));
+
+    // IO providing a recording buffer or the original Vulkan failure.
+    return io::create<"vk_begin_command_buffer"_ss>(std::move(begin_recording));
+}
+
 /** Commands needed to allocate and release a command buffer. */
 template <class TEnvironment>
 concept vk_allocate_command_buffer_environment = backend::detail::api_environment<TEnvironment> &&

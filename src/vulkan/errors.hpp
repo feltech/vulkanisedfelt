@@ -19,6 +19,8 @@ enum class FallibleVulkanOperation
 {
     /// Instance API version query.
     enumerate_instance_version,
+    /// Command buffer recording start.
+    begin_command_buffer,
     /// Binary semaphore creation.
     create_semaphore,
     /// Fence creation.
