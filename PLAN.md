@@ -616,8 +616,17 @@ acquisition owners through their independent signals. These operations add no wa
 presentation or device-loss cleanup policy. Mocked tests cover deferred execution, native
 parameters, optional semaphore operations, timeout retention, native failures and caller-retained
 inputs. A windowed smoke test completes fence-only acquisition, records the acquired target, submits
-the clear pass and waits for its completion fence before cleanup. Next add presentation and compose
-the bounded frame. Keep the legacy implementation static as a reference until migration is complete.
+the clear pass and waits for its completion fence before cleanup. Queue presentation now accepts one
+acquired image with an optional binary semaphore wait. Success, including suboptimal presentation,
+retains the device, original acquisition owners and wait semaphore; the image must be reacquired
+before further use. Other statuses preserve the original Vulkan failure. Presentation rejection can
+still enqueue semaphore waits, so original inputs must remain alive across errors until their uses
+are safely complete. The returned owners are not a completion token: neither a submission fence nor
+queue/device idle establishes presentation-safe resource release. Mocked tests cover deferred
+execution, native parameters, status distinctions and ownership. Actual presentation and a bounded
+frame smoke test remain deferred until a presentation-completion mechanism is available, such as
+maintenance1 presentation fences; no extension is enabled by this primitive. Keep the legacy
+implementation static as a reference until migration is complete.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
