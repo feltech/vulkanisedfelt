@@ -12,6 +12,10 @@ PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char cons
 {
     return ::vkGetInstanceProcAddr(instance, name);
 }
+VkResult Api::vk_end_command_buffer(VkCommandBuffer command_buffer)
+{
+    return ::vkEndCommandBuffer(command_buffer);
+}
 VkResult Api::vk_begin_command_buffer(
     VkCommandBuffer command_buffer, VkCommandBufferBeginInfo const * info)
 {

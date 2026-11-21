@@ -23,6 +23,8 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Command buffer recording-end expectations. */
+    MAKE_MOCK1(vk_end_command_buffer, VkResult(VkCommandBuffer));
     /** Command buffer recording-start expectations. */
     MAKE_MOCK2(
         vk_begin_command_buffer, VkResult(VkCommandBuffer, VkCommandBufferBeginInfo const *));

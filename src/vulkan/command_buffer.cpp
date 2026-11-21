@@ -38,6 +38,66 @@ struct CommandBufferEnvironment
 };
 }  // namespace
 
+TEST_CASE("[impure] ending command buffer recording is lazy")
+{
+    backend::MockApi api;
+    CommandBufferEnvironment environment{std::ref(api)};
+    char buffer_storage{};
+    command_buffer_ptr command_buffer{
+        reinterpret_cast<VkCommandBuffer>(&buffer_storage), [](auto) {}};
+    std::weak_ptr buffer_observer{command_buffer};
+
+    {
+        // Binding retains the recording buffer without invoking native end.
+        auto plan =
+            reader_io_vk_end_command_buffer<decltype(environment)>(std::move(command_buffer));
+        [[maybe_unused]] auto deferred = plan.build(environment);
+
+        CHECK_FALSE(buffer_observer.expired());
+    }
+
+    CHECK(buffer_observer.expired());
+}
+
+TEST_CASE("[impure] ending command buffer recording preserves ownership and native failures")
+{
+    backend::MockApi api;
+    CommandBufferEnvironment environment{std::ref(api)};
+    char buffer_storage{};
+    VkCommandBuffer buffer_handle = reinterpret_cast<VkCommandBuffer>(&buffer_storage);
+    command_buffer_ptr command_buffer{buffer_handle, [](auto) {}};
+    std::weak_ptr buffer_observer{command_buffer};
+    VkResult status = VK_SUCCESS;
+    SUBCASE("successful end publishes executable ownership") {}
+    SUBCASE("failed end publishes no executable ownership")
+    {
+        status = VK_ERROR_OUT_OF_DEVICE_MEMORY;
+    }
+    REQUIRE_CALL(api, vk_end_command_buffer(buffer_handle)).RETURN(status);
+
+    // The buffer is executable only when the native recording completion succeeds.
+    vulkan_result<command_buffer_ptr> outcome =
+        reader_io_vk_end_command_buffer<decltype(environment)>(std::move(command_buffer))
+            .build(environment)
+            .sync_wait(lf::lazy_pool{2});
+
+    if (status == VK_SUCCESS)
+    {
+        REQUIRE(fnfelt::result::is_success(outcome));
+        CHECK_EQ(fnfelt::result::get_success(outcome).get(), buffer_handle);
+        CHECK_FALSE(buffer_observer.expired());
+    }
+    else
+    {
+        REQUIRE(fnfelt::result::is_error(outcome));
+        CHECK_EQ(
+            fnfelt::result::get_error(outcome).operation,
+            FallibleVulkanOperation::end_command_buffer);
+        CHECK_EQ(fnfelt::result::get_error(outcome).result, status);
+        CHECK(buffer_observer.expired());
+    }
+}
+
 TEST_CASE("[impure] beginning command buffer recording is lazy")
 {
     backend::MockApi api;

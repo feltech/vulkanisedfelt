@@ -27,6 +27,13 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Finishes recording a command buffer.
+     *
+     * @param command_buffer Recording buffer outside a render pass.
+     * @return Vulkan recording status.
+     */
+    VkResult vk_end_command_buffer(VkCommandBuffer command_buffer);
+    /**
      * Begins recording a command buffer.
      *
      * @param command_buffer Buffer in the required native state.

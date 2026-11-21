@@ -26,6 +26,61 @@
 
 namespace vulkandemo::vulkan::detail
 {
+/** Commands needed to finish recording a command buffer. */
+template <class TEnvironment>
+concept vk_end_command_buffer_environment = backend::detail::api_environment<TEnvironment> &&
+    requires(TEnvironment const & environment, VkCommandBuffer buffer)
+{
+    {environment.api.get().vk_end_command_buffer(buffer)}->std::same_as<VkResult>;
+};
+
+/**
+ * Executes recording completion as an IO action.
+ *
+ * @param api Borrowed command implementation.
+ * @param command_buffer Recording primary buffer outside a render pass.
+ * @return Executable buffer or the original Vulkan failure.
+ */
+template <class TApi>
+auto end_command_buffer_io_action(
+    std::reference_wrapper<TApi> api, command_buffer_ptr command_buffer)
+    -> vulkan_result<command_buffer_ptr> pre(command_buffer != nullptr)
+{
+    namespace result = fnfelt::result;
+    using result_type = vulkan_result<command_buffer_ptr>;
+    VkResult status = api.get().vk_end_command_buffer(command_buffer.get());
+    if (status != VK_SUCCESS)
+    {
+        // A failed native end leaves the buffer invalid rather than executable.
+        return result::error<result_type>(
+            VulkanFailure{FallibleVulkanOperation::end_command_buffer, status});
+    }
+    return result::success<result_type>(std::move(command_buffer));
+}
+
+/**
+ * Provides recording completion from borrowed execution capabilities.
+ *
+ * @param command_buffer Recording primary buffer outside a render pass.
+ * @param environment Borrowed command capabilities.
+ * @return Deferred recording completion.
+ */
+template <class TEnvironment>
+constexpr auto end_command_buffer_reader_io_action(
+    command_buffer_ptr command_buffer, TEnvironment const & environment)
+{
+    using fnfelt::literals::operator""_ss;
+    using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
+    namespace io = fnfelt::monad::io;
+
+    // Callable providing recording completion with the buffer and its parents retained.
+    auto end_recording = std::bind_front(
+        end_command_buffer_io_action<api_type>, environment.api, std::move(command_buffer));
+
+    // IO providing an executable buffer or the original Vulkan failure.
+    return io::create<"vk_end_command_buffer"_ss>(std::move(end_recording));
+}
+
 /** Commands needed to begin recording a command buffer. */
 template <class TEnvironment>
 concept vk_begin_command_buffer_environment = backend::detail::api_environment<TEnvironment> &&

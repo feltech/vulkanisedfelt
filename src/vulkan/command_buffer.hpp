@@ -19,6 +19,32 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Plans completion of primary command buffer recording.
+ *
+ * Execute only while the nonempty buffer is recording outside a render pass. Externally
+ * synchronize host access to its pool. A successful buffer is executable; native failure
+ * makes it invalid. Keep recorded resource owners alive through all subsequent buffer uses.
+ * This operation does not submit commands.
+ *
+ * @param command_buffer Retained recording primary buffer.
+ * @return ReaderIO providing the executable buffer or the original Vulkan failure.
+ */
+template <detail::vk_end_command_buffer_environment TEnvironment>
+[[nodiscard]] constexpr auto reader_io_vk_end_command_buffer(command_buffer_ptr command_buffer)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // Action providing recording completion with the primary buffer retained.
+    auto end_command_buffer = std::bind_front(
+        detail::end_command_buffer_reader_io_action<TEnvironment>, std::move(command_buffer));
+
+    // ReaderIO providing an executable buffer or a native failure.
+    return reader_io::create<"vk_end_command_buffer"_ss, TEnvironment>(
+        std::move(end_command_buffer));
+}
+
+/**
  * Plans one-time recording of an initial-state primary command buffer.
  *
  * Execute only while the nonempty buffer is in its initial state. Pools created without
