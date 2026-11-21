@@ -29,6 +29,7 @@ add_executable(
   vulkan/physical_devices.cpp
   vulkan/physical_device_properties.cpp
   vulkan/swapchain_maintenance1_features.cpp
+  vulkan/swapchain_maintenance1_selection.cpp
   vulkan/physical_device_selection.cpp
   vulkan/detail/physical_device_selection.cpp
   vulkan/queue_family_properties.cpp
@@ -143,6 +144,7 @@ target_sources(
           vulkan/detail/physical_device_properties.hpp
           vulkan/swapchain_maintenance1_features.hpp
           vulkan/detail/swapchain_maintenance1_features.hpp
+          vulkan/swapchain_maintenance1_selection.hpp
           vulkan/physical_device_selection.hpp
           vulkan/physical_device_selection_types.hpp
           vulkan/detail/physical_device_selection.hpp
