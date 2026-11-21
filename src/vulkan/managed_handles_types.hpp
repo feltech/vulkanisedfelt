@@ -22,6 +22,12 @@ using instance_ptr = std::shared_ptr<VkInstance_T>;
 using device_ptr = std::shared_ptr<VkDevice_T>;
 
 static_assert(
+    std::is_pointer_v<VkFramebuffer>, "Framebuffer owners require pointer-shaped Vulkan handles");
+
+/** Shared framebuffer owner retaining its attachment and render pass. */
+using framebuffer_ptr = std::shared_ptr<std::remove_pointer_t<VkFramebuffer>>;
+
+static_assert(
     std::is_pointer_v<VkRenderPass>, "Render pass owners require pointer-shaped Vulkan handles");
 
 /** Shared render pass owner retaining its logical device. */

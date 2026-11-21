@@ -27,6 +27,29 @@ struct Api
      */
     PFN_vkVoidFunction vk_get_instance_proc_addr(VkInstance instance, char const * name);
     /**
+     * Creates a framebuffer.
+     *
+     * @param device Logical device owning the framebuffer.
+     * @param info Framebuffer attachment and dimensions.
+     * @param allocator Allocation callbacks, or null for default allocation.
+     * @param framebuffer Receives the acquired handle.
+     * @return Vulkan creation status.
+     */
+    VkResult vk_create_framebuffer(
+        VkDevice device,
+        VkFramebufferCreateInfo const * info,
+        VkAllocationCallbacks const * allocator,
+        VkFramebuffer * framebuffer);
+    /**
+     * Destroys a framebuffer after its GPU work finishes.
+     *
+     * @param device Logical device owning the framebuffer.
+     * @param framebuffer Framebuffer to destroy.
+     * @param allocator Callbacks matching creation.
+     */
+    void vk_destroy_framebuffer(
+        VkDevice device, VkFramebuffer framebuffer, VkAllocationCallbacks const * allocator);
+    /**
      * Creates a render pass.
      *
      * @param device Logical device owning the render pass.

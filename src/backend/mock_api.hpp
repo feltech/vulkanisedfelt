@@ -23,6 +23,17 @@ struct MockApi
 {
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
+    /** Framebuffer creation expectations. */
+    MAKE_MOCK4(
+        vk_create_framebuffer,
+        VkResult(
+            VkDevice,
+            VkFramebufferCreateInfo const *,
+            VkAllocationCallbacks const *,
+            VkFramebuffer *));
+    /** Framebuffer destruction expectations. */
+    MAKE_MOCK3(
+        vk_destroy_framebuffer, void(VkDevice, VkFramebuffer, VkAllocationCallbacks const *));
     /** Render pass creation expectations. */
     MAKE_MOCK4(
         vk_create_render_pass,

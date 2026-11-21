@@ -22,6 +22,43 @@
 namespace vulkandemo::vulkan
 {
 /**
+ * Owns a framebuffer while retaining its attachment, render pass and device.
+ *
+ * The borrowed API must outlive every owner. Finish submitted commands using the framebuffer
+ * and synchronize host access before final release. All parents must belong to the device.
+ *
+ * @param framebuffer Acquired framebuffer using the default allocator.
+ * @param device Logical device owning the framebuffer.
+ * @param render_pass Compatible render pass.
+ * @param image_view Color attachment view.
+ * @param api Command implementation alive through cleanup.
+ * @return Shared framebuffer owner retaining its parents.
+ */
+template <class TApi>
+[[nodiscard]] auto make_framebuffer_ptr(
+    VkFramebuffer framebuffer,
+    device_ptr device,
+    render_pass_ptr render_pass,
+    image_view_ptr image_view,
+    TApi & api) -> framebuffer_ptr pre(framebuffer != VK_NULL_HANDLE)
+    pre(device != nullptr && render_pass != nullptr && image_view != nullptr)
+{
+    return framebuffer_ptr{
+        framebuffer,
+        [device = std::move(device),
+         render_pass = std::move(render_pass),
+         image_view = std::move(image_view),
+         &api](VkFramebuffer handle) mutable noexcept
+        {
+            api.vk_destroy_framebuffer(device.get(), handle, nullptr);
+            // Weak framebuffer observers must not prolong parents after native cleanup.
+            image_view.reset();
+            render_pass.reset();
+            device.reset();
+        }};
+}
+
+/**
  * Owns a render pass while retaining its logical device.
  *
  * The borrowed API must outlive every owner. Finish submitted commands using the render
