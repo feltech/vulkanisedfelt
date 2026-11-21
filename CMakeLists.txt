@@ -37,7 +37,7 @@ find_package(strong_type REQUIRED)
 find_package(range-v3 REQUIRED)
 find_package(frozen REQUIRED)
 find_package(etl REQUIRED)
-find_package(Vulkan REQUIRED)
+find_package(Vulkan 1.4 REQUIRED)
 add_subdirectory(vendor/lift EXCLUDE_FROM_ALL)
 add_library(rollbear::lift ALIAS lift)
 
