@@ -700,6 +700,23 @@ reusable execution, both extension families, shared and separate queue families,
 and final-owner cleanup. A windowed smoke test acquires the enabled device when supported and checks
 the ordinary unsupported-capability result otherwise, without submitting GPU work.
 
+Fenced presentation now uses the enabled swapchain maintenance1 context to attach a call-local
+release fence to one native presentation request. Success retains the existing queued request and
+its fence; native errors preserve the original Vulkan failure. Callers retain their original image,
+semaphore and fence owners across every outcome: out-of-date, surface-lost and exclusive-mode-lost
+rejections still enqueue presentation operations, while allocation failures leave state unchanged
+and do not associate the supplied fence. Fence signaling permits presentation-resource release, not
+proof of display completion or of separate rendering and acquisition signals. Mocked tests cover
+native parameters, optional waits, both successful statuses, error ownership, materialized IO and
+retention through a timed-out fence wait. A windowed smoke test acquires one image, records and
+submits a clear, waits for rendering and then presents with a release fence. It waits for every
+associated presentation fence before cleanup, including enqueued rejections, and reports native
+failures after safe release; device-loss waits permit teardown without claiming a successful frame.
+The capability-absence path remains an ordinary unsupported outcome. The canonical presentation
+operation requires this release fence and returns its owner with the ordinary queued request. Next,
+compose the bounded frame into a reusable operation before adding event polling, continuous frames
+or swapchain recreation.
+
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
 Joining the worker precedes releasing SDL resources on main and finalizing its context. Application
