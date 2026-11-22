@@ -198,6 +198,10 @@ Uint32 Api::sdl_get_window_id(SDL_Window * window)
 {
     return ::SDL_GetWindowID(window);
 }
+void Api::sdl_free(void * memory)
+{
+    ::SDL_free(memory);
+}
 VkResult Api::vk_get_physical_device_surface_present_modes_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, std::uint32_t * count, VkPresentModeKHR * modes)
 {

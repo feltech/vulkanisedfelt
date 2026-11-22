@@ -352,6 +352,12 @@ struct Api
      */
     Uint32 sdl_get_window_id(SDL_Window * window);
     /**
+     * Releases memory allocated by SDL.
+     *
+     * @param memory SDL allocation, or null.
+     */
+    void sdl_free(void * memory);
+    /**
      * Retrieves supported presentation modes for a surface.
      *
      * @param device Physical device supporting the surface.
