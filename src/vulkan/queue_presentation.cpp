@@ -7,7 +7,6 @@
 #ifndef DOCTEST_CONFIG_DISABLE
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -17,6 +16,7 @@
 
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
+#include <fnfelt/monad/reader_io.hpp>
 #include <fnfelt/result.hpp>
 #include <immer/box.hpp>
 #include <libfork/schedule/lazy_pool.hpp>
@@ -27,13 +27,11 @@
 #include "../sdl/video.hpp"
 #include "../sdl/vulkan_surface.hpp"
 #include "../sdl/window.hpp"
-#include "./clear_commands.hpp"
-#include "./clear_commands_types.hpp"
+#include "./clear_frame.hpp"
 #include "./command_pool.hpp"
 #include "./errors.hpp"
 #include "./fence.hpp"
 #include "./fence_types.hpp"
-#include "./image_acquisition.hpp"
 #include "./image_acquisition_types.hpp"
 #include "./managed_handles_types.hpp"
 #include "./presentation_device.hpp"
@@ -49,12 +47,9 @@
 #include "./presentation_swapchain_types.hpp"
 #include "./queue_family_selection_types.hpp"
 #include "./queue_presentation_types.hpp"
-#include "./queue_submission.hpp"
-#include "./queue_submission_types.hpp"
 #include "./queue_types.hpp"
 #include "./render_pass.hpp"
 #include "./renderer_errors.hpp"
-#include "./semaphore.hpp"
 #include "./synchronization_types.hpp"
 
 namespace vulkandemo::vulkan
@@ -302,11 +297,12 @@ TEST_CASE("[impure] fenced presentation errors preserve status while callers ret
     CHECK_EQ(fixture.presentation_fence.use_count(), 1);
 }
 
-TEST_CASE("[integration][windowed] one clear frame releases presentation resources through a fence")
+TEST_CASE("[integration][windowed] composed clear frame completes before resource release")
 {
     backend::Api api;
     using environment_type = sdl::detail::TestState<backend::Api>;
     using state_type = immer::box<environment_type>;
+    using fnfelt::literals::operator""_ss;
     namespace result = fnfelt::result;
     sdl::detail::TestRuntime runtime{api};
     REQUIRE(result::is_success(runtime.run(sdl::state_io_sdl_initialize_video<state_type>())));
@@ -349,7 +345,6 @@ TEST_CASE("[integration][windowed] one clear frame releases presentation resourc
     REQUIRE(result::is_success(views));
     PresentationSwapchain presentation_swapchain =
         result::get_success(views).presentation_swapchain_images.presentation_swapchain;
-    VkExtent2D extent = presentation_swapchain.configuration.extent;
     vulkan_result<render_pass_ptr> render_pass = runtime.run(
         reader_io_vk_create_render_pass<environment_type>(
             context.device, presentation_swapchain.configuration.surface_format.format));
@@ -362,133 +357,30 @@ TEST_CASE("[integration][windowed] one clear frame releases presentation resourc
         reader_io_vk_create_command_pool<environment_type>(
             context.device, context.queue_families.graphics_family_index));
     REQUIRE(result::is_success(pool));
-    vulkan_result<fence_ptr> acquisition_fence =
-        runtime.run(reader_io_vk_create_fence<environment_type>(context.device));
-    REQUIRE(result::is_success(acquisition_fence));
-    vulkan_result<fence_ptr> submission_fence =
-        runtime.run(reader_io_vk_create_fence<environment_type>(context.device));
-    REQUIRE(result::is_success(submission_fence));
-    vulkan_result<fence_ptr> presentation_fence =
-        runtime.run(reader_io_vk_create_fence<environment_type>(context.device));
-    REQUIRE(result::is_success(presentation_fence));
-    vulkan_result<semaphore_ptr> rendering_semaphore =
-        runtime.run(reader_io_vk_create_semaphore<environment_type>(context.device));
-    REQUIRE(result::is_success(rendering_semaphore));
-    constexpr timeout_nanoseconds indefinitely{std::numeric_limits<std::uint64_t>::max()};
-
-    // Originals remain outside noexcept phases: an unexpected failure cannot unwind pending owners.
-    auto wait_for_release = [&](fence_ptr fence) noexcept -> vulkan_result<FenceWaitStatus>
+    struct FrameEnvironment : environment_type
     {
-        vulkan_result<FenceWaitStatus> completion = runtime.run(
-            reader_io_vk_wait_for_fence<environment_type>(
-                context.device, std::move(fence), indefinitely));
-        if (result::is_error(completion))
-        {
-            // A finite device-loss wait permits teardown, without claiming successful work.
-            REQUIRE_EQ(result::get_error(completion).result, VK_ERROR_DEVICE_LOST);
-        }
-        else
-        {
-            REQUIRE(result::is_success(completion));
-            REQUIRE_EQ(result::get_success(completion), FenceWaitStatus::signaled);
-        }
-        return completion;
+        PresentationFramebuffers targets;
+        command_pool_ptr command_pool;
     };
+    auto frame = reader_io_clear_and_present<FrameEnvironment>(
+        VkClearColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}, timeout_nanoseconds{1'000'000'000});
 
-    // Failed acquisition leaves its signals unaffected; successful acquisition is host-completed.
-    vulkan_result<AcquiredSwapchainImage> acquired = runtime.run(
-        reader_io_vk_acquire_next_image_khr<environment_type>(
-            context.device,
-            presentation_swapchain.swapchain,
-            timeout_nanoseconds{1'000'000'000},
-            {},
-            result::get_success(acquisition_fence)));
-    REQUIRE(result::is_success(acquired));
-    vulkan_result<FenceWaitStatus> acquisition_completed =
-        wait_for_release(result::get_success(acquisition_fence));
-    REQUIRE(result::is_success(acquisition_completed));
-    swapchain_image_index image_index = result::get_success(acquired).image_index;
-    recorded_clear_commands_result recording = runtime.run(
-        reader_io_record_clear_commands<environment_type>(
-            context.device,
-            result::get_success(pool),
-            result::get_success(framebuffers).framebuffers[value_of(image_index)],
-            result::get_success(render_pass),
-            extent,
-            VkClearColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}));
-    REQUIRE(result::is_success(recording));
-
-    queued_presentation_result presented = [&]() noexcept
+    // Bind the resource scope at execution, while the test runtime services main-thread cleanup.
+    auto run_frame = [&](environment_type execution)
     {
-        submitted_clear_commands_result submitted = runtime.run(
-            reader_io_vk_queue_submit<environment_type>(
-                context.device,
-                context.graphics_queue,
-                result::get_success(recording),
-                {},
-                result::get_success(rendering_semaphore),
-                result::get_success(submission_fence)));
-        if (result::is_error(submitted))
-        {
-            VkResult status = result::get_error(submitted).result;
-            REQUIRE(
-                (status == VK_ERROR_OUT_OF_HOST_MEMORY || status == VK_ERROR_OUT_OF_DEVICE_MEMORY ||
-                 status == VK_ERROR_DEVICE_LOST));
-            if (status == VK_ERROR_DEVICE_LOST)
-            {
-                // Device loss can still leave submission resources in use until this wait returns.
-                wait_for_release(result::get_success(submission_fence));
-            }
-            return result::error<queued_presentation_result>(result::get_error(submitted));
-        }
-        REQUIRE(result::is_success(submitted));
+        return std::move(frame)
+            .build(
+                FrameEnvironment{
+                    std::move(execution),
+                    result::get_success(std::move(framebuffers)),
+                    result::get_success(std::move(pool))})
+            .io();
+    };
+    completed_presentation_result presented = runtime.run(
+        fnfelt::monad::reader_io::create<"run_clear_frame_test"_ss, environment_type>(run_frame));
 
-        // Complete rendering first, so even an unqueued presentation leaves no pending submission.
-        vulkan_result<FenceWaitStatus> rendering_completed =
-            wait_for_release(result::get_success(submission_fence));
-        if (result::is_error(rendering_completed))
-        {
-            return result::error<queued_presentation_result>(
-                result::get_error(rendering_completed));
-        }
-        queued_presentation_result outcome = runtime.run(
-            reader_io_vk_queue_present_khr<environment_type>(
-                context.device,
-                context.present_queue,
-                result::get_success(acquired),
-                result::get_success(rendering_semaphore),
-                result::get_success(presentation_fence)));
-        VkResult status = VK_SUCCESS;
-        if (result::is_error(outcome))
-        {
-            status = result::get_error(outcome).result;
-        }
-        else
-        {
-            REQUIRE(result::is_success(outcome));
-        }
-        bool const has_unchanged_state =
-            status == VK_ERROR_OUT_OF_HOST_MEMORY || status == VK_ERROR_OUT_OF_DEVICE_MEMORY;
-        // These rejections still enqueue presentation; OOM leaves the fence unassociated.
-        REQUIRE(
-            (status == VK_SUCCESS || status == VK_ERROR_OUT_OF_DATE_KHR ||
-             status == VK_ERROR_SURFACE_LOST_KHR ||
-             status == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT ||
-             status == VK_ERROR_DEVICE_LOST || has_unchanged_state));
-        if (!has_unchanged_state)
-        {
-            vulkan_result<FenceWaitStatus> release =
-                wait_for_release(result::get_success(presentation_fence));
-            if (result::is_error(release) && result::is_success(outcome))
-            {
-                return result::error<queued_presentation_result>(result::get_error(release));
-            }
-        }
-        return outcome;
-    }();
-
-    // Native failures are reported only after all potentially queued uses permit resource release.
-    CHECK(result::is_success(presented));
+    // Both success and error permit ordinary RAII teardown of the owning scope.
+    REQUIRE(result::is_success(presented));
 }
 }  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE
