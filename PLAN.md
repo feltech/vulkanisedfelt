@@ -746,8 +746,25 @@ Pure quit classification recognizes a global quit request or the selected window
 without consuming other event data or introducing cancellation. Mocked tests cover lazy execution,
 main-thread affinity, replay, native error-text ownership, empty queues, event payload preservation
 and shared text cleanup. A bounded windowed smoke test queues resize, close and quit events and
-observes them through the polling wrapper despite unrelated startup events. Application integration
-of the quit decision and cooperative cancellation remain later work.
+observes them through the polling wrapper despite unrelated startup events.
+
+Bounded pending-event collection now provides immutable FIFO batches through one main-thread
+dispatch. Its explicit event limit prevents continuously arriving input from starving the frame;
+reaching that limit leaves later events queued without a lookahead poll. Zero consumes nothing. The
+quit-aware bounded frame requires a nonzero limit and checks the collected batch for global quit or
+the selected window's close request before creating synchronization or performing any new frame
+effects. A quit request beyond the batch limit is considered on a subsequent execution.
+
+The quit-aware ReaderIO takes its framebuffers and command pool from an owning environment retained
+through polling and the existing clear-and-present operation. Their ownership graph retains the
+swapchain, surface, window and SDL video subsystem. Cancellation produces stopped. Frame errors
+retain the original Vulkan failure and existing safe-release requirements. Successful output
+includes the complete event batch for later input handling; stopped and error outcomes have no batch
+payload. The API must outlive any returned event-text owners. Mocked tests cover bounded FIFO
+collection, text ownership, the pre-frame checkpoint and final-owner lifetime. Separate windowed
+smoke tests exercise both queued-close cancellation and completed rendering with retained non-quit
+input. Continuous frames, resize handling and cooperative cancellation beyond this checkpoint remain
+later work.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
