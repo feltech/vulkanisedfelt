@@ -5,6 +5,7 @@
 #include "./event.hpp"
 
 #ifndef DOCTEST_CONFIG_DISABLE
+#include <cstddef>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -12,11 +13,21 @@
 
 #include <SDL_events.h>
 #include <SDL_keycode.h>
+#include <SDL_video.h>
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
+#include <fnfelt/result.hpp>
+#include <immer/box.hpp>
 
+#include "../backend/api.hpp"
 #include "../backend/mock_api.hpp"
 #include "./event_types.hpp"
+#include "./quit_event.hpp"
+#include "./video.hpp"
+#include "./window.hpp"
+#include "./window_id.hpp"
+#include "./window_id_types.hpp"
+#include "./window_types.hpp"
 #include "detail/test_runtime.hpp"
 
 namespace vulkandemo::sdl
@@ -224,6 +235,86 @@ TEST_CASE("[impure] unsupported event payloads are neither borrowed nor freed")
         CHECK_EQ(unsupported.type, type);
         CHECK_EQ(unsupported.timestamp, 31);
     }
+}
+
+TEST_CASE("[integration][windowed] polling preserves window events and detects quit requests")
+{
+    backend::Api api;
+    using environment_type = detail::TestState<backend::Api>;
+    using state_type = immer::box<environment_type>;
+    detail::TestRuntime runtime{api};
+    sdl_result<void> video = runtime.run(state_io_sdl_initialize_video<state_type>());
+    REQUIRE(fnfelt::result::is_success(video));
+    WindowOptions options{
+        .width = window_width{64}, .height = window_height{48}, .flags = SDL_WINDOW_HIDDEN};
+    sdl_result<SDL_Window *> window = runtime.run(state_io_sdl_create_window<state_type>(options));
+    REQUIRE(fnfelt::result::is_success(window));
+    sdl_result<window_id> identifier = runtime.run(
+        reader_io_sdl_get_window_id<environment_type>(runtime.resources().window_owner));
+    REQUIRE(fnfelt::result::is_success(identifier));
+    window_id target_window = fnfelt::result::get_success(identifier);
+    REQUIRE_NE(value_of(target_window), 0);
+    SDL_Event resized{};
+    resized.window.type = SDL_WINDOWEVENT;
+    resized.window.windowID = value_of(target_window);
+    resized.window.event = SDL_WINDOWEVENT_SIZE_CHANGED;
+    resized.window.data1 = 123;
+    resized.window.data2 = 87;
+    SDL_Event closed = resized;
+    closed.window.event = SDL_WINDOWEVENT_CLOSE;
+    SDL_Event quit{};
+    quit.quit.type = SDL_QUIT;
+    REQUIRE_EQ(SDL_PushEvent(&resized), 1);
+    REQUIRE_EQ(SDL_PushEvent(&closed), 1);
+    REQUIRE_EQ(SDL_PushEvent(&quit), 1);
+    // The runtime's state keeps video and the window alive throughout polling.
+    auto poll_event = reader_io_sdl_poll_event<environment_type>();
+    bool has_resize = false;
+    bool has_close = false;
+    bool has_quit = false;
+
+    // Startup events may precede the three controlled events; polling remains bounded.
+    for (std::size_t attempt = 0; attempt != 256 && !(has_resize && has_close && has_quit);
+         ++attempt)
+    {
+        std::optional<event> outcome = runtime.run(poll_event);
+        if (!outcome)
+        {
+            continue;
+        }
+        NativeEvent const * native = std::get_if<NativeEvent>(&*outcome);
+        if (!native)
+        {
+            continue;
+        }
+        if (native->native.type == SDL_QUIT && has_close)
+        {
+            CHECK(should_quit(*outcome, target_window));
+            has_quit = true;
+        }
+        else if (
+            native->native.type == SDL_WINDOWEVENT &&
+            native->native.window.windowID == value_of(target_window))
+        {
+            if (native->native.window.event == SDL_WINDOWEVENT_SIZE_CHANGED &&
+                native->native.window.data1 == 123 && native->native.window.data2 == 87)
+            {
+                CHECK_EQ(native->native.window.data1, 123);
+                CHECK_EQ(native->native.window.data2, 87);
+                CHECK_FALSE(should_quit(*outcome, target_window));
+                has_resize = true;
+            }
+            else if (native->native.window.event == SDL_WINDOWEVENT_CLOSE && has_resize)
+            {
+                CHECK(should_quit(*outcome, target_window));
+                has_close = true;
+            }
+        }
+    }
+
+    CHECK(has_resize);
+    CHECK(has_close);
+    CHECK(has_quit);
 }
 }  // namespace vulkandemo::sdl
 #endif  // DOCTEST_CONFIG_DISABLE
