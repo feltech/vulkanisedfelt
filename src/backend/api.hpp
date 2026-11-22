@@ -4,7 +4,7 @@
 /**
  * @file backend/api.hpp
  *
- * Vulkan and SDL commands available to effectful actions.
+ * Native commands and fatal reporting available to effectful actions.
  */
 #pragma once
 
@@ -13,11 +13,19 @@
 #include <SDL.h>
 #include <vulkan/vulkan_core.h>
 
+#include "../vulkan/errors.hpp"
+
 namespace vulkandemo::backend
 {
 /** Real command implementation. */
 struct Api
 {
+    /**
+     * Reports an unrecoverable native failure and terminates without unwinding.
+     *
+     * @param failure Native operation and status requiring termination.
+     */
+    [[noreturn]] void report_fatal_error(vulkan::VulkanFailure failure);
     /**
      * Resolves an instance or global Vulkan command.
      *

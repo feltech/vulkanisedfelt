@@ -4,10 +4,22 @@
 
 #include "./api.hpp"
 
+#include <cstdio>
+#include <exception>
+
 #include <SDL_vulkan.h>
 
 namespace vulkandemo::backend
 {
+void Api::report_fatal_error(vulkan::VulkanFailure failure)
+{
+    std::fprintf(
+        stderr,
+        "Fatal Vulkan failure: operation %d returned %d.\n",
+        static_cast<int>(failure.operation),
+        static_cast<int>(failure.result));
+    std::terminate();
+}
 PFN_vkVoidFunction Api::vk_get_instance_proc_addr(VkInstance instance, char const * name)
 {
     return ::vkGetInstanceProcAddr(instance, name);

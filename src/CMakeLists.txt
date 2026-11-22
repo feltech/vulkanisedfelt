@@ -53,6 +53,8 @@ add_executable(
   vulkan/image_acquisition.cpp
   vulkan/queue_submission.cpp
   vulkan/queue_presentation.cpp
+  vulkan/submit_and_present.cpp
+  vulkan/detail/submit_and_present.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
   vulkan/swapchain.cpp
@@ -187,6 +189,9 @@ target_sources(
           vulkan/queue_presentation.hpp
           vulkan/queue_presentation_types.hpp
           vulkan/detail/queue_presentation.hpp
+          vulkan/submit_and_present.hpp
+          vulkan/submit_and_present_types.hpp
+          vulkan/detail/submit_and_present.hpp
           vulkan/detail/queue_submission.hpp
           vulkan/detail/image_acquisition.hpp
           vulkan/synchronization_types.hpp

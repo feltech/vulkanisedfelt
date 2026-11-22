@@ -4,23 +4,38 @@
 /**
  * @file backend/mock_api.hpp
  *
- * Mock Vulkan and SDL commands for driverless tests.
+ * Mock native commands and fatal reporting for driverless tests.
  */
 #pragma once
 
 #ifndef DOCTEST_CONFIG_DISABLE
 #include <cstdint>
+#include <exception>
 
 #include <SDL.h>
 #include <vulkan/vulkan_core.h>
 
 #include <trompeloeil.hpp>
 
+#include "../vulkan/errors.hpp"
+
 namespace vulkandemo::backend
 {
 /** Per-test command expectations. */
 struct MockApi
 {
+    /** Fatal-reporting expectations; throw to observe termination without ending the test. */
+    MAKE_MOCK1(report_fatal_error_effect, void(vulkan::VulkanFailure));
+    /**
+     * Reports a fatal outcome through the expectation and never returns normally.
+     *
+     * @param failure Native operation and status requiring termination.
+     */
+    [[noreturn]] void report_fatal_error(vulkan::VulkanFailure failure)
+    {
+        report_fatal_error_effect(failure);
+        std::terminate();
+    }
     /** Global and instance command lookup expectations. */
     MAKE_MOCK2(vk_get_instance_proc_addr, PFN_vkVoidFunction(VkInstance, char const *));
     /** Queue presentation expectations. */
