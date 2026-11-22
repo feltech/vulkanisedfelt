@@ -713,9 +713,24 @@ submits a clear, waits for rendering and then presents with a release fence. It 
 associated presentation fence before cleanup, including enqueued rejections, and reports native
 failures after safe release; device-loss waits permit teardown without claiming a successful frame.
 The capability-absence path remains an ordinary unsupported outcome. The canonical presentation
-operation requires this release fence and returns its owner with the ordinary queued request. Next,
-compose the bounded frame into a reusable operation before adding event polling, continuous frames
-or swapchain recreation.
+operation requires this release fence and returns its owner with the ordinary queued request.
+
+The reusable bounded frame now composes fresh synchronization, image acquisition, host acquisition
+completion, clear recording, submission and fenced presentation. Its lower submission/presentation
+operation retains original owners across native errors and completes every potentially queued use
+before returning. Allocation failures skip unassociated fences; enqueued presentation rejections
+wait for release before forwarding the original error. A completed device-loss wait permits teardown
+without claiming successful work. Unknown pending-work completion is reported and terminates without
+unwinding pending owners. The completed outcome records the image index and combined suboptimal
+status without retaining pending work. Mocked tests cover ordering, failure propagation, fresh
+synchronization on replay and final-owner cleanup after required waits; the windowed smoke uses the
+composed frame operation.
+
+Cancellation before the frame may skip its execution; no cancellation check interrupts acquired
+work. After failure following successful acquisition, the owning scope abandons the swapchain and
+releases all aliases and retained plans through RAII. The operation does not forcibly destroy shared
+owners or recover an acquired image for reuse. Explicit image release, retries and swapchain
+recreation remain later work, alongside event polling and continuous frames.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
