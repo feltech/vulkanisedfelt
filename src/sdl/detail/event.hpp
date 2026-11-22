@@ -45,25 +45,15 @@ concept sdl_poll_event_environment = backend::detail::api_environment<TEnvironme
 auto has_pointer_free_payload(Uint32 type) noexcept -> bool;
 
 /**
- * Retrieves and owns one event on main.
- *
- * SDL event processing must remain initialized throughout execution.
+ * Adopts owned native payloads and snapshots all other supported event data.
  *
  * @param api Borrowed SDL implementation alive through returned text ownership.
- * @return One owned event, or an empty optional when no event is pending.
+ * @param native Retrieved native event whose text ownership is transferred.
+ * @return Owned event snapshot.
  */
 template <class TApi>
-auto poll_event_io_action(std::reference_wrapper<TApi> api)
-    -> std::optional<event> pre(execution::is_main_thread())
+auto own_event(std::reference_wrapper<TApi> api, SDL_Event native) -> event
 {
-    SDL_Event native{};
-    int status = api.get().sdl_poll_event(&native);
-    contract_assert(status == 0 || status == 1);
-    if (status == 0)
-    {
-        return std::nullopt;
-    }
-
     switch (native.type)
     {
         case SDL_DROPFILE:
@@ -89,6 +79,28 @@ auto poll_event_io_action(std::reference_wrapper<TApi> api)
             }
             return UnsupportedEvent{native.type, native.common.timestamp};
     }
+}
+
+/**
+ * Retrieves and owns one event on main.
+ *
+ * SDL event processing must remain initialized throughout execution.
+ *
+ * @param api Borrowed SDL implementation alive through returned text ownership.
+ * @return One owned event, or an empty optional when no event is pending.
+ */
+template <class TApi>
+auto poll_event_io_action(std::reference_wrapper<TApi> api)
+    -> std::optional<event> pre(execution::is_main_thread())
+{
+    SDL_Event native{};
+    int status = api.get().sdl_poll_event(&native);
+    contract_assert(status == 0 || status == 1);
+    if (status == 0)
+    {
+        return std::nullopt;
+    }
+    return own_event(api, native);
 }
 
 /**

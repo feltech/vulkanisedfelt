@@ -16,6 +16,7 @@ add_executable(
   sdl/window_id.cpp
   sdl/managed_text.cpp
   sdl/event.cpp
+  sdl/pending_events.cpp
   sdl/detail/event.cpp
   sdl/quit_event.cpp
   sdl/vulkan_surface.cpp
@@ -115,6 +116,9 @@ target_sources(
           sdl/managed_text.hpp
           sdl/managed_text_types.hpp
           sdl/event.hpp
+          sdl/pending_events.hpp
+          sdl/pending_events_types.hpp
+          sdl/detail/pending_events.hpp
           sdl/event_types.hpp
           sdl/detail/event.hpp
           sdl/quit_event.hpp
