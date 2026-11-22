@@ -344,10 +344,58 @@ Express entry and exit requirements with `pre` and `post`; keep `contract_assert
 established inside a function. Coroutine preconditions run before initial suspension, so check
 execution-thread affinity inside the coroutine body when it depends on resumption.
 
+Synchronous helpers for status-bearing Vulkan commands preserve `VkResult` and borrow native handles
+and output storage. `TApi` already provides the native boundary: call it directly from an IO action
+when another wrapper would only forward arguments. Keep separate helpers when they meaningfully
+prepare arguments or perform an operation. Interpret statuses, construct owned domain values, and
+introduce fnfelt `Result` channels in the executing IO action. Raw wrappers for void commands
+preserve `void`; their IO actions may return retained domain values. Name free callbacks bound with
+`std::bind_front` inside `io::create` as `*_io_action`, and free callbacks bound inside
+`reader_io::create` or `state_io::create` as `*_reader_io_action` or `*_state_io_action`. Reserve
+`io_`, `reader_io_`, and `state_io_` prefixes for factories returning those monads. Pure status
+decoders may return `Result` when adapting native outcomes for an IO action. Do not call a
+Result-producing IO action as though it were a native command helper.
+
+Keep `io_*` factories free of `TEnvironment`: pass explicit capabilities such as
+`std::reference_wrapper<TApi>` and explicit domain arguments, and introduce an `io_*` factory only
+when the IO is composed or reused directly at the IO layer. Unpack `TEnvironment` once at the
+`*_reader_io_action` boundary, returning `io::create(...)` directly or delegating to an `io_*`
+factory; do not pass both an environment and values extracted from it into a callee.
+
+Output storage must belong to execution, rather than a factory-local pointer captured by lazy IO.
+Retain resource owners through both the native call and outcome interpretation; only construct owned
+output values after a successful native status. For example, these layers have distinct interfaces:
+
+```c++
+template <class TApi>
+auto wait_for_fence(
+    std::reference_wrapper<TApi> api, VkDevice device, VkFence fence, std::uint64_t timeout)
+    -> VkResult;
+
+template <class TApi>
+auto wait_for_fence_io_action(
+    std::reference_wrapper<TApi> api,
+    device_ptr device,
+    fence_ptr fence,
+    timeout_nanoseconds timeout) -> vulkan_result<FenceWaitStatus>;
+
+template <class TApi>
+constexpr auto io_create_fence(std::reference_wrapper<TApi> api, device_ptr device);
+
+template <class TEnvironment>
+constexpr auto create_fence_reader_io_action(device_ptr device, TEnvironment const & environment);
+```
+
 ReaderIO environments are read-only logical state, including through borrowed references. API
 effects may use borrowed command implementations. Express logical state updates through StateIO and
 immutable Immer snapshots rather than mutating a shared environment. Box the whole resource-owning
 state aggregate rather than its individual branches.
+
+Keep application composition in ReaderIO or StateIO when it needs environment or state. Do not lower
+a ReaderIO to IO with `.build(environment).io()` merely to compose it with another operation;
+promote the enclosing factory and its combinators instead. Use `.io()` within application
+composition only at a temporary stateful scope boundary, binding the complete computation there.
+Materializing an operation for execution in runtime code or tests remains a normal boundary.
 
 Use ADL (argument-dependent lookup) where possible, for cleaner code, e.g.
 
@@ -399,9 +447,10 @@ immer::array<QueueFamilyScore> presentation_scores{candidates.begin(), candidate
 ```
 
 For simple stored IO actions, use free functions and `std::bind_front` to bind owned values or
-explicit reference wrappers. When an action needs a struct, use a deducing-this call operator,
-forwarding members with `FW`, rather than a mutable lambda. Balance `macros_push.hpp` and
-`macros_pop.hpp` in every file using `FW`.
+explicit reference wrappers. Store bound actions and continuations in named variables before passing
+them to monadic combinators, with an inline comment describing what each callable provides. When an
+action needs a struct, use a deducing-this call operator, forwarding members with `FW`, rather than
+a mutable lambda. Balance `macros_push.hpp` and `macros_pop.hpp` in every file using `FW`.
 
 ## Commits
 
