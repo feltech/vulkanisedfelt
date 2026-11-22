@@ -62,6 +62,8 @@ add_executable(
   vulkan/submit_and_present.cpp
   vulkan/detail/submit_and_present.cpp
   vulkan/clear_frame.cpp
+  vulkan/quit_aware_frame.cpp
+  vulkan/detail/quit_aware_frame.cpp
   vulkan/detail/clear_frame.cpp
   vulkan/presentation_framebuffers.cpp
   vulkan/detail/presentation_framebuffers.cpp
@@ -213,6 +215,9 @@ target_sources(
           vulkan/submit_and_present_types.hpp
           vulkan/detail/submit_and_present.hpp
           vulkan/clear_frame.hpp
+          vulkan/quit_aware_frame.hpp
+          vulkan/quit_aware_frame_types.hpp
+          vulkan/detail/quit_aware_frame.hpp
           vulkan/detail/clear_frame.hpp
           vulkan/detail/queue_submission.hpp
           vulkan/detail/image_acquisition.hpp
