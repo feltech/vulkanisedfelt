@@ -15,6 +15,8 @@ add_executable(
   sdl/drawable_size.cpp
   sdl/window_id.cpp
   sdl/managed_text.cpp
+  sdl/event.cpp
+  sdl/detail/event.cpp
   sdl/vulkan_surface.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
@@ -111,6 +113,9 @@ target_sources(
           sdl/detail/window_id.hpp
           sdl/managed_text.hpp
           sdl/managed_text_types.hpp
+          sdl/event.hpp
+          sdl/event_types.hpp
+          sdl/detail/event.hpp
           sdl/detail/instance_extensions.hpp
           sdl/vulkan_surface.hpp
           sdl/detail/vulkan_surface.hpp

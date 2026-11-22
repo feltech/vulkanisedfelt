@@ -202,6 +202,10 @@ void Api::sdl_free(void * memory)
 {
     ::SDL_free(memory);
 }
+int Api::sdl_poll_event(SDL_Event * event)
+{
+    return ::SDL_PollEvent(event);
+}
 VkResult Api::vk_get_physical_device_surface_present_modes_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, std::uint32_t * count, VkPresentModeKHR * modes)
 {

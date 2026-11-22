@@ -153,6 +153,8 @@ struct MockApi
     MAKE_MOCK1(sdl_get_window_id, Uint32(SDL_Window *));
     /** SDL allocation-release expectations. */
     MAKE_MOCK1(sdl_free, void(void *));
+    /** SDL event-polling expectations. */
+    MAKE_MOCK1(sdl_poll_event, auto(SDL_Event *)->int);
     /** Surface present-mode query expectations. */
     MAKE_MOCK4(
         vk_get_physical_device_surface_present_modes_khr,

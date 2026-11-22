@@ -358,6 +358,13 @@ struct Api
      */
     void sdl_free(void * memory);
     /**
+     * Retrieves one pending SDL event, pumping the queue as needed.
+     *
+     * @param event Receives one event when available.
+     * @return One when an event was retrieved, or zero when the queue is empty.
+     */
+    int sdl_poll_event(SDL_Event * event);
+    /**
      * Retrieves supported presentation modes for a surface.
      *
      * @param device Physical device supporting the surface.
