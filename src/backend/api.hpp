@@ -345,6 +345,13 @@ struct Api
      */
     void sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * height);
     /**
+     * Retrieves the identifier associated with a window.
+     *
+     * @param window Borrowed SDL window.
+     * @return Nonzero window identifier, or zero with an SDL error.
+     */
+    Uint32 sdl_get_window_id(SDL_Window * window);
+    /**
      * Retrieves supported presentation modes for a surface.
      *
      * @param device Physical device supporting the surface.

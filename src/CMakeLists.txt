@@ -13,6 +13,7 @@ add_executable(
   sdl/window.cpp
   sdl/instance_extensions.cpp
   sdl/drawable_size.cpp
+  sdl/window_id.cpp
   sdl/vulkan_surface.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
@@ -104,6 +105,9 @@ target_sources(
           sdl/drawable_size.hpp
           sdl/drawable_size_types.hpp
           sdl/detail/drawable_size.hpp
+          sdl/window_id.hpp
+          sdl/window_id_types.hpp
+          sdl/detail/window_id.hpp
           sdl/detail/instance_extensions.hpp
           sdl/vulkan_surface.hpp
           sdl/detail/vulkan_surface.hpp

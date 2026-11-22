@@ -194,6 +194,10 @@ void Api::sdl_vulkan_get_drawable_size(SDL_Window * window, int * width, int * h
 {
     ::SDL_Vulkan_GetDrawableSize(window, width, height);
 }
+Uint32 Api::sdl_get_window_id(SDL_Window * window)
+{
+    return ::SDL_GetWindowID(window);
+}
 VkResult Api::vk_get_physical_device_surface_present_modes_khr(
     VkPhysicalDevice device, VkSurfaceKHR surface, std::uint32_t * count, VkPresentModeKHR * modes)
 {

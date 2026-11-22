@@ -149,6 +149,8 @@ struct MockApi
         vk_destroy_swapchain_khr, void(VkDevice, VkSwapchainKHR, VkAllocationCallbacks const *));
     /** Vulkan drawable-size query expectations. */
     MAKE_MOCK3(sdl_vulkan_get_drawable_size, void(SDL_Window *, int *, int *));
+    /** SDL window-identifier query expectations. */
+    MAKE_MOCK1(sdl_get_window_id, Uint32(SDL_Window *));
     /** Surface present-mode query expectations. */
     MAKE_MOCK4(
         vk_get_physical_device_surface_present_modes_khr,

@@ -23,7 +23,9 @@ enum class FallibleSdlOperation
     /** Required Vulkan instance-extension discovery. */
     enumerate_instance_extensions,
     /** Vulkan presentation surface creation. */
-    create_vulkan_surface
+    create_vulkan_surface,
+    /** Window-identifier discovery. */
+    get_window_id
 };
 
 /** An SDL failure with an owned copy of the calling thread's error text. */
