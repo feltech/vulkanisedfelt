@@ -730,12 +730,29 @@ Cancellation before the frame may skip its execution; no cancellation check inte
 work. After failure following successful acquisition, the owning scope abandons the swapchain and
 releases all aliases and retained plans through RAII. The operation does not forcibly destroy shared
 owners or recover an acquired image for reuse. Explicit image release, retries and swapchain
-recreation remain later work, alongside event polling and continuous frames.
+recreation remain later work, alongside continuous frames.
+
+SDL window identifiers and single-event polling now have main-thread ReaderIO wrappers. Identifier
+queries retain the window and return a strong window ID or an owned SDL failure. Polling returns an
+optional event; its enclosing scope keeps SDL event processing initialized, and an empty queue is
+ordinary absence. Known pointer-free SDL2 event payloads are preserved by value, including resize
+and other window events. Drop and extended-editing text preserve their native allocations through
+shared immutable owners, released exactly once through the matching SDL implementation. The borrowed
+API must outlive every text owner, and its allocator must support the final owner's release thread.
+Missing text remains an empty owner. System, application-user and unknown events retain type and
+timestamp metadata without borrowing or releasing their external payloads.
+
+Pure quit classification recognizes a global quit request or the selected window's close request
+without consuming other event data or introducing cancellation. Mocked tests cover lazy execution,
+main-thread affinity, replay, native error-text ownership, empty queues, event payload preservation
+and shared text cleanup. A bounded windowed smoke test queues resize, close and quit events and
+observes them through the polling wrapper despite unrelated startup events. Application integration
+of the quit decision and cooperative cancellation remain later work.
 
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
-Joining the worker precedes releasing SDL resources on main and finalizing its context. Application
-event polling, cooperative cancellation and the production runtime remain future work.
+Joining the worker precedes releasing SDL resources on main and finalizing its context. Cooperative
+cancellation and the production runtime remain future work.
 
 Read `AGENTS.md`, this plan, the legacy responsibilities and fnfelt's main-thread demo when
 selecting exact APIs. Load the reflection skill before reflection code and the Immer skill before
