@@ -766,6 +766,20 @@ smoke tests exercise both queued-close cancellation and completed rendering with
 input. Continuous frames, resize handling and cooperative cancellation beyond this checkpoint remain
 later work.
 
+Swapchain recreation now combines pure SDL resize classification (`SDL_WINDOWEVENT_RESIZED` and
+`SDL_WINDOWEVENT_SIZE_CHANGED`), optional `old_swapchain` handoff retained solely through
+`vkCreateSwapchainKHR` without chaining onto the new swapchain, and complete presentation target
+assembly in `reader_io_create_presentation_targets` with format-matched `CompatibleRenderPass` reuse
+and recreation on format change. `state_io_recreate_presentation_targets` and
+`state_io_require_live_targets` track monotonic `swapchain_generation` values in an immutable
+`immer::box` snapshot, returning `SwapchainMinimized` on zero drawable extent without retiring live
+targets, preserving live targets across pre-creation errors, and performing atomic pre-create
+retirement that clears `live` before `vkCreateSwapchainKHR` so post-retirement failures allow clean
+retry from `VK_NULL_HANDLE` while older snapshots keep their prior generation alive until dropped.
+Pure Vulkan recreation predicates (`is_swapchain_out_of_date` and `should_recreate_swapchain`)
+classify out-of-date and suboptimal frame outcomes. Continuous frame looping, resize clear-color
+updates, cooperative cancellation and production runtime cutover remain next work.
+
 The test runtime uses fnfelt's `io::on` and a main-thread libfork dispatch loop. Background
 `sync_wait` completion sets an atomic flag and wakes that loop outside the ReaderIO environment.
 Joining the worker precedes releasing SDL resources on main and finalizing its context. Cooperative
