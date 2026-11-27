@@ -231,5 +231,107 @@ TEST_CASE("[integration][windowed] presentation setup retrieves swapchain-owned 
         CHECK(image != VK_NULL_HANDLE);
     }
 }
+
+TEST_CASE(
+    "[impure] presentation image setup hands off old swapchain without retaining it in result")
+{
+    backend::MockApi api;
+    sdl::detail::TestRuntime runtime{api};
+    using environment_type = sdl::detail::TestState<backend::MockApi>;
+    char device_storage{}, physical_storage{}, surface_storage{}, window_storage{}, old_storage{},
+        new_storage{}, image_storage{};
+    VkDevice device_handle = reinterpret_cast<VkDevice>(&device_storage);
+    VkPhysicalDevice physical_device = reinterpret_cast<VkPhysicalDevice>(&physical_storage);
+    VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
+    SDL_Window * window_handle = reinterpret_cast<SDL_Window *>(&window_storage);
+    VkSwapchainKHR old_handle = reinterpret_cast<VkSwapchainKHR>(&old_storage);
+    VkSwapchainKHR new_handle = reinterpret_cast<VkSwapchainKHR>(&new_storage);
+    VkImage image_handle = reinterpret_cast<VkImage>(&image_storage);
+    PresentationDevice presentation_device{
+        surface_ptr{surface_handle, [](auto) {}},
+        device_ptr{device_handle, [](auto) {}},
+        physical_device,
+        {queue_family_index{0}, queue_family_index{0}},
+        {},
+        {}};
+    sdl::window_ptr window{window_handle, [](auto) {}};
+    bool is_old_destroyed = false;
+    swapchain_ptr old_swapchain{old_handle, [&](auto) { is_old_destroyed = true; }};
+    std::weak_ptr old_observer{old_swapchain};
+    REQUIRE_CALL(api, sdl_vulkan_get_drawable_size(window_handle, trompeloeil::_, trompeloeil::_))
+        .SIDE_EFFECT(*_2 = 64)
+        .SIDE_EFFECT(*_3 = 48);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_capabilities_khr(
+            physical_device, surface_handle, trompeloeil::_))
+        .SIDE_EFFECT(*_3 = VkSurfaceCapabilitiesKHR{1, 4, {64, 48}, {1, 1}, {4096, 4096}, 1, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT})
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_formats_khr(
+            physical_device, surface_handle, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_3 = 1)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_formats_khr(
+            physical_device, surface_handle, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .SIDE_EFFECT(*_4 = VkSurfaceFormatKHR{VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_present_modes_khr(
+            physical_device, surface_handle, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_3 = 1)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_present_modes_khr(
+            physical_device, surface_handle, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .SIDE_EFFECT(*_4 = VK_PRESENT_MODE_FIFO_KHR)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_image_format_properties(
+            physical_device,
+            VK_FORMAT_B8G8R8A8_UNORM,
+            VK_IMAGE_TYPE_2D,
+            VK_IMAGE_TILING_OPTIMAL,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            0,
+            trompeloeil::_))
+        .SIDE_EFFECT(*_7 = VkImageFormatProperties{{4096, 4096, 1}, 1, 1, VK_SAMPLE_COUNT_1_BIT, 1048576})
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api, vk_create_swapchain_khr(device_handle, trompeloeil::_, nullptr, trompeloeil::_))
+        .LR_WITH(_2->oldSwapchain == old_handle && !is_old_destroyed)
+        .SIDE_EFFECT(*_4 = new_handle)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api, vk_get_swapchain_images_khr(device_handle, new_handle, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_3 = 1)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api, vk_get_swapchain_images_khr(device_handle, new_handle, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .SIDE_EFFECT(*_4 = image_handle)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(api, vk_destroy_swapchain_khr(device_handle, new_handle, nullptr));
+
+    presentation_swapchain_images_result outcome = runtime.run(
+        reader_io_create_presentation_swapchain_images<environment_type>(
+            std::move(presentation_device), std::move(window), std::move(old_swapchain)));
+
+    REQUIRE(fnfelt::result::is_success(outcome));
+    CHECK(is_old_destroyed);
+    CHECK(old_observer.expired());
+    PresentationSwapchainImages const & snapshot = fnfelt::result::get_success(outcome);
+    CHECK_EQ(snapshot.presentation_swapchain.swapchain.get(), new_handle);
+    REQUIRE_EQ(snapshot.images.size(), 1U);
+    CHECK_EQ(snapshot.images[0], image_handle);
+}
 }  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE

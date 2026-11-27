@@ -4,7 +4,7 @@
 /**
  * @file vulkan/detail/presentation_swapchain.hpp
  *
- * Preparation and acquisition of initial presentation swapchains.
+ * Preparation and acquisition of presentation swapchains.
  */
 #pragma once
 
@@ -20,8 +20,12 @@
 #include <fnfelt/result.hpp>
 
 #include "../../sdl/detail/drawable_size.hpp"
+#include "../../sdl/drawable_size.hpp"
 #include "../../sdl/drawable_size_types.hpp"
+#include "../../sdl/managed_handles_types.hpp"
 #include "../image_format_properties.hpp"
+#include "../managed_handles_types.hpp"
+#include "../presentation_device_types.hpp"
 #include "../presentation_swapchain_types.hpp"
 #include "../renderer_errors.hpp"
 #include "../swapchain.hpp"
@@ -93,6 +97,21 @@ auto validate_swapchain_image_parameters(
             pre((properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT) != 0);
 
 /**
+ * Validates prepared image parameters while keeping physical device parents alive.
+ *
+ * @param retained_device Device retaining the instance during physical queries.
+ * @param prepared Selected configuration and surface facts.
+ * @param properties Successful 2D optimal color-attachment limits for the selected UNORM format.
+ * @return Validated preparation or an unsupported-image failure.
+ */
+auto validate_prepared_swapchain_image_parameters(
+    device_ptr retained_device, PreparedSwapchain prepared, VkImageFormatProperties properties)
+    -> renderer_result<PreparedSwapchain> pre(retained_device != nullptr)
+        pre(properties.maxExtent.depth >= 1) pre(properties.maxMipLevels >= 1)
+            pre(properties.maxArrayLayers >= 1)
+                pre((properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT) != 0);
+
+/**
  * Joins acquired ownership with the selected context.
  *
  * @param presentation_device Retained device, surface and queues.
@@ -108,13 +127,14 @@ auto make_presentation_swapchain(
 /**
  * Provides validated image parameters for a prepared swapchain.
  *
+ * @param device Retained logical device keeping instance and physical device alive.
  * @param physical_device Borrowed physical device.
  * @param prepared Selected configuration and surface facts.
  * @return ReaderIO providing validated image choices or an unsuccessful query/validation outcome.
  */
 template <class TEnvironment>
 constexpr auto reader_io_validate_swapchain_image_parameters(
-    VkPhysicalDevice physical_device, PreparedSwapchain prepared)
+    device_ptr device, VkPhysicalDevice physical_device, PreparedSwapchain prepared)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
@@ -133,29 +153,71 @@ constexpr auto reader_io_validate_swapchain_image_parameters(
     auto query_with_renderer_errors = reader_io::transform_error<"swapchain_image_query_error"_ss>(
         std::move(query), swapchain_image_query_error);
 
-    // ReaderIO providing validated choices or the validation's configuration failure.
+    // ReaderIO providing validated choices while retaining the parent device through validation.
     return reader_io::transform<"validate_swapchain_image_parameters"_ss>(
         std::move(query_with_renderer_errors),
-        std::bind_front(validate_swapchain_image_parameters, prepared));
+        std::bind_front(validate_prepared_swapchain_image_parameters, std::move(device), prepared));
+}
+
+/**
+ * Plans support discovery, configuration selection and image-limit validation.
+ *
+ * @param presentation_device Retained device, surface and physical device handles.
+ * @param window Nonempty window owner associated with that surface.
+ * @return ReaderIO providing validated swapchain preparation or a renderer error.
+ */
+template <class TEnvironment>
+constexpr auto reader_io_prepare_presentation_swapchain(
+    PresentationDevice presentation_device, sdl::window_ptr window)
+{
+    using fnfelt::literals::operator""_ss;
+    namespace reader_io = fnfelt::monad::reader_io;
+
+    // ReaderIOs providing surface support and live pixels while retaining their respective owners.
+    auto support = reader_io_query_swapchain_support<TEnvironment>(
+        presentation_device.physical_device, std::move(presentation_device.surface));
+    auto drawable = sdl::reader_io_sdl_vulkan_get_drawable_size<TEnvironment>(std::move(window));
+    auto snapshots = reader_io::sequence<"query_swapchain_inputs"_ss, TEnvironment>(
+        std::move(support), std::move(drawable));
+
+    // ReaderIO providing successful snapshots or the original support-query failure.
+    auto inputs = reader_io::transform<"sequence_swapchain_input_results"_ss>(
+        std::move(snapshots), sequence_swapchain_input_results);
+
+    // ReaderIO providing selected choices or the preparation's configuration failure.
+    auto preparation =
+        reader_io::transform<"prepare_swapchain"_ss>(std::move(inputs), prepare_swapchain);
+
+    // ReaderIO providing a configuration whose image parameters satisfy physical limits.
+    return reader_io::and_then<"query_swapchain_image_limits"_ss>(
+        std::move(preparation),
+        std::bind_front(
+            reader_io_validate_swapchain_image_parameters<TEnvironment>,
+            std::move(presentation_device.device),
+            presentation_device.physical_device));
 }
 
 /**
  * Provides owned presentation context from a validated preparation.
  *
  * @param presentation_device Retained device, surface and queues.
+ * @param old_swapchain Optional non-retired predecessor retained only through creation.
  * @param prepared Validated image choices and surface facts.
  * @return ReaderIO providing owned presentation resources or the original creation failure.
  */
 template <class TEnvironment>
 constexpr auto reader_io_create_prepared_swapchain(
-    PresentationDevice presentation_device, PreparedSwapchain prepared)
+    PresentationDevice presentation_device, swapchain_ptr old_swapchain, PreparedSwapchain prepared)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
-    // ReaderIO providing the native swapchain owner with both parents retained.
+    // ReaderIO providing the native swapchain owner with parents and optional predecessor handoff.
     auto create = reader_io_vk_create_swapchain_khr<TEnvironment>(
-        presentation_device, prepared.configuration, prepared.capabilities);
+        presentation_device,
+        prepared.configuration,
+        prepared.capabilities,
+        std::move(old_swapchain));
 
     // ReaderIO providing creation failures in the shared renderer error domain.
     auto create_with_renderer_errors = reader_io::transform_error<"swapchain_creation_error"_ss>(

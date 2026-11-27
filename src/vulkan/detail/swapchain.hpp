@@ -4,7 +4,7 @@
 /**
  * @file vulkan/detail/swapchain.hpp
  *
- * Initial swapchain acquisition implementation.
+ * Swapchain creation and replacement implementation.
  */
 #pragma once
 
@@ -82,20 +82,22 @@ constexpr auto select_composite_alpha(VkCompositeAlphaFlagsKHR supported)
 }
 
 /**
- * Creates an initial swapchain from validated surface and image parameters.
+ * Creates a swapchain from validated surface, image and optional predecessor parameters.
  *
  * @param api Borrowed command implementation.
  * @param presentation_device Retained device, surface and queue roles.
  * @param configuration Validated ordinary swapchain choices.
  * @param capabilities Current surface capabilities.
+ * @param old_swapchain Optional non-retired predecessor retained only through creation.
  * @return Acquired swapchain ownership or the original Vulkan failure.
  */
 template <class TApi>
-auto create_swapchain(
+auto create_swapchain_io_action(
     std::reference_wrapper<TApi> api,
     PresentationDevice presentation_device,
     SwapchainConfiguration configuration,
-    VkSurfaceCapabilitiesKHR capabilities)
+    VkSurfaceCapabilitiesKHR capabilities,
+    swapchain_ptr old_swapchain = {})
     -> vulkan_result<swapchain_ptr> pre(
         presentation_device.device != nullptr && presentation_device.surface != nullptr)
         pre(configuration.extent.width > 0 && configuration.extent.height > 0)
@@ -127,7 +129,7 @@ auto create_swapchain(
     info.compositeAlpha = select_composite_alpha(capabilities.supportedCompositeAlpha);
     info.presentMode = configuration.present_mode;
     info.clipped = VK_TRUE;
-    info.oldSwapchain = VK_NULL_HANDLE;
+    info.oldSwapchain = old_swapchain ? old_swapchain.get() : VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkResult status = api.get().vk_create_swapchain_khr(
         presentation_device.device.get(), &info, nullptr, &swapchain);
@@ -149,6 +151,7 @@ auto create_swapchain(
  * @param presentation_device Retained device, surface and queue roles.
  * @param configuration Validated ordinary swapchain choices.
  * @param capabilities Current surface capabilities.
+ * @param old_swapchain Optional non-retired predecessor retained only through creation.
  * @param environment Borrowed command capabilities.
  * @return Deferred swapchain acquisition.
  */
@@ -157,19 +160,21 @@ constexpr auto create_swapchain_reader_io_action(
     PresentationDevice presentation_device,
     SwapchainConfiguration configuration,
     VkSurfaceCapabilitiesKHR capabilities,
+    swapchain_ptr old_swapchain,
     TEnvironment const & environment)
 {
     using fnfelt::literals::operator""_ss;
     using api_type = typename std::remove_cvref_t<decltype(environment.api)>::type;
     namespace io = fnfelt::monad::io;
 
-    // Callable providing a swapchain while retaining both native parents through acquisition.
+    // Callable providing a swapchain while retaining parents and any predecessor through creation.
     auto acquire = std::bind_front(
-        create_swapchain<api_type>,
+        create_swapchain_io_action<api_type>,
         environment.api,
         std::move(presentation_device),
         configuration,
-        capabilities);
+        capabilities,
+        std::move(old_swapchain));
 
     // IO providing shared ownership or the original Vulkan creation failure.
     return io::create<"vk_create_swapchain_khr"_ss>(std::move(acquire));

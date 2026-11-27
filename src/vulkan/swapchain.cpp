@@ -177,5 +177,91 @@ TEST_CASE("[impure] initial swapchain creation preserves Vulkan errors without a
         fnfelt::result::get_error(outcome).operation == FallibleVulkanOperation::create_swapchain);
     CHECK_EQ(fnfelt::result::get_error(outcome).result, status);
 }
+
+TEST_CASE("[impure] swapchain replacement retains old swapchain only through creation")
+{
+    backend::MockApi api;
+    SwapchainEnvironment environment{std::ref(api)};
+    char device_storage{}, surface_storage{}, old_storage{}, new_storage{};
+    VkDevice device_handle = reinterpret_cast<VkDevice>(&device_storage);
+    VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
+    VkSwapchainKHR old_handle = reinterpret_cast<VkSwapchainKHR>(&old_storage);
+    VkSwapchainKHR new_handle = reinterpret_cast<VkSwapchainKHR>(&new_storage);
+    PresentationDevice presentation_device{
+        surface_ptr{surface_handle, [](auto) {}},
+        device_ptr{device_handle, [](auto) {}},
+        {},
+        {queue_family_index{0}, queue_family_index{0}},
+        {},
+        {}};
+    SwapchainConfiguration configuration{
+        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        VK_PRESENT_MODE_FIFO_KHR,
+        {800, 600},
+        swapchain_image_count{2}};
+    VkSurfaceCapabilitiesKHR capabilities{};
+    capabilities.supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    capabilities.supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    bool is_old_destroyed = false;
+    swapchain_ptr old_swapchain{old_handle, [&](auto) { is_old_destroyed = true; }};
+    std::weak_ptr old_observer{old_swapchain};
+
+    SUBCASE("discarded replacement plan releases old swapchain without native calls")
+    {
+        {
+            auto plan = reader_io_vk_create_swapchain_khr<SwapchainEnvironment>(
+                std::move(presentation_device),
+                configuration,
+                capabilities,
+                std::move(old_swapchain));
+            [[maybe_unused]] auto discarded = plan.build(environment);
+
+            CHECK_FALSE(is_old_destroyed);
+            CHECK_FALSE(old_observer.expired());
+        }
+
+        CHECK(is_old_destroyed);
+        CHECK(old_observer.expired());
+        return;
+    }
+
+    VkResult create_status = VK_SUCCESS;
+    SUBCASE("successful creation destroys old swapchain after call returns") {}
+    SUBCASE("failed creation still destroys old swapchain after call returns")
+    {
+        create_status = VK_ERROR_OUT_OF_DATE_KHR;
+    }
+
+    REQUIRE_CALL(
+        api, vk_create_swapchain_khr(device_handle, trompeloeil::_, nullptr, trompeloeil::_))
+        .LR_WITH(_2->oldSwapchain == old_handle && !is_old_destroyed)
+        .LR_SIDE_EFFECT(*_4 = new_handle)
+        .LR_RETURN(create_status);
+    std::unique_ptr<trompeloeil::expectation> destroy_new;
+    if (create_status == VK_SUCCESS)
+    {
+        destroy_new =
+            NAMED_REQUIRE_CALL(api, vk_destroy_swapchain_khr(device_handle, new_handle, nullptr));
+    }
+
+    // Consume the plan immediately so no plan-held copy prolongs the retired predecessor.
+    auto plan = reader_io_vk_create_swapchain_khr<SwapchainEnvironment>(
+        std::move(presentation_device), configuration, capabilities, std::move(old_swapchain));
+    vulkan_result<swapchain_ptr> outcome =
+        std::move(plan).build(environment).io().build().sync_wait(lf::lazy_pool{2});
+
+    CHECK(is_old_destroyed);
+    CHECK(old_observer.expired());
+    if (create_status == VK_SUCCESS)
+    {
+        REQUIRE(fnfelt::result::is_success(outcome));
+        CHECK_EQ(fnfelt::result::get_success(outcome).get(), new_handle);
+    }
+    else
+    {
+        REQUIRE(fnfelt::result::is_error(outcome));
+        CHECK_EQ(fnfelt::result::get_error(outcome).result, create_status);
+    }
+}
 }  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE

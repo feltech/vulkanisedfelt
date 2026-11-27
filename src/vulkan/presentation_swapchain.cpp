@@ -376,5 +376,184 @@ TEST_CASE(
     CHECK_GT(fnfelt::result::get_success(outcome).configuration.extent.width, 0U);
     CHECK_GT(fnfelt::result::get_success(outcome).configuration.extent.height, 0U);
 }
+
+TEST_CASE(
+    "[impure] presentation swapchain replacement forwards old swapchain only when creation runs")
+{
+    backend::MockApi api;
+    sdl::detail::TestRuntime runtime{api};
+    using environment_type = sdl::detail::TestState<backend::MockApi>;
+    char device_storage{}, physical_storage{}, surface_storage{}, window_storage{}, old_storage{},
+        new_storage{};
+    VkDevice device_handle = reinterpret_cast<VkDevice>(&device_storage);
+    VkPhysicalDevice physical = reinterpret_cast<VkPhysicalDevice>(&physical_storage);
+    VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
+    SDL_Window * window_handle = reinterpret_cast<SDL_Window *>(&window_storage);
+    VkSwapchainKHR old_handle = reinterpret_cast<VkSwapchainKHR>(&old_storage);
+    VkSwapchainKHR new_handle = reinterpret_cast<VkSwapchainKHR>(&new_storage);
+    PresentationDevice presentation_device{
+        surface_ptr{surface_handle, [](auto) {}},
+        device_ptr{device_handle, [](auto) {}},
+        physical,
+        {queue_family_index{0}, queue_family_index{0}},
+        {},
+        {}};
+    sdl::window_ptr window{window_handle, [](auto) {}};
+    SwapchainSupport support = drawable_support();
+    bool is_old_destroyed = false;
+    swapchain_ptr old_swapchain{old_handle, [&](auto) { is_old_destroyed = true; }};
+    std::weak_ptr old_observer{old_swapchain};
+    int width = 800;
+    bool should_create = true;
+    SUBCASE("replacement forwards old swapchain and retires it after create") {}
+    SUBCASE("minimized zero drawable bypasses create without retiring old swapchain")
+    {
+        width = 0;
+        should_create = false;
+    }
+
+    REQUIRE_CALL(api, sdl_vulkan_get_drawable_size(window_handle, trompeloeil::_, trompeloeil::_))
+        .LR_SIDE_EFFECT(*_2 = width)
+        .SIDE_EFFECT(*_3 = 600);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_capabilities_khr(physical, surface_handle, trompeloeil::_))
+        .LR_SIDE_EFFECT(*_3 = support.capabilities)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_formats_khr(
+            physical, surface_handle, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_3 = 1)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_formats_khr(
+            physical, surface_handle, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .LR_SIDE_EFFECT(*_4 = support.formats[0])
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_present_modes_khr(
+            physical, surface_handle, trompeloeil::_, nullptr))
+        .SIDE_EFFECT(*_3 = 1)
+        .RETURN(VK_SUCCESS);
+    REQUIRE_CALL(
+        api,
+        vk_get_physical_device_surface_present_modes_khr(
+            physical, surface_handle, trompeloeil::_, trompeloeil::_))
+        .WITH(_4 != nullptr)
+        .LR_SIDE_EFFECT(*_4 = support.present_modes[0])
+        .RETURN(VK_SUCCESS);
+    std::unique_ptr<trompeloeil::expectation> image_query, create, destroy;
+    if (should_create)
+    {
+        image_query = NAMED_REQUIRE_CALL(
+                          api,
+                          vk_get_physical_device_image_format_properties(
+                              physical,
+                              VK_FORMAT_B8G8R8A8_UNORM,
+                              VK_IMAGE_TYPE_2D,
+                              VK_IMAGE_TILING_OPTIMAL,
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                              0,
+                              trompeloeil::_))
+                          .SIDE_EFFECT(*_7 = image_limits())
+                          .RETURN(VK_SUCCESS);
+        create =
+            NAMED_REQUIRE_CALL(
+                api,
+                vk_create_swapchain_khr(device_handle, trompeloeil::_, nullptr, trompeloeil::_))
+                .LR_WITH(_2->oldSwapchain == old_handle && !is_old_destroyed)
+                .LR_SIDE_EFFECT(*_4 = new_handle)
+                .RETURN(VK_SUCCESS);
+        destroy =
+            NAMED_REQUIRE_CALL(api, vk_destroy_swapchain_khr(device_handle, new_handle, nullptr));
+    }
+
+    presentation_swapchain_result outcome = runtime.run(
+        reader_io_create_presentation_swapchain<environment_type>(
+            std::move(presentation_device), std::move(window), std::move(old_swapchain)));
+
+    CHECK(is_old_destroyed);
+    CHECK(old_observer.expired());
+    if (should_create)
+    {
+        REQUIRE(fnfelt::result::is_success(outcome));
+        CHECK_EQ(fnfelt::result::get_success(outcome).swapchain.get(), new_handle);
+    }
+    else
+    {
+        REQUIRE(fnfelt::result::is_error(outcome));
+        CHECK(
+            std::get<NoSuitableSwapchainConfiguration>(fnfelt::result::get_error(outcome)).reason ==
+            SwapchainConfigurationFailure::unavailable_extent);
+    }
+}
+
+TEST_CASE(
+    "[integration][windowed] an SDL presentation device replaces and releases an initial swapchain")
+{
+    backend::Api api;
+    using environment_type = sdl::detail::TestState<backend::Api>;
+    using state_type = immer::box<environment_type>;
+    sdl::detail::TestRuntime runtime{api};
+    REQUIRE(
+        fnfelt::result::is_success(runtime.run(sdl::state_io_sdl_initialize_video<state_type>())));
+    sdl::WindowOptions options{
+        .width = sdl::window_width{64},
+        .height = sdl::window_height{48},
+        .flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)};
+    sdl::sdl_result<SDL_Window *> window =
+        runtime.run(sdl::state_io_sdl_create_window<state_type>(options));
+    REQUIRE(fnfelt::result::is_success(window));
+    renderer_result<PresentationInstance> instance = runtime.run(
+        reader_io_create_presentation_instance<environment_type>(runtime.resources().window_owner));
+    if (fnfelt::result::is_error(instance))
+    {
+        CHECK(
+            std::holds_alternative<PresentationInstanceFailure>(
+                fnfelt::result::get_error(instance)));
+        return;
+    }
+    REQUIRE(fnfelt::result::is_success(instance));
+    sdl::sdl_result<surface_ptr> surface = runtime.run(
+        sdl::reader_io_sdl_vulkan_create_surface<environment_type>(
+            runtime.resources().window_owner, fnfelt::result::get_success(instance).instance));
+    REQUIRE(fnfelt::result::is_success(surface));
+    presentation_device_result device = runtime.run(
+        reader_io_create_presentation_device<environment_type>(
+            fnfelt::result::get_success(instance), fnfelt::result::get_success(surface)));
+    if (fnfelt::result::is_error(device))
+    {
+        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(fnfelt::result::get_error(device)));
+        return;
+    }
+    REQUIRE(fnfelt::result::is_success(device));
+
+    presentation_swapchain_result initial = runtime.run(
+        reader_io_create_presentation_swapchain<environment_type>(
+            fnfelt::result::get_success(device), runtime.resources().window_owner));
+    REQUIRE(fnfelt::result::is_success(initial));
+    PresentationSwapchain first = fnfelt::result::get_success(std::move(initial));
+    VkSwapchainKHR first_handle = first.swapchain.get();
+    std::weak_ptr first_observer{first.swapchain};
+
+    // Pass ownership of the unacquired initial swapchain into replacement creation.
+    presentation_swapchain_result replacement = runtime.run(
+        reader_io_create_presentation_swapchain<environment_type>(
+            std::move(first.presentation_device),
+            runtime.resources().window_owner,
+            std::move(first.swapchain)));
+
+    REQUIRE(fnfelt::result::is_success(replacement));
+    CHECK(first_observer.expired());
+    PresentationSwapchain const & second = fnfelt::result::get_success(replacement);
+    CHECK(second.swapchain != nullptr);
+    CHECK_NE(second.swapchain.get(), first_handle);
+    CHECK_GT(second.configuration.extent.width, 0U);
+    CHECK_GT(second.configuration.extent.height, 0U);
+}
 }  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE
