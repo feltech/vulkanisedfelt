@@ -66,8 +66,16 @@ has become the rebase operator and you are executing for them.
 
 ## Squash a late commit V into an early commit T
 
-Use `rebase -i` with a scripted todo (works for arbitrary titles; plain `--autosquash` needs a
-`fixup!` title and never invokes the sequence editor without `-i`):
+When all commits to fold already carry unique `fixup!` subjects, check for duplicate target subjects
+first, then run `--autosquash` non-interactively:
+
+```bash
+git log --format='%s' <base>..HEAD | grep -v '^fixup! ' | sort | uniq -d
+GIT_SEQUENCE_EDITOR=true GIT_EDITOR=true git rebase -i --autosquash <base>
+```
+
+For arbitrary titles (or manual reordering), use `rebase -i` with a scripted todo (plain
+`--autosquash` needs a `fixup!` title and never invokes the sequence editor without `-i`):
 
 ```bash
 GIT_SEQUENCE_EDITOR='sed -i -e "/^pick <V> /d" \
