@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <optional>
 #include <variant>
 
 #include <vulkan/vulkan_core.h>
@@ -19,6 +20,7 @@
 #include "./api_version_types.hpp"
 #include "./errors.hpp"
 #include "./extension_types.hpp"
+#include "./swapchain_generation_types.hpp"
 
 namespace vulkandemo::vulkan
 {
@@ -90,6 +92,15 @@ struct PresentationInstanceFailure
     immer::array<extension_name> missing_extensions;
 };
 
+/** A generation-bound action targeted a retired, replaced or absent swapchain generation. */
+struct StaleSwapchainGeneration
+{
+    /** Generation expected by the action. */
+    swapchain_generation expected;
+    /** Currently live generation, or empty when no swapchain is live. */
+    std::optional<swapchain_generation> active;
+};
+
 /// Common failures of renderer workflows.
 using renderer_error = std::variant<
     VulkanOperationFailure,
@@ -98,6 +109,7 @@ using renderer_error = std::variant<
     NoSuitableSwapchainConfiguration,
     UnsupportedFramebufferExtent,
     PresentationInstanceFailure,
+    StaleSwapchainGeneration,
     sdl::SdlFailure>;
 
 /**
