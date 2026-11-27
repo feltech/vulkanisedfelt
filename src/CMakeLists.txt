@@ -19,6 +19,7 @@ add_executable(
   sdl/pending_events.cpp
   sdl/detail/event.cpp
   sdl/quit_event.cpp
+  sdl/resize_event.cpp
   sdl/vulkan_surface.cpp
   vulkan/instance.cpp
   vulkan/detail/instance.cpp
@@ -124,6 +125,7 @@ target_sources(
           sdl/event_types.hpp
           sdl/detail/event.hpp
           sdl/quit_event.hpp
+          sdl/resize_event.hpp
           sdl/detail/instance_extensions.hpp
           sdl/vulkan_surface.hpp
           sdl/detail/vulkan_surface.hpp
