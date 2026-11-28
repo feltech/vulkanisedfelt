@@ -4,6 +4,13 @@
 
 #include "./swapchain_recreation.hpp"
 
+#include <vulkan/vulkan_core.h>
+
+#include <fnfelt/result.hpp>
+
+#include "./errors.hpp"
+#include "./submit_and_present_types.hpp"
+
 #ifndef DOCTEST_CONFIG_DISABLE
 #include <cstdint>
 #include <functional>
@@ -15,14 +22,12 @@
 #include <vector>
 
 #include <SDL_video.h>
-#include <vulkan/vulkan_core.h>
 
 #include <doctest/doctest.h>
 #include <doctest/trompeloeil.hpp>
 #include <fnfelt/monad/io.hpp>
 #include <fnfelt/monad/reader_io.hpp>
 #include <fnfelt/monad/state_io.hpp>
-#include <fnfelt/result.hpp>
 #include <immer/array.hpp>
 #include <immer/box.hpp>
 #include <libfork/core/ext/context.hpp>
@@ -38,7 +43,6 @@
 #include "../sdl/window.hpp"
 #include "./clear_frame.hpp"
 #include "./command_pool.hpp"
-#include "./errors.hpp"
 #include "./image_acquisition_types.hpp"
 #include "./managed_handles_types.hpp"
 #include "./presentation_device.hpp"
@@ -48,18 +52,47 @@
 #include "./presentation_instance_types.hpp"
 #include "./queue_types.hpp"
 #include "./renderer_errors.hpp"
-#include "./submit_and_present_types.hpp"
 #include "./swapchain_generation_types.hpp"
 #include "./swapchain_recreation_types.hpp"
 #include "./synchronization_types.hpp"
+#endif  // DOCTEST_CONFIG_DISABLE
 
 namespace vulkandemo::vulkan
 {
+auto is_swapchain_out_of_date(VulkanFailure failure) noexcept -> bool
+{
+    return failure.result == VK_ERROR_OUT_OF_DATE_KHR &&
+        (failure.operation == FallibleVulkanOperation::acquire_next_image ||
+         failure.operation == FallibleVulkanOperation::queue_present ||
+         failure.operation == FallibleVulkanOperation::create_swapchain);
+}
+
+auto should_recreate_swapchain(completed_presentation_result const & outcome) noexcept -> bool
+{
+    namespace result = fnfelt::result;
+    if (result::is_success(outcome))
+    {
+        // A suboptimal presentation succeeded for this frame, but the swapchain still needs
+        // refresh.
+        return result::get_success(outcome).is_suboptimal;
+    }
+    if (result::is_error(outcome))
+    {
+        // Only out-of-date swapchain statuses trigger recreation; fatal errors must propagate.
+        return is_swapchain_out_of_date(result::get_error(outcome));
+    }
+    // Stopped frames represent cooperative cancellation and should not trigger recreation.
+    return false;
+}
+
+#ifndef DOCTEST_CONFIG_DISABLE
 namespace
 {
 struct RecreationResources
 {
-    SwapchainTargetsState swapchain_targets;
+    PresentationDevice presentation_device;
+    sdl::window_ptr window;
+    SwapchainFramebuffersState swapchain_framebuffers;
 };
 
 template <class TApi>
@@ -89,16 +122,43 @@ struct ReadOnlyResourcesState
     immer::box<RecreationResources> const resources;
 };
 
-struct MissingSwapchainTargetsResources
+struct MissingSwapchainFramebuffersResources
 {
-    int placeholder{};
+    PresentationDevice presentation_device;
+    sdl::window_ptr window;
 };
 
-struct MissingSwapchainTargetsState
+struct MissingSwapchainFramebuffersState
 {
     std::reference_wrapper<backend::Api> api;
     lf::worker_context * main_context;
-    immer::box<MissingSwapchainTargetsResources> resources;
+    immer::box<MissingSwapchainFramebuffersResources> resources;
+};
+
+struct MissingPresentationDeviceResources
+{
+    sdl::window_ptr window;
+    SwapchainFramebuffersState swapchain_framebuffers;
+};
+
+struct MissingPresentationDeviceState
+{
+    std::reference_wrapper<backend::Api> api;
+    lf::worker_context * main_context;
+    immer::box<MissingPresentationDeviceResources> resources;
+};
+
+struct MissingWindowResources
+{
+    PresentationDevice presentation_device;
+    SwapchainFramebuffersState swapchain_framebuffers;
+};
+
+struct MissingWindowState
+{
+    std::reference_wrapper<backend::Api> api;
+    lf::worker_context * main_context;
+    immer::box<MissingWindowResources> resources;
 };
 
 struct WrongApiState
@@ -108,19 +168,23 @@ struct WrongApiState
     immer::box<RecreationResources> resources;
 };
 
-static_assert(detail::swapchain_targets_state<RecreationState<backend::Api>>);
-static_assert(detail::swapchain_targets_state<RecreationState<backend::MockApi>>);
-static_assert(detail::recreate_presentation_targets_state<RecreationState<backend::Api>>);
-static_assert(detail::recreate_presentation_targets_state<RecreationState<backend::MockApi>>);
+static_assert(detail::swapchain_framebuffers_state<RecreationState<backend::Api>>);
+static_assert(detail::swapchain_framebuffers_state<RecreationState<backend::MockApi>>);
+static_assert(detail::recreate_presentation_framebuffers_state<RecreationState<backend::Api>>);
+static_assert(detail::recreate_presentation_framebuffers_state<RecreationState<backend::MockApi>>);
 
-static_assert(!detail::swapchain_targets_state<RecreationState<backend::Api> &>);
-static_assert(!detail::swapchain_targets_state<RecreationState<backend::Api> const &>);
-static_assert(!detail::swapchain_targets_state<NonBoxResourcesState>);
-static_assert(!detail::swapchain_targets_state<ReadOnlyResourcesState>);
-static_assert(!detail::swapchain_targets_state<MissingSwapchainTargetsState>);
+static_assert(!detail::swapchain_framebuffers_state<RecreationState<backend::Api> &>);
+static_assert(!detail::swapchain_framebuffers_state<RecreationState<backend::Api> const &>);
+static_assert(!detail::swapchain_framebuffers_state<NonBoxResourcesState>);
+static_assert(!detail::swapchain_framebuffers_state<ReadOnlyResourcesState>);
+static_assert(!detail::swapchain_framebuffers_state<MissingSwapchainFramebuffersState>);
 
-static_assert(detail::swapchain_targets_state<WrongApiState>);
-static_assert(!detail::recreate_presentation_targets_state<WrongApiState>);
+static_assert(detail::swapchain_framebuffers_state<MissingPresentationDeviceState>);
+static_assert(!detail::recreate_presentation_framebuffers_state<MissingPresentationDeviceState>);
+static_assert(detail::swapchain_framebuffers_state<MissingWindowState>);
+static_assert(!detail::recreate_presentation_framebuffers_state<MissingWindowState>);
+static_assert(detail::swapchain_framebuffers_state<WrongApiState>);
+static_assert(!detail::recreate_presentation_framebuffers_state<WrongApiState>);
 
 template <class TApi>
 struct IntegrationFrameEnvironment : sdl::detail::TestState<TApi>
@@ -185,20 +249,23 @@ struct RecreationMockFixture
     VkPhysicalDevice physical = reinterpret_cast<VkPhysicalDevice>(&physical_storage);
     VkSurfaceKHR surface_handle = reinterpret_cast<VkSurfaceKHR>(&surface_storage);
     SDL_Window * window_handle = reinterpret_cast<SDL_Window *>(&window_storage);
-    PresentationDevice presentation_device{
-        surface_ptr{surface_handle, [](auto) {}},
-        device_ptr{device_handle, [](auto) {}},
-        physical,
-        {queue_family_index{0}, queue_family_index{0}},
-        {},
-        {}};
-    sdl::window_ptr window{window_handle, [](auto) {}};
-    RecreationState<backend::MockApi> state{std::ref(api), runtime.environment().main_context, {}};
+    RecreationState<backend::MockApi> state{
+        std::ref(api),
+        runtime.environment().main_context,
+        RecreationResources{
+            PresentationDevice{
+                surface_ptr{surface_handle, [](auto) {}},
+                device_ptr{device_handle, [](auto) {}},
+                physical,
+                {queue_family_index{0}, queue_family_index{0}},
+                {},
+                {}},
+            sdl::window_ptr{window_handle, [](auto) {}},
+            {}}};
 
     auto make_recreate_plan()
     {
-        return state_io_recreate_presentation_targets<RecreationState<backend::MockApi>>(
-            presentation_device, window);
+        return state_io_recreate_presentation_framebuffers<RecreationState<backend::MockApi>>();
     }
 };
 
@@ -468,13 +535,13 @@ TEST_CASE("[pure] swapchain recreation predicates distinguish recoverable stale 
 TEST_CASE("[impure] swapchain recreation planning is deferred and retains inputs without effects")
 {
     RecreationMockFixture fixture;
-    std::weak_ptr device_observer{fixture.presentation_device.device};
-    std::weak_ptr surface_observer{fixture.presentation_device.surface};
-    std::weak_ptr window_observer{fixture.window};
+    std::weak_ptr device_observer{fixture.state.resources.get().presentation_device.device};
+    std::weak_ptr surface_observer{fixture.state.resources.get().presentation_device.surface};
+    std::weak_ptr window_observer{fixture.state.resources.get().window};
 
     {
-        auto plan = state_io_recreate_presentation_targets<RecreationState<backend::MockApi>>(
-            std::move(fixture.presentation_device), std::move(fixture.window));
+        auto plan =
+            state_io_recreate_presentation_framebuffers<RecreationState<backend::MockApi>>();
         [[maybe_unused]] auto discarded = std::move(plan).build(std::move(fixture.state)).io();
 
         CHECK_FALSE(device_observer.expired());
@@ -536,9 +603,9 @@ TEST_CASE(
         std::get<SwapchainRecreated>(fnfelt::result::get_success(first)).generation ==
         swapchain_generation{1});
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{1});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
 
     // Run 2: resize with matching format (gen 1 -> gen 2, reuses first_render_pass).
     expect_recreation_round(
@@ -567,9 +634,9 @@ TEST_CASE(
     CHECK(
         std::get<SwapchainRecreated>(fnfelt::result::get_success(second)).generation ==
         swapchain_generation{2});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK_EQ(
-        fixture.state.resources.get().swapchain_targets.live->targets.render_pass.get(),
+        fixture.state.resources.get().swapchain_framebuffers.live->framebuffers.render_pass.get(),
         first_render_pass);
     REQUIRE_EQ(
         events,
@@ -601,9 +668,9 @@ TEST_CASE(
     CHECK(
         std::get<SwapchainRecreated>(fnfelt::result::get_success(third)).generation ==
         swapchain_generation{3});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK_EQ(
-        fixture.state.resources.get().swapchain_targets.live->targets.render_pass.get(),
+        fixture.state.resources.get().swapchain_framebuffers.live->framebuffers.render_pass.get(),
         second_render_pass);
     REQUIRE_EQ(
         events,
@@ -621,7 +688,8 @@ TEST_CASE(
     fixture.state.resources = {};
 }
 
-TEST_CASE("[impure] minimized surfaces return SwapchainMinimized without retiring live targets")
+TEST_CASE(
+    "[impure] minimized surfaces return SwapchainMinimized without retiring live framebuffers")
 {
     RecreationMockFixture fixture;
     char first_swapchain_storage{}, second_swapchain_storage{}, first_image_storage{},
@@ -642,9 +710,9 @@ TEST_CASE("[impure] minimized surfaces return SwapchainMinimized without retirin
     CHECK(
         std::holds_alternative<SwapchainMinimized>(fnfelt::result::get_success(initial_minimized)));
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{0});
-    CHECK_FALSE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    CHECK_FALSE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
 
     // Acquire gen 1 cleanly.
     expect_recreation_round(
@@ -665,9 +733,9 @@ TEST_CASE("[impure] minimized surfaces return SwapchainMinimized without retirin
         run_recreation_state_io(fixture.runtime, plan, fixture.state);
     REQUIRE(fnfelt::result::is_success(created));
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{1});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
 
     // Minimizing while live preserves gen 1 unretired and avoids calling vkCreateSwapchainKHR.
     expect_recreation_round(
@@ -679,11 +747,11 @@ TEST_CASE("[impure] minimized surfaces return SwapchainMinimized without retirin
         std::holds_alternative<SwapchainMinimized>(
             fnfelt::result::get_success(minimized_while_live)));
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{1});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK(
-        fixture.state.resources.get().swapchain_targets.live->generation ==
+        fixture.state.resources.get().swapchain_framebuffers.live->generation ==
         swapchain_generation{1});
 
     // Un-minimizing hands off the still-live gen 1 swapchain cleanly.
@@ -770,13 +838,13 @@ TEST_CASE("[impure] pre-creation failures preserve unretired live swapchain targ
             SwapchainConfigurationFailure::unsupported_image_parameters);
     }
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{1});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK_EQ(
         fixture.state.resources.get()
-            .swapchain_targets.live->targets.presentation_image_views.presentation_swapchain_images
-            .presentation_swapchain.swapchain.get(),
+            .swapchain_framebuffers.live->framebuffers.presentation_image_views
+            .presentation_swapchain_images.presentation_swapchain.swapchain.get(),
         first_swapchain);
 
     fixture.state.resources = {};
@@ -852,9 +920,9 @@ TEST_CASE("[impure] post-retirement failures clear live state and permit clean r
         run_recreation_state_io(fixture.runtime, plan, fixture.state);
     REQUIRE(fnfelt::result::is_error(failed));
     CHECK(
-        fixture.state.resources.get().swapchain_targets.latest_generation ==
+        fixture.state.resources.get().swapchain_framebuffers.latest_generation ==
         swapchain_generation{2});
-    CHECK_FALSE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    CHECK_FALSE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
 
     if (should_fail_create_swapchain)
     {
@@ -881,10 +949,10 @@ TEST_CASE("[impure] post-retirement failures clear live state and permit clean r
         CHECK(
             std::get<SwapchainRecreated>(fnfelt::result::get_success(retried)).generation ==
             swapchain_generation{3});
-        REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+        REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
         CHECK_EQ(
             fixture.state.resources.get()
-                .swapchain_targets.live->targets.presentation_image_views
+                .swapchain_framebuffers.live->framebuffers.presentation_image_views
                 .presentation_swapchain_images.presentation_swapchain.swapchain.get(),
             third_swapchain);
     }
@@ -975,26 +1043,27 @@ TEST_CASE("[impure] immutable snapshot keeps earlier swapchain generation alive 
     CHECK_FALSE(is_first_framebuffer_destroyed);
     CHECK_FALSE(is_first_view_destroyed);
     CHECK_FALSE(is_first_swapchain_destroyed);
-    REQUIRE(gen1_snapshot.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(gen1_snapshot.resources.get().swapchain_framebuffers.live.has_value());
     CHECK(
-        gen1_snapshot.resources.get().swapchain_targets.live->generation ==
+        gen1_snapshot.resources.get().swapchain_framebuffers.live->generation ==
         swapchain_generation{1});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK(
-        fixture.state.resources.get().swapchain_targets.live->generation ==
+        fixture.state.resources.get().swapchain_framebuffers.live->generation ==
         swapchain_generation{2});
 
     gen1_snapshot.resources = {};
     CHECK_EQ(gen1_cleanup, std::vector<std::string>{"fb_1", "view_1", "swapchain_1"});
-    REQUIRE(fixture.state.resources.get().swapchain_targets.live.has_value());
+    REQUIRE(fixture.state.resources.get().swapchain_framebuffers.live.has_value());
     CHECK(
-        fixture.state.resources.get().swapchain_targets.live->generation ==
+        fixture.state.resources.get().swapchain_framebuffers.live->generation ==
         swapchain_generation{2});
 
     fixture.state.resources = {};
 }
 
-TEST_CASE("[impure] stale generation guard rejects replaced or retired targets before chaining")
+TEST_CASE(
+    "[impure] stale generation guard rejects replaced or retired framebuffers before chaining")
 {
     RecreationMockFixture fixture;
     char first_swapchain_storage{}, second_swapchain_storage{}, first_image_storage{},
@@ -1006,7 +1075,8 @@ TEST_CASE("[impure] stale generation guard rejects replaced or retired targets b
     std::vector<std::unique_ptr<trompeloeil::expectation>> expectations;
     int continuation_calls = 0;
     auto check_gen1_and_count =
-        state_io_require_live_targets<RecreationState<backend::MockApi>>(swapchain_generation{1})
+        state_io_require_live_framebuffers<RecreationState<backend::MockApi>>(
+            swapchain_generation{1})
             .and_then(
                 [&](PresentationFramebuffers const &)
                 {
@@ -1073,7 +1143,8 @@ TEST_CASE("[impure] stale generation guard rejects replaced or retired targets b
         fnfelt::result::is_error(run_recreation_state_io(fixture.runtime, plan, fixture.state)));
     renderer_result<PresentationFramebuffers> missing_check = run_recreation_state_io(
         fixture.runtime,
-        state_io_require_live_targets<RecreationState<backend::MockApi>>(swapchain_generation{2}),
+        state_io_require_live_framebuffers<RecreationState<backend::MockApi>>(
+            swapchain_generation{2}),
         fixture.state);
     REQUIRE(fnfelt::result::is_error(missing_check));
     StaleSwapchainGeneration const & missing_error =
@@ -1225,5 +1296,5 @@ TEST_CASE(
 
     state.resources = {};
 }
-}  // namespace vulkandemo::vulkan
 #endif  // DOCTEST_CONFIG_DISABLE
+}  // namespace vulkandemo::vulkan

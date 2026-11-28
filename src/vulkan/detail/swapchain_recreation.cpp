@@ -21,29 +21,35 @@ auto classify_minimized_or_error(renderer_error error) -> swapchain_recreation_r
     if (auto const * config = std::get_if<NoSuitableSwapchainConfiguration>(&error);
         config && config->reason == SwapchainConfigurationFailure::unavailable_extent)
     {
+        // Zero drawable extents occur while minimized; report minimized status without failing.
         return result::success<swapchain_recreation_result>(SwapchainMinimized{});
     }
+    // Preserve all other preparation, swapchain, view, pass or framebuffer errors verbatim.
     return result::error<swapchain_recreation_result>(std::move(error));
 }
 
-auto make_recreated_outcome(swapchain_generation generation, PresentationFramebuffers const &)
+auto make_recreated_outcome(
+    swapchain_generation generation, [[maybe_unused]] PresentationFramebuffers const & framebuffers)
     -> swapchain_recreation_outcome
 {
     return SwapchainRecreated{generation};
 }
 
-auto resolve_live_targets(
-    SwapchainTargetsState const & targets_state, swapchain_generation expected)
+auto resolve_live_framebuffers(
+    SwapchainFramebuffersState const & framebuffers_state, swapchain_generation expected)
     -> renderer_result<PresentationFramebuffers>
 {
     namespace result = fnfelt::result;
     using result_type = renderer_result<PresentationFramebuffers>;
-    if (targets_state.live && targets_state.live->generation == expected)
+    if (framebuffers_state.live && framebuffers_state.live->generation == expected)
     {
-        return result::success<result_type>(targets_state.live->targets);
+        // Only grant framebuffer access when the live bundle matches the caller's expected
+        // generation.
+        return result::success<result_type>(framebuffers_state.live->framebuffers);
     }
+    // Report either the newer live generation or absence so callers distinguish stale vs retired.
     std::optional<swapchain_generation> active =
-        targets_state.live ? std::optional{targets_state.live->generation} : std::nullopt;
+        framebuffers_state.live ? std::optional{framebuffers_state.live->generation} : std::nullopt;
     return result::error<result_type>(StaleSwapchainGeneration{expected, active});
 }
 
@@ -73,20 +79,21 @@ TEST_CASE("[pure] unavailable extent maps to minimized state while other errors 
         VK_ERROR_OUT_OF_DATE_KHR);
 }
 
-TEST_CASE("[pure] generation lookup enforces matching live targets or reports active generation")
+TEST_CASE(
+    "[pure] generation lookup enforces matching live framebuffers or reports active generation")
 {
     namespace result = fnfelt::result;
-    SwapchainTargetsState empty_state{swapchain_generation{2}, std::nullopt};
-    SwapchainTargetsState live_state{
+    SwapchainFramebuffersState empty_state{swapchain_generation{2}, std::nullopt};
+    SwapchainFramebuffersState live_state{
         swapchain_generation{3},
-        LivePresentationTargets{swapchain_generation{3}, PresentationFramebuffers{}}};
+        LivePresentationFramebuffers{swapchain_generation{3}, PresentationFramebuffers{}}};
 
     renderer_result<PresentationFramebuffers> missing =
-        resolve_live_targets(empty_state, swapchain_generation{2});
+        resolve_live_framebuffers(empty_state, swapchain_generation{2});
     renderer_result<PresentationFramebuffers> stale =
-        resolve_live_targets(live_state, swapchain_generation{1});
+        resolve_live_framebuffers(live_state, swapchain_generation{1});
     renderer_result<PresentationFramebuffers> matched =
-        resolve_live_targets(live_state, swapchain_generation{3});
+        resolve_live_framebuffers(live_state, swapchain_generation{3});
 
     REQUIRE(result::is_error(missing));
     CHECK(
