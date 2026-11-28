@@ -4,17 +4,34 @@
 
 #include "./resize_event.hpp"
 
-#ifndef DOCTEST_CONFIG_DISABLE
 #include <variant>
 
 #include <SDL_events.h>
-#include <doctest/doctest.h>
 
 #include "./event_types.hpp"
 #include "./window_id_types.hpp"
 
+#ifndef DOCTEST_CONFIG_DISABLE
+#include <doctest/doctest.h>
+#endif  // DOCTEST_CONFIG_DISABLE
+
 namespace vulkandemo::sdl
 {
+auto is_window_resize(event const & polled_event, window_id target_window) noexcept -> bool
+{
+    NativeEvent const * native = std::get_if<NativeEvent>(&polled_event);
+    if (!native)
+    {
+        // Non-native variants (e.g. drop or text-editing payloads) cannot carry resize events.
+        return false;
+    }
+    return native->native.type == SDL_WINDOWEVENT &&
+        native->native.window.windowID == value_of(target_window) &&
+        (native->native.window.event == SDL_WINDOWEVENT_RESIZED ||
+         native->native.window.event == SDL_WINDOWEVENT_SIZE_CHANGED);
+}
+
+#ifndef DOCTEST_CONFIG_DISABLE
 TEST_CASE("[pure] window resize classification matches only the target window")
 {
     for (Uint8 event_kind : {SDL_WINDOWEVENT_RESIZED, SDL_WINDOWEVENT_SIZE_CHANGED})
@@ -71,5 +88,5 @@ TEST_CASE("[pure] non-resize events remain intact without reporting a resize")
     CHECK_EQ(std::get<ExtendedTextEditingEvent>(editing_event).start, 1);
     CHECK_EQ(std::get<ExtendedTextEditingEvent>(editing_event).length, 2);
 }
-}  // namespace vulkandemo::sdl
 #endif  // DOCTEST_CONFIG_DISABLE
+}  // namespace vulkandemo::sdl

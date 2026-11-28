@@ -8,10 +8,6 @@
  */
 #pragma once
 
-#include <variant>
-
-#include <SDL_events.h>
-
 #include "./event_types.hpp"
 #include "./window_id_types.hpp"
 
@@ -26,17 +22,6 @@ namespace vulkandemo::sdl
  * @param target_window Window whose resize events should be matched.
  * @return Whether the event reports a size change on @p target_window.
  */
-[[nodiscard]] constexpr auto is_window_resize(
-    event const & polled_event, window_id target_window) noexcept -> bool
-{
-    NativeEvent const * native = std::get_if<NativeEvent>(&polled_event);
-    if (!native)
-    {
-        return false;
-    }
-    return native->native.type == SDL_WINDOWEVENT &&
-        native->native.window.windowID == value_of(target_window) &&
-        (native->native.window.event == SDL_WINDOWEVENT_RESIZED ||
-         native->native.window.event == SDL_WINDOWEVENT_SIZE_CHANGED);
-}
+[[nodiscard]] auto is_window_resize(event const & polled_event, window_id target_window) noexcept
+    -> bool;
 }  // namespace vulkandemo::sdl
