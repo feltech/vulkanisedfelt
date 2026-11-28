@@ -97,21 +97,6 @@ auto validate_swapchain_image_parameters(
             pre((properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT) != 0);
 
 /**
- * Validates prepared image parameters while keeping physical device parents alive.
- *
- * @param retained_device Device retaining the instance during physical queries.
- * @param prepared Selected configuration and surface facts.
- * @param properties Successful 2D optimal color-attachment limits for the selected UNORM format.
- * @return Validated preparation or an unsupported-image failure.
- */
-auto validate_prepared_swapchain_image_parameters(
-    device_ptr retained_device, PreparedSwapchain prepared, VkImageFormatProperties properties)
-    -> renderer_result<PreparedSwapchain> pre(retained_device != nullptr)
-        pre(properties.maxExtent.depth >= 1) pre(properties.maxMipLevels >= 1)
-            pre(properties.maxArrayLayers >= 1)
-                pre((properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT) != 0);
-
-/**
  * Joins acquired ownership with the selected context.
  *
  * @param presentation_device Retained device, surface and queues.
@@ -127,14 +112,13 @@ auto make_presentation_swapchain(
 /**
  * Provides validated image parameters for a prepared swapchain.
  *
- * @param device Retained logical device keeping instance and physical device alive.
  * @param physical_device Borrowed physical device.
  * @param prepared Selected configuration and surface facts.
  * @return ReaderIO providing validated image choices or an unsuccessful query/validation outcome.
  */
 template <class TEnvironment>
 constexpr auto reader_io_validate_swapchain_image_parameters(
-    device_ptr device, VkPhysicalDevice physical_device, PreparedSwapchain prepared)
+    VkPhysicalDevice physical_device, PreparedSwapchain prepared)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
@@ -153,10 +137,12 @@ constexpr auto reader_io_validate_swapchain_image_parameters(
     auto query_with_renderer_errors = reader_io::transform_error<"swapchain_image_query_error"_ss>(
         std::move(query), swapchain_image_query_error);
 
-    // ReaderIO providing validated choices while retaining the parent device through validation.
+    // Validator checking whether the selected extent fits this format's queried limits.
+    auto validate_image = std::bind_front(validate_swapchain_image_parameters, prepared);
+
+    // ReaderIO providing validated choices or the validation's configuration failure.
     return reader_io::transform<"validate_swapchain_image_parameters"_ss>(
-        std::move(query_with_renderer_errors),
-        std::bind_front(validate_prepared_swapchain_image_parameters, std::move(device), prepared));
+        std::move(query_with_renderer_errors), std::move(validate_image));
 }
 
 /**
@@ -168,14 +154,14 @@ constexpr auto reader_io_validate_swapchain_image_parameters(
  */
 template <class TEnvironment>
 constexpr auto reader_io_prepare_presentation_swapchain(
-    PresentationDevice presentation_device, sdl::window_ptr window)
+    PresentationDevice const & presentation_device, sdl::window_ptr window)
 {
     using fnfelt::literals::operator""_ss;
     namespace reader_io = fnfelt::monad::reader_io;
 
     // ReaderIOs providing surface support and live pixels while retaining their respective owners.
     auto support = reader_io_query_swapchain_support<TEnvironment>(
-        presentation_device.physical_device, std::move(presentation_device.surface));
+        presentation_device.physical_device, presentation_device.surface);
     auto drawable = sdl::reader_io_sdl_vulkan_get_drawable_size<TEnvironment>(std::move(window));
     auto snapshots = reader_io::sequence<"query_swapchain_inputs"_ss, TEnvironment>(
         std::move(support), std::move(drawable));
@@ -188,13 +174,14 @@ constexpr auto reader_io_prepare_presentation_swapchain(
     auto preparation =
         reader_io::transform<"prepare_swapchain"_ss>(std::move(inputs), prepare_swapchain);
 
+    // Continuation querying and checking physical image limits on the device's physical GPU.
+    auto validate_limits = std::bind_front(
+        reader_io_validate_swapchain_image_parameters<TEnvironment>,
+        presentation_device.physical_device);
+
     // ReaderIO providing a configuration whose image parameters satisfy physical limits.
     return reader_io::and_then<"query_swapchain_image_limits"_ss>(
-        std::move(preparation),
-        std::bind_front(
-            reader_io_validate_swapchain_image_parameters<TEnvironment>,
-            std::move(presentation_device.device),
-            presentation_device.physical_device));
+        std::move(preparation), std::move(validate_limits));
 }
 
 /**

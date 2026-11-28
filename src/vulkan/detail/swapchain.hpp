@@ -129,12 +129,15 @@ auto create_swapchain_io_action(
     info.compositeAlpha = select_composite_alpha(capabilities.supportedCompositeAlpha);
     info.presentMode = configuration.present_mode;
     info.clipped = VK_TRUE;
+    // Pass the live predecessor handle for replacement, or null for initial creation.
     info.oldSwapchain = old_swapchain ? old_swapchain.get() : VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkResult status = api.get().vk_create_swapchain_khr(
         presentation_device.device.get(), &info, nullptr, &swapchain);
     if (status != VK_SUCCESS)
     {
+        // Creation failed; parent and predecessor owners release without publishing a new
+        // swapchain.
         return result::error<result_type>(
             VulkanFailure{FallibleVulkanOperation::create_swapchain, status});
     }

@@ -108,17 +108,6 @@ auto validate_swapchain_image_parameters(
     return result::success<result_type>(prepared);
 }
 
-auto validate_prepared_swapchain_image_parameters(
-    device_ptr retained_device, PreparedSwapchain prepared, VkImageFormatProperties properties)
-    -> renderer_result<PreparedSwapchain> pre(retained_device != nullptr)
-        pre(properties.maxExtent.depth >= 1) pre(properties.maxMipLevels >= 1)
-            pre(properties.maxArrayLayers >= 1)
-                pre((properties.sampleCounts & VK_SAMPLE_COUNT_1_BIT) != 0)
-{
-    (void)retained_device;
-    return validate_swapchain_image_parameters(prepared, properties);
-}
-
 auto make_presentation_swapchain(
     PresentationDevice presentation_device,
     SwapchainConfiguration configuration,
