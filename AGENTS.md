@@ -52,7 +52,7 @@ conan install . --build=missing -s "&:build_type=Debug" \
   -pr:a build_env/nixos.linux.conan.profile
 cmake --preset conan-debug -Dvulkanisedfelt_ENABLE_DEV=ON \
   -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF -DCMAKE_CXX_FLAGS_DEBUG='-g -Og'
-cmake --build --parallel 6 --preset conan-debug
+cmake --build --parallel 3 --preset conan-debug
 ctest --test-dir build/Debug -R '^vulkandemo$' --output-on-failure --parallel --timeout 300
 ```
 
@@ -61,10 +61,11 @@ combined validation build and its test suite, rather than rebuilding for each fu
 validation finds an issue, correct it and repeat the affected checks, folding the correction into
 its function commit with `--amend` or a `fixup!` commit for later autosquash.
 
-Use six build jobs. LTO is disabled and Debug uses `-Og`, overriding the Nix compiler wrapper's
-default `-O2`. Pass the explicit CMake settings above when reusing a build directory to replace
-previously cached flags. Only regenerate Conan files when the recipe, profile or dependencies
-change.
+Use at most three build jobs (heavy reflection/monad translation units such as
+`swapchain_recreation.cpp` peak around 15.4 GiB RSS on a 64 GiB swapless host). LTO is disabled and
+Debug uses `-Og`, overriding the Nix compiler wrapper's default `-O2`. Pass the explicit CMake
+settings above when reusing a build directory to replace previously cached flags. Only regenerate
+Conan files when the recipe, profile or dependencies change.
 
 Never enable or run fnfelt's own development checks or tests in this consumer project. Do not run
 the separate `vulkanisedfelt.fnfelt` consumer compatibility smoke as a routine extra check for
@@ -142,7 +143,8 @@ We want to keep commits focused on the area they cover: editing the docstring of
 unmodified function pollutes the commit and makes rewriting git history (rebases) more difficult.
 
 Documentation on how a function works and technical challenges and solutions should be provided by
-inline comments and not in docstrings.
+inline comments and not in docstrings. Add concise inline comments explaining every non-trivial
+branch (such as `if`/`else`/`switch` conditions and outcomes).
 
 Place a blank line between heading, description, and parameters in class/function docstrings, e.g.
 
@@ -412,7 +414,8 @@ Practice IWYU (Include What You Use) - fine-grained `#include`s, avoiding transi
 rare exception is if an umbrella header is explicitly part of the design (i.e. where leaf headers
 contain `// IWYU pragma: private, include`).
 
-`constexpr` All The Things.
+`constexpr` All The Things — unless there is zero chance the code will run at compile time (keep
+runtime-only non-template definitions in `.cpp` files).
 
 Use `std::ranges` / `std::views`.
 
