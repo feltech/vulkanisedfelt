@@ -1156,7 +1156,7 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "[integration][windowed] swapchain recreation replaces live targets and retires prior "
+    "[integration][windowed] swapchain recreation replaces live framebuffers and retires prior "
     "generation cleanly")
 {
     backend::Api api;
@@ -1175,11 +1175,6 @@ TEST_CASE(
     renderer_result<PresentationInstance> instance = runtime.run(
         reader_io_create_presentation_instance<runtime_environment>(
             runtime.resources().window_owner));
-    if (result::is_error(instance))
-    {
-        CHECK(std::holds_alternative<PresentationInstanceFailure>(result::get_error(instance)));
-        return;
-    }
     REQUIRE(result::is_success(instance));
     sdl::sdl_result<surface_ptr> surface = runtime.run(
         sdl::reader_io_sdl_vulkan_create_surface<runtime_environment>(
@@ -1188,11 +1183,6 @@ TEST_CASE(
     presentation_device_result device = runtime.run(
         reader_io_create_presentation_device<runtime_environment>(
             result::get_success(instance), result::get_success(surface)));
-    if (result::is_error(device))
-    {
-        CHECK(std::holds_alternative<NoSuitablePhysicalDevice>(result::get_error(device)));
-        return;
-    }
     REQUIRE(result::is_success(device));
     PresentationDevice context = result::get_success(std::move(device));
     vulkan_result<command_pool_ptr> command_pool = runtime.run(
@@ -1200,9 +1190,11 @@ TEST_CASE(
             context.device, context.queue_families.graphics_family_index));
     REQUIRE(result::is_success(command_pool));
 
-    RecreationState<backend::Api> state{std::ref(api), runtime.environment().main_context, {}};
-    auto recreate = state_io_recreate_presentation_targets<RecreationState<backend::Api>>(
-        context, runtime.resources().window_owner);
+    RecreationState<backend::Api> state{
+        std::ref(api),
+        runtime.environment().main_context,
+        RecreationResources{context, runtime.resources().window_owner, {}}};
+    auto recreate = state_io_recreate_presentation_framebuffers<RecreationState<backend::Api>>();
     auto present = reader_io_clear_and_present<IntegrationFrameEnvironment<backend::Api>>(
         VkClearColorValue{{0.1F, 0.2F, 0.3F, 1.0F}}, timeout_nanoseconds{1'000'000'000});
 
@@ -1218,26 +1210,27 @@ TEST_CASE(
     VkFormat gen1_format = VK_FORMAT_UNDEFINED;
     std::weak_ptr<void> gen1_observer;
     {
-        renderer_result<PresentationFramebuffers> gen1_targets = run_recreation_state_io(
+        renderer_result<PresentationFramebuffers> gen1_framebuffers = run_recreation_state_io(
             runtime,
-            state_io_require_live_targets<RecreationState<backend::Api>>(swapchain_generation{1}),
+            state_io_require_live_framebuffers<RecreationState<backend::Api>>(
+                swapchain_generation{1}),
             state);
-        REQUIRE(result::is_success(gen1_targets));
+        REQUIRE(result::is_success(gen1_framebuffers));
         PresentationSwapchain const & gen1_swapchain =
-            result::get_success(gen1_targets)
+            result::get_success(gen1_framebuffers)
                 .presentation_image_views.presentation_swapchain_images.presentation_swapchain;
         gen1_handle = gen1_swapchain.swapchain.get();
-        gen1_pass = result::get_success(gen1_targets).render_pass.get();
+        gen1_pass = result::get_success(gen1_framebuffers).render_pass.get();
         gen1_format = gen1_swapchain.configuration.surface_format.format;
         CHECK_GT(gen1_swapchain.configuration.extent.width, 0U);
         CHECK_GT(gen1_swapchain.configuration.extent.height, 0U);
-        CHECK_FALSE(result::get_success(gen1_targets).framebuffers.empty());
+        CHECK_FALSE(result::get_success(gen1_framebuffers).framebuffers.empty());
         gen1_observer = gen1_swapchain.swapchain;
 
         completed_presentation_result gen1_frame = run_frame_with_targets(
             runtime,
             present,
-            result::get_success(std::move(gen1_targets)),
+            result::get_success(std::move(gen1_framebuffers)),
             result::get_success(command_pool));
         REQUIRE(result::is_success(gen1_frame));
     }
@@ -1258,7 +1251,7 @@ TEST_CASE(
 
     renderer_result<PresentationFramebuffers> stale_gen1 = run_recreation_state_io(
         runtime,
-        state_io_require_live_targets<RecreationState<backend::Api>>(swapchain_generation{1}),
+        state_io_require_live_framebuffers<RecreationState<backend::Api>>(swapchain_generation{1}),
         state);
     REQUIRE(result::is_error(stale_gen1));
     CHECK(
@@ -1270,26 +1263,27 @@ TEST_CASE(
         swapchain_generation{2});
 
     {
-        renderer_result<PresentationFramebuffers> gen2_targets = run_recreation_state_io(
+        renderer_result<PresentationFramebuffers> gen2_framebuffers = run_recreation_state_io(
             runtime,
-            state_io_require_live_targets<RecreationState<backend::Api>>(swapchain_generation{2}),
+            state_io_require_live_framebuffers<RecreationState<backend::Api>>(
+                swapchain_generation{2}),
             state);
-        REQUIRE(result::is_success(gen2_targets));
+        REQUIRE(result::is_success(gen2_framebuffers));
         PresentationSwapchain const & gen2_swapchain =
-            result::get_success(gen2_targets)
+            result::get_success(gen2_framebuffers)
                 .presentation_image_views.presentation_swapchain_images.presentation_swapchain;
         CHECK_NE(gen2_swapchain.swapchain.get(), gen1_handle);
         CHECK_GT(gen2_swapchain.configuration.extent.width, 0U);
         CHECK_GT(gen2_swapchain.configuration.extent.height, 0U);
         if (gen2_swapchain.configuration.surface_format.format == gen1_format)
         {
-            CHECK_EQ(result::get_success(gen2_targets).render_pass.get(), gen1_pass);
+            CHECK_EQ(result::get_success(gen2_framebuffers).render_pass.get(), gen1_pass);
         }
 
         completed_presentation_result gen2_frame = run_frame_with_targets(
             runtime,
             present,
-            result::get_success(std::move(gen2_targets)),
+            result::get_success(std::move(gen2_framebuffers)),
             result::get_success(command_pool));
         REQUIRE(result::is_success(gen2_frame));
     }
