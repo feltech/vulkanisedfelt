@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
 /**
- * @file vulkan/presentation_targets_types.hpp
+ * @file vulkan/swapchain_framebuffers_types.hpp
  *
- * Render pass compatibility inputs for presentation-target assembly.
+ * Render pass compatibility inputs for swapchain framebuffer assembly.
  */
 #pragma once
 

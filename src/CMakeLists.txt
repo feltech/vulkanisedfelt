@@ -73,7 +73,7 @@ add_executable(
   vulkan/presentation_swapchain.cpp
   vulkan/presentation_swapchain_images.cpp
   vulkan/presentation_image_views.cpp
-  vulkan/presentation_targets.cpp
+  vulkan/swapchain_framebuffers.cpp
   vulkan/swapchain_recreation.cpp
   vulkan/detail/swapchain_recreation.cpp
   vulkan/detail/presentation_image_views.cpp
@@ -241,9 +241,9 @@ target_sources(
           vulkan/detail/presentation_image_views.hpp
           vulkan/presentation_swapchain_images_types.hpp
           vulkan/detail/presentation_swapchain_images.hpp
-          vulkan/presentation_targets.hpp
-          vulkan/presentation_targets_types.hpp
-          vulkan/detail/presentation_targets.hpp
+          vulkan/swapchain_framebuffers.hpp
+          vulkan/swapchain_framebuffers_types.hpp
+          vulkan/detail/swapchain_framebuffers.hpp
           vulkan/swapchain_generation_types.hpp
           vulkan/swapchain_recreation.hpp
           vulkan/swapchain_recreation_types.hpp

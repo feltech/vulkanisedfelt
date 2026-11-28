@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
 
-#include "./presentation_targets.hpp"
+#include "./swapchain_framebuffers.hpp"
 
 #ifndef DOCTEST_CONFIG_DISABLE
 #include <atomic>
@@ -27,16 +27,16 @@
 #include "./managed_handles_types.hpp"
 #include "./presentation_device_types.hpp"
 #include "./presentation_framebuffers_types.hpp"
-#include "./presentation_targets_types.hpp"
 #include "./queue_types.hpp"
 #include "./renderer_errors.hpp"
+#include "./swapchain_framebuffers_types.hpp"
 #include "./swapchain_support_types.hpp"
 
 namespace vulkandemo::vulkan
 {
 namespace
 {
-auto target_support() -> SwapchainSupport
+auto framebuffer_support() -> SwapchainSupport
 {
     VkSurfaceCapabilitiesKHR capabilities{};
     capabilities.minImageCount = 1;
@@ -54,13 +54,13 @@ auto target_support() -> SwapchainSupport
         {VK_PRESENT_MODE_FIFO_KHR}};
 }
 
-auto target_image_limits() -> VkImageFormatProperties
+auto framebuffer_image_limits() -> VkImageFormatProperties
 {
     return VkImageFormatProperties{{4096, 4096, 1}, 1, 1, VK_SAMPLE_COUNT_1_BIT, 1048576};
 }
 }  // namespace
 
-TEST_CASE("[impure] presentation target planning retains all inputs without touching APIs")
+TEST_CASE("[impure] swapchain framebuffer planning retains all inputs without touching APIs")
 {
     backend::MockApi api;
     sdl::detail::TestRuntime runtime{api};
@@ -80,7 +80,7 @@ TEST_CASE("[impure] presentation target planning retains all inputs without touc
     std::weak_ptr render_pass_observer{render_pass};
 
     {
-        auto plan = reader_io_create_presentation_targets<environment_type>(
+        auto plan = reader_io_create_swapchain_framebuffers<environment_type>(
             PresentationDevice{
                 std::move(surface),
                 std::move(device),
@@ -108,8 +108,8 @@ TEST_CASE("[impure] presentation target planning retains all inputs without touc
 }
 
 TEST_CASE(
-    "[impure] presentation target assembly builds initial targets, reuses compatible passes, "
-    "and cleans up failures")
+    "[impure] swapchain framebuffer assembly builds initial framebuffers, reuses compatible "
+    "passes, and cleans up failures")
 {
     backend::MockApi api;
     sdl::detail::TestRuntime runtime{api};
@@ -187,7 +187,7 @@ TEST_CASE(
     CompatibleRenderPass compatible_pass{
         has_existing_pass ? existing_pass_format : VK_FORMAT_UNDEFINED, std::move(existing_pass)};
 
-    SwapchainSupport support = target_support();
+    SwapchainSupport support = framebuffer_support();
     REQUIRE_CALL(api, sdl_vulkan_get_drawable_size(window_handle, trompeloeil::_, trompeloeil::_))
         .SIDE_EFFECT(*_2 = 64)
         .SIDE_EFFECT(*_3 = 48);
@@ -232,7 +232,7 @@ TEST_CASE(
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
             0,
             trompeloeil::_))
-        .SIDE_EFFECT(*_7 = target_image_limits())
+        .SIDE_EFFECT(*_7 = framebuffer_image_limits())
         .RETURN(VK_SUCCESS);
 
     VkSwapchainKHR const expected_old = has_old_swapchain ? old_swapchain_handle : VK_NULL_HANDLE;
@@ -300,7 +300,7 @@ TEST_CASE(
         api, vk_destroy_swapchain_khr(device_handle, new_swapchain_handle, nullptr)));
 
     presentation_framebuffers_result outcome = runtime.run(
-        reader_io_create_presentation_targets<environment_type>(
+        reader_io_create_swapchain_framebuffers<environment_type>(
             std::move(presentation_device),
             std::move(window),
             std::move(old_swapchain),
@@ -318,14 +318,15 @@ TEST_CASE(
     if (should_succeed)
     {
         REQUIRE(fnfelt::result::is_success(outcome));
-        PresentationFramebuffers const & targets = fnfelt::result::get_success(outcome);
+        PresentationFramebuffers const & assembled = fnfelt::result::get_success(outcome);
         CHECK_EQ(
-            targets.presentation_image_views.presentation_swapchain_images.presentation_swapchain
+            assembled.presentation_image_views.presentation_swapchain_images.presentation_swapchain
                 .swapchain.get(),
             new_swapchain_handle);
-        CHECK_EQ(targets.render_pass.get(), should_create_pass ? new_pass_handle : old_pass_handle);
-        REQUIRE_EQ(targets.framebuffers.size(), 1U);
-        CHECK_EQ(targets.framebuffers[0].get(), framebuffer_handle);
+        CHECK_EQ(
+            assembled.render_pass.get(), should_create_pass ? new_pass_handle : old_pass_handle);
+        REQUIRE_EQ(assembled.framebuffers.size(), 1U);
+        CHECK_EQ(assembled.framebuffers[0].get(), framebuffer_handle);
     }
     else
     {

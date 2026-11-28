@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
 /**
- * @file vulkan/presentation_targets.hpp
+ * @file vulkan/swapchain_framebuffers.hpp
  *
- * Deferred assembly of complete presentation framebuffers with compatible render-pass reuse.
+ * Deferred assembly of swapchain framebuffers with compatible render-pass reuse.
  */
 #pragma once
 
@@ -16,9 +16,9 @@
 #include "../sdl/managed_handles_types.hpp"
 #include "./managed_handles_types.hpp"
 #include "./presentation_device_types.hpp"
-#include "./presentation_targets_types.hpp"
+#include "./swapchain_framebuffers_types.hpp"
 #include "detail/presentation_swapchain.hpp"
-#include "detail/presentation_targets.hpp"
+#include "detail/swapchain_framebuffers.hpp"
 
 namespace vulkandemo::vulkan
 {
@@ -35,16 +35,16 @@ namespace vulkandemo::vulkan
  * framebuffers and views before retiring a swapchain, and avoid replaying a plan that holds a
  * retired @p old_swapchain handle.
  *
- * @tparam TEnvironment Execution capabilities needed to query and build presentation targets.
+ * @tparam TEnvironment Execution capabilities needed to query and build swapchain framebuffers.
  * @param presentation_device Retained device, surface and selected presentation queues.
  * @param window Nonempty window owner associated with that surface.
  * @param old_swapchain Optional non-retired predecessor retained only through creation.
  * @param existing_render_pass Optional prior clear-and-present pass on @p presentation_device
  * eligible for format reuse.
- * @return Reusable ReaderIO providing complete presentation targets, stop, or renderer error.
+ * @return Reusable ReaderIO providing complete presentation framebuffers, stop, or renderer error.
  */
-template <detail::create_presentation_targets_environment TEnvironment>
-[[nodiscard]] constexpr auto reader_io_create_presentation_targets(
+template <detail::create_swapchain_framebuffers_environment TEnvironment>
+[[nodiscard]] constexpr auto reader_io_create_swapchain_framebuffers(
     PresentationDevice presentation_device,
     sdl::window_ptr window,
     swapchain_ptr old_swapchain = {},
@@ -57,15 +57,15 @@ template <detail::create_presentation_targets_environment TEnvironment>
     auto prepared = detail::reader_io_prepare_presentation_swapchain<TEnvironment>(
         presentation_device, std::move(window));
 
-    // Continuation assembling swapchain, images, views, compatible pass and target framebuffers.
-    auto build_targets = std::bind_front(
-        detail::reader_io_build_prepared_presentation_targets<TEnvironment>,
+    // Continuation assembling swapchain, images, views, compatible pass and framebuffers.
+    auto build_framebuffers = std::bind_front(
+        detail::reader_io_build_prepared_swapchain_framebuffers<TEnvironment>,
         std::move(presentation_device),
         std::move(old_swapchain),
         std::move(existing_render_pass));
 
-    // ReaderIO assembling complete presentation targets or returning a renderer failure.
-    return reader_io::and_then<"build_presentation_targets"_ss>(
-        std::move(prepared), std::move(build_targets));
+    // ReaderIO assembling complete presentation framebuffers or returning a renderer failure.
+    return reader_io::and_then<"build_swapchain_framebuffers"_ss>(
+        std::move(prepared), std::move(build_framebuffers));
 }
 }  // namespace vulkandemo::vulkan

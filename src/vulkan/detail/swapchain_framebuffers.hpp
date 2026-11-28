@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright 2026 David Feltell
 /**
- * @file vulkan/detail/presentation_targets.hpp
+ * @file vulkan/detail/swapchain_framebuffers.hpp
  *
  * Composition of swapchains, image views, compatible render passes and framebuffers.
  */
@@ -25,8 +25,8 @@
 #include "../presentation_image_views.hpp"
 #include "../presentation_image_views_types.hpp"
 #include "../presentation_swapchain_types.hpp"
-#include "../presentation_targets_types.hpp"
 #include "../renderer_errors.hpp"
+#include "../swapchain_framebuffers_types.hpp"
 #include "./presentation_framebuffers.hpp"
 #include "./presentation_image_views.hpp"
 #include "./presentation_swapchain.hpp"
@@ -37,7 +37,7 @@ namespace vulkandemo::vulkan::detail
 {
 /** Capabilities needed to assemble complete presentation framebuffers from live surface facts. */
 template <class TEnvironment>
-concept create_presentation_targets_environment =
+concept create_swapchain_framebuffers_environment =
     create_presentation_swapchain_images_environment<TEnvironment> &&
     create_presentation_image_views_environment<TEnvironment> &&
     vk_create_render_pass_environment<TEnvironment> &&
@@ -64,8 +64,10 @@ auto acquire_compatible_render_pass_io_action(
     namespace result = fnfelt::result;
     if (existing.render_pass != nullptr && existing.format == format)
     {
+        // Format matches the existing compatible pass, so reuse it without a driver call.
         return result::success<vulkan_result<render_pass_ptr>>(std::move(existing.render_pass));
     }
+    // Either no pass existed yet or the swapchain format changed; create a matching pass.
     return create_render_pass(api, std::move(device), format);
 }
 
@@ -106,10 +108,10 @@ constexpr auto acquire_compatible_render_pass_reader_io_action(
  *
  * @param existing_render_pass Optional prior render pass eligible for format-matched reuse.
  * @param views Acquired swapchain, borrowed images and owned color views.
- * @return ReaderIO providing complete presentation targets or a renderer failure.
+ * @return ReaderIO providing complete presentation framebuffers or a renderer failure.
  */
 template <class TEnvironment>
-constexpr auto reader_io_build_target_framebuffers(
+constexpr auto reader_io_build_swapchain_framebuffers(
     CompatibleRenderPass existing_render_pass, PresentationImageViews views)
 {
     using fnfelt::literals::operator""_ss;
@@ -135,7 +137,7 @@ constexpr auto reader_io_build_target_framebuffers(
         std::bind_front(reader_io_create_presentation_framebuffers<TEnvironment>, std::move(views));
 
     // ReaderIO providing framebuffers matching each view and the compatible render pass.
-    return reader_io::and_then<"create_target_framebuffers"_ss>(
+    return reader_io::and_then<"create_swapchain_framebuffers"_ss>(
         std::move(pass_with_renderer_errors), std::move(create_framebuffers));
 }
 
@@ -147,10 +149,10 @@ constexpr auto reader_io_build_target_framebuffers(
  * @param old_swapchain Optional non-retired predecessor retained only through creation.
  * @param existing_render_pass Optional prior render pass reused when the selected format matches.
  * @param prepared Validated surface, extent and image-format configuration.
- * @return ReaderIO providing complete presentation targets or a renderer failure.
+ * @return ReaderIO providing complete presentation framebuffers or a renderer failure.
  */
 template <class TEnvironment>
-constexpr auto reader_io_build_prepared_presentation_targets(
+constexpr auto reader_io_build_prepared_swapchain_framebuffers(
     PresentationDevice presentation_device,
     swapchain_ptr old_swapchain,
     CompatibleRenderPass existing_render_pass,
@@ -164,19 +166,19 @@ constexpr auto reader_io_build_prepared_presentation_targets(
         std::move(presentation_device), std::move(old_swapchain), prepared);
 
     // ReaderIO providing presentable images owned through the acquired swapchain.
-    auto images = reader_io::and_then<"get_target_swapchain_images"_ss>(
+    auto images = reader_io::and_then<"get_swapchain_framebuffers_images"_ss>(
         std::move(swapchain), reader_io_get_presentation_swapchain_images<TEnvironment>);
 
     // ReaderIO providing color views for each retrieved swapchain image.
-    auto views = reader_io::and_then<"create_target_image_views"_ss>(
+    auto views = reader_io::and_then<"create_swapchain_framebuffers_views"_ss>(
         std::move(images), reader_io_create_presentation_image_views<TEnvironment>);
 
-    // Continuation selecting or creating a compatible pass and building target framebuffers.
+    // Continuation selecting or creating a compatible pass and building presentation framebuffers.
     auto build_framebuffers = std::bind_front(
-        reader_io_build_target_framebuffers<TEnvironment>, std::move(existing_render_pass));
+        reader_io_build_swapchain_framebuffers<TEnvironment>, std::move(existing_render_pass));
 
-    // ReaderIO providing the compatible render pass and complete target framebuffers.
-    return reader_io::and_then<"build_target_framebuffers"_ss>(
+    // ReaderIO providing the compatible render pass and complete presentation framebuffers.
+    return reader_io::and_then<"build_swapchain_framebuffers"_ss>(
         std::move(views), std::move(build_framebuffers));
 }
 }  // namespace vulkandemo::vulkan::detail
